@@ -4,16 +4,19 @@ This plan translates the current docs into an implementation sequence for V1.
 
 ## Architecture Being Implemented
 
-Sunshine Club is a document intelligence and organization system. V1 is built around a local/NAS corpus rooted at `sunshineclub/`, not live Google Drive crawling.
+Sunshine Club is a document intelligence and organization system. V1 is built around the local/NAS corpus mounted on Atlas at `/mnt/sunshine`, not live Google Drive crawling.
 
 The core loop is:
 
 1. register a staged file from the NAS corpus
-2. extract text and metadata
-3. classify candidate primary and secondary tags
-4. persist classification evidence and confidence
-5. resolve a deterministic destination path from primary tag, folder mapping, and placement rule
-6. create either a review task or a pending Drive import/move action
+2. capture source collection, path, size, mtime, extension, MIME type, checksum, and content class
+3. extract text and metadata through the content-class-specific path
+4. store the normalized extraction artifact with quality, warnings, and structured page/block/table output
+5. revise content class when extraction evidence proves the initial inventory class was wrong
+6. classify candidate primary routing tag and secondary facets from extracted evidence and quality signals
+7. persist classification evidence and confidence
+8. resolve a deterministic destination path from primary tag, folder mapping, and placement rule
+9. create either a review task or a pending Drive import/move action
 
 Search, related discovery, and grounded chat are downstream consumers of this organized semantic state.
 
@@ -34,7 +37,9 @@ Deliver:
 - worker shell
 - core domain contracts
 - initial Postgres migration
-- NAS source root configuration
+- NAS source root configuration for `/mnt/sunshine`
+- corpus inventory contracts for source collection and content class
+- Verdify taxonomy seed representation for folders, primary tags, facets, placement rules, privacy, and reviewer roles
 
 Exit criteria:
 
@@ -49,6 +54,13 @@ Deliver:
 - NAS filesystem connector
 - Docling extraction adapter
 - OCRmyPDF/Tesseract fallback adapter for scanned PDFs
+- TIFF and image OCR path for historical scans
+- normalized extraction artifact contract for page/block/table output
+- extraction quality and warnings policy
+- content-class revision policy after extraction
+- photo metadata path for low-text event/member photos
+- spreadsheet extraction that preserves sheet names and row/table structure
+- email extraction that preserves headers, dates, body, and attachments
 - chunking contracts
 - embedding write path
 - classification run persistence
@@ -56,21 +68,26 @@ Deliver:
 
 Exit criteria:
 
-- a sample staged file can produce extracted text, classification candidates, margin, and explanation
+- sample files from the mounted corpus can produce content-class-specific extraction artifacts, classification candidates, margin, and explanation
 
 ### Phase 3: Tag and Placement Control Layer
 
 Deliver:
 
 - tag CRUD for admin
+- tag facets / tag groups from the Verdify handoff
 - folder registry
 - tag-folder mappings
 - placement rules
+- document privacy/access policy
+- reviewer-role routing defaults
 - deterministic path resolver
 
 Exit criteria:
 
 - a primary tag plus metadata resolves to a deterministic Drive destination or a blocked review state
+- secondary facet assignments remain distinguishable by facet group
+- restricted privacy classes are excluded from normal search/chat by policy
 
 ### Phase 4: Review System
 
@@ -79,6 +96,12 @@ Deliver:
 - low-confidence review queue
 - duplicate review queue
 - missing destination review queue
+- privacy review queue
+- date confirmation queue
+- person identification queue
+- source verification queue
+- publication approval queue
+- family-return review queue
 - ignore workflow
 - human decision capture
 
@@ -137,17 +160,20 @@ sunshine_club/
 
 Initial tables:
 
-- `documents`: one row per known file, including source type, source path/id, checksum, MIME type, processing status, canonical flag, and metadata.
+- `documents`: one row per known file, including source type, source collection, source path/id, file type metadata, content class, checksum, processing status, canonical flag, and raw metadata.
+- `extraction_artifacts`: normalized OCR/parser output, structured payload, quality, warnings, and content-class before/after evidence.
 - `document_chunks`: normalized text chunks for retrieval and evidence.
 - `chunk_embeddings`: pgvector embeddings keyed by chunk and model.
-- `tags`: controlled taxonomy with primary and secondary tag kinds.
+- `tags`: controlled taxonomy with stable tag keys, display names, primary/secondary tag kinds, and facet/tag group for secondary terms.
 - `folders`: manually registered Drive folder targets.
 - `tag_folder_mappings`: one active folder mapping per primary tag.
 - `placement_rules`: deterministic subfolder rules per primary tag.
 - `document_tag_assignments`: proposed, applied, or rejected primary/secondary tag assignments.
+- `document_policy`: enforceable privacy/access, processing status, usage, and reviewer-role policy.
+- `document_dates`: date value, date granularity, date confidence, date source, and evidence.
 - `classification_runs`: classifier candidates, score, margin, explanation, evidence, and extraction quality.
 - `document_relationships`: duplicate, near-duplicate, related, and possible-newer-version links.
-- `review_tasks`: low-confidence, duplicate, missing-destination, misfiled, and migration review work.
+- `review_tasks`: low-confidence, duplicate, missing-destination, misfiled, privacy, date, person-identification, source-verification, publication, family-return, and migration review work.
 - `human_decisions`: structured review outcomes for audit and later learning.
 - `drive_actions`: pending/applied/failed/rolled-back import and move actions.
 - `migration_batches`: controlled import and mapping-change batches.
@@ -194,11 +220,12 @@ Implement a foundation flow that:
 
 1. accepts a staged NAS file record
 2. persists a document record
-3. runs stub extraction
-4. runs deterministic stub classification against provided controlled tags
-5. checks confidence and margin thresholds
-6. resolves destination path from primary tag, mapping, folder, and placement rule
-7. emits either:
+3. stores source collection and content class
+4. runs stub extraction
+5. runs deterministic stub classification against Verdify-seeded primary tags and secondary facets
+6. checks confidence and margin thresholds
+7. resolves destination path from primary tag, mapping, folder, and placement rule
+8. emits either:
    - a review task for low confidence, duplicate hold, or missing destination
    - a pending `import_to_drive` action with the resolved destination path
 

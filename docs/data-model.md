@@ -24,10 +24,35 @@ Suggested fields:
   - `google_drive`
   - `nas`
   - `upload`
+- `source_collection`
+  - `sunshine_shared_folders`
+  - `from_mac_pass`
+  - `paige_agent_files`
+  - `google_drive_delta`
+  - `archive`
+  - `manifest`
+  - `other`
+- `source_collection_label`
+  - optional Verdify source collection facet such as `Green Scrapbook`, `Yearbooks`, `Slack Upload`, `NAS Working Corpus`, `Google Drive Current Folder`, or `Budget Review 2016-2026`
 - `source_file_id`
+- `source_path`
 - `current_drive_file_id`
 - `name`
 - `mime_type`
+- `extension`
+- `size_bytes`
+- `source_mtime`
+- `content_class`
+  - `document`
+  - `image`
+  - `scanned_document`
+  - `spreadsheet`
+  - `presentation`
+  - `email`
+  - `google_native_export`
+  - `manifest`
+  - `code_or_workspace_artifact`
+  - `binary_or_unknown`
 - `checksum`
 - `raw_metadata`
 - `status`
@@ -42,6 +67,50 @@ Suggested fields:
 - `created_at`
 - `updated_at`
 
+Rules:
+
+- `source_collection` records which mounted corpus area or incoming batch produced the row.
+- `source_collection_label` or the equivalent secondary `source_collection` facet records the human/archive collection from the Verdify taxonomy.
+- `source_path`, `size_bytes`, `source_mtime`, `extension`, and `checksum` are provenance and duplicate signals, not semantic classification by themselves.
+- `content_class` is the current best class. It is assigned during inventory and may be revised after extraction reveals better evidence.
+- Manifest and workspace artifact rows may be retained for audit/provenance while being excluded from normal user search/chat.
+
+Example revision:
+
+- a file starts as `image`
+- OCR/preprocessing shows it is a receipt or scanned meeting notes
+- the current `content_class` can be upgraded to `scanned_document`
+
+### `extraction_artifacts`
+
+Stores normalized output from OCR and document parsers.
+
+Suggested fields:
+
+- `id`
+- `document_id`
+- `extractor`
+- `extractor_version`
+- `content_class_before`
+- `content_class_after`
+- `text`
+- `normalized_payload`
+- `quality`
+  - `stub`
+  - `empty`
+  - `ok`
+  - `poor`
+- `warnings`
+- `metadata`
+- `created_at`
+
+Rules:
+
+- OCR and document parsers produce extraction artifacts; they do not decide final routing.
+- `normalized_payload` should preserve structured downstream evidence such as pages, blocks, paragraphs, tables, coordinates, page numbers, confidence scores, detected language, and preprocessing decisions when available.
+- `content_class_before` and `content_class_after` make content-class revision auditable.
+- Low-quality or warning-heavy extraction should lower classifier trust and may force review.
+
 ### `document_chunks`
 
 - `id`
@@ -51,6 +120,11 @@ Suggested fields:
 - `content_hash`
 - `token_count`
 - `metadata`
+
+Rules:
+
+- chunks are derived from extraction artifacts after normalized extraction output exists.
+- chunk metadata should retain page/block references so search, chat citations, and review UI can point back to source evidence.
 
 ### `chunk_embeddings`
 
@@ -66,15 +140,35 @@ Primary controlled taxonomy.
 Suggested fields:
 
 - `id`
-- `name`
+- `tag_key`
+- `display_name`
 - `description`
 - `tag_kind`
   - `primary`
   - `secondary`
+- `facet`
+  - null for primary routing tags
+  - `record_type`
+  - `function`
+  - `program_project_event`
+  - `source_collection`
+  - `privacy_access`
+  - `processing_status`
+  - `usage`
+  - `reviewer_role`
+- `default_privacy`
+- `default_reviewer_role`
 - `is_active`
 - `created_by`
 - `created_at`
 - `updated_at`
+
+Rules:
+
+- `tag_key` is the stable machine key from the Verdify seed JSON when available.
+- `display_name` is the human label.
+- Primary tags control routing. Secondary tags must have a `facet` so record type, program, source collection, privacy, processing status, usage, and reviewer role do not collapse into one flat tag pile.
+- Privacy/access may be represented as a facet for filtering, but enforceable access policy must also be persisted on the document or derived policy state.
 
 ### `folders`
 
@@ -127,6 +221,7 @@ Suggested fields:
   - `document_date`
   - `captured_date`
   - `upload_date`
+- `minimum_date_confidence`
 - `is_active`
 - `created_by`
 - `created_at`
@@ -156,7 +251,75 @@ Suggested fields:
 Rules:
 
 - one applied primary tag per routed document
-- zero or more secondary semantic tags allowed
+- zero or more secondary facet tags allowed
+- secondary facet assignments should preserve facet type, confidence, evidence, and whether the assignment came from the Verdify seed, extraction, classifier, or human review
+
+### `document_policy`
+
+Stores enforceable privacy and workflow policy separate from descriptive tags.
+
+Suggested fields:
+
+- `id`
+- `document_id`
+- `privacy_access`
+  - `public`
+  - `club_internal`
+  - `board_only`
+  - `treasurer_only`
+  - `donor_sensitive`
+  - `member_private`
+  - `beneficiary_sensitive`
+  - `legal_irs_sensitive`
+  - `family_return_sensitive`
+  - `system_admin`
+  - `restricted`
+- `processing_status`
+- `reviewer_role`
+- `usage_allowed`
+- `policy_source`
+  - `taxonomy_default`
+  - `classifier`
+  - `human_review`
+- `created_at`
+- `updated_at`
+
+Rules:
+
+- Privacy/access is policy metadata, not merely a tag.
+- Normal search/chat must exclude restricted, unresolved, donor-sensitive, beneficiary-sensitive, treasurer-only, legal/IRS-sensitive, member-private, and system-admin records unless the user and workflow are allowed.
+- Public output requires explicit publication approval.
+
+### `document_dates`
+
+Stores date evidence and confidence for archive material.
+
+Suggested fields:
+
+- `id`
+- `document_id`
+- `date_value`
+- `date_granularity`
+  - `day`
+  - `month`
+  - `year`
+  - `decade`
+  - `range`
+  - `unknown`
+- `date_confidence`
+  - `exact`
+  - `inferred`
+  - `approximate`
+  - `range`
+  - `unknown`
+- `date_source`
+  - `document_text`
+  - `file_metadata`
+  - `folder_path`
+  - `exif`
+  - `human_review`
+- `evidence`
+- `created_at`
 
 ### `classification_runs`
 
@@ -201,6 +364,12 @@ Suggested fields:
   - `misfiled_file`
   - `missing_destination`
   - `mapping_migration`
+  - `privacy_review`
+  - `date_confirmation`
+  - `person_identification`
+  - `source_verification`
+  - `publication_approval`
+  - `family_return_review`
 - `status`
   - `open`
   - `in_progress`

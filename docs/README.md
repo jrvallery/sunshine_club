@@ -8,9 +8,12 @@ Read in this order:
 2. `technical-architecture.md`
 3. `workflows.md`
 4. `technical-stack.md`
-5. `data-model.md`
-6. `roadmap.md`
-7. `implementation-plan.md`
+5. `taxonomy.md`
+6. `corpus-inventory.md`
+7. `corpus-taxonomy-report.md`
+8. `data-model.md`
+9. `roadmap.md`
+10. `implementation-plan.md`
 
 ## Document Map
 
@@ -32,6 +35,27 @@ Read in this order:
   - why each technology fits
   - where each technology sits in the system
   - acceptable alternatives and rejected baselines
+
+- `corpus-inventory.md`
+  - current `/mnt/sunshine` mount shape
+  - source groups and manifests
+  - observed file types and counts
+  - extraction and routing implications
+
+- `taxonomy.md`
+  - Verdify taxonomy handoff alignment
+  - canonical folder families
+  - V1 primary routing tags
+  - required secondary facet groups
+  - privacy and review implications
+
+- `taxonomy-handoff/`
+  - preserved Verdify handoff markdown, seed JSON, workbook, and source briefs
+
+- `corpus-taxonomy-report.md`
+  - corpus survey evidence
+  - taxonomy/folder recommendations aligned to the Verdify handoff
+  - duplicate and ambiguity patterns
 
 - `workflows.md`
   - Google Drive cleanup

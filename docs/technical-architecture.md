@@ -12,9 +12,18 @@ Sunshine Club has three zones:
 
 Sources include:
 
-- the consolidated NAS `sunshineclub` working corpus during build-out
+- the consolidated NAS working corpus mounted on Atlas at `/mnt/sunshine` during build-out
 - later, live Google Drive content in production operation
 - future dashboard uploads
+
+The current `/mnt/sunshine` corpus is not homogeneous. It includes:
+
+- Google Drive-synced Sunshine shared folders
+- a From Mac review pass
+- Paige-local agent/workspace artifacts
+- Google Drive missing/mismatch delta files
+- historical archives and manifests
+- a large photo and scan population alongside PDFs, Office files, text, email, spreadsheets, and presentations
 
 ### Intelligence Zone
 
@@ -63,7 +72,9 @@ This connector becomes primary after the organized corpus is imported and the pr
 
 Build-out connector responsibilities:
 
-- read the unified NAS `sunshineclub` working corpus
+- read the unified NAS working corpus at `/mnt/sunshine`
+- preserve source collection, original path, size, mtime, extension, MIME type, and checksum evidence
+- assign an initial content class before extraction
 - extract migration candidates
 - support local high-compute classification
 - prepare organized import into Drive
@@ -74,8 +85,18 @@ It is not a permanent second canonical library.
 
 Important Phase 1 rule:
 
-- the system works from the manually consolidated NAS `sunshineclub` folder first
+- the system works from the manually consolidated NAS folder first
+- on Atlas, that folder is mounted as `/mnt/sunshine`
 - it does not begin by crawling Google Drive directly
+
+Source areas under `/mnt/sunshine` must remain distinguishable in metadata:
+
+- `Sunshine shared folders/`
+- `From Mac Sunshine Pass 2026-05-25/`
+- `Paige Agent Sunshine Files/`
+- `google-drive-delta-2026-05-25/`
+- `archive-2026-05-25/`
+- `_manifest/`
 
 ## Core System Components
 
@@ -92,17 +113,32 @@ Flow:
 
 ### 2. Extraction
 
-The extraction pipeline turns files into structured text-bearing objects.
+The extraction pipeline turns files into auditable structured extraction artifacts.
+
+Architectural rule:
+
+- inventory assigns an initial `content_class`
+- extraction path is chosen from that class
+- OCR or document parsing returns text, quality metadata, warnings, and a normalized structured payload
+- the current `content_class` may be revised after extraction reveals better evidence
+- Sunshine Club stores the extraction artifact before classification
+- classifier scores tags from the extracted evidence and quality signals
+- deterministic routing remains tag + mapping + placement rule, not an OCR-model decision
 
 Supported MVP paths:
 
 - PDFs
 - text
 - markdown
+- Word documents
+- spreadsheets and CSV/TSV files
+- presentations
+- email files
 - Google Docs
 - Google Sheets
 - Google Slides
-- document-like images such as receipts, scans, and screenshots
+- document-like images such as receipts, scans, scrapbook pages, and screenshots
+- TIFF/JPEG/PNG/HEIC image files with explicit photo-vs-scan routing
 
 Deferred:
 
@@ -110,6 +146,27 @@ Deferred:
 - arbitrary binaries
 - complex design formats
 - low-value pure photos as semantic documents
+
+Content-class routing:
+
+- born-digital documents use Docling first
+- scanned PDFs, TIFFs, and document-like images use OCR as a primary extraction path
+- spreadsheets preserve workbook/sheet structure and date-like columns
+- emails preserve headers, body, attachments, and dates
+- photos prioritize EXIF/captured date, folder context, event inference, and deterministic photo placement
+- manifests and code/workspace artifacts are retained for audit/provenance but excluded from normal user search/chat unless explicitly promoted
+
+OCR artifacts must preserve:
+
+- raw extracted text
+- normalized pages, blocks, paragraphs, and tables when available
+- page numbers and coordinates when available
+- extractor/model name and version
+- preprocessing decisions such as rotation, deskew, contrast, and page splitting
+- confidence and detected-language signals when available
+- warnings such as low contrast, handwriting, skew, empty text, or mostly-image pages
+
+Low-quality extraction lowers classifier trust and can force review.
 
 ### 3. Classification
 
@@ -119,10 +176,12 @@ Classification outputs:
 - confidence score
 - top alternative tags
 - summary
-- document-type classification
+- secondary facet candidates, including record type, function, program/project/event, source collection, privacy/access, processing status, usage, and reviewer role
 - supporting evidence
 
 The classifier does not choose folders directly.
+
+The Verdify taxonomy seed in `docs/taxonomy-handoff/` is the current controlled vocabulary. Primary tags are routing tags. Secondary tags are faceted metadata, not one flat semantic list.
 
 ### 4. Placement Resolution
 
@@ -137,11 +196,11 @@ Inputs:
 
 Example:
 
-- primary tag: `receipt`
-- mapped folder: `Receipts`
+- primary tag: `donations_receipts_fundraising`
+- mapped folder: `02_Finance_Donations`
 - placement rule: `by_year`
 - document year: `2026`
-- final path: `Receipts/2026/`
+- final path: `02_Finance_Donations/2026/`
 
 ### 5. Review System
 
@@ -180,11 +239,14 @@ Retrieval uses:
 
 - embeddings
 - tag filters
+- secondary facet filters
+- privacy/access filters
 - semantic relationships
 - relatedness graph
 - optional reranking
 
 Retrieval is not constrained only to same-tag files.
+Normal retrieval must exclude files whose privacy/access or processing status disallows the requesting user or workflow.
 
 ### 8. Chat Layer
 
@@ -192,7 +254,7 @@ Chat can answer from:
 
 - semantically related files
 - files with different primary tags
-- secondary semantic tags
+- secondary facet tags
 - relatedness graph
 
 Chat is grounded by citations and links.
@@ -209,8 +271,10 @@ Chat is grounded by citations and links.
 
 - tags are manually created
 - one primary tag per routed file
-- zero or more optional secondary semantic tags allowed
+- zero or more optional secondary facet tags allowed
+- secondary tags must carry a facet/tag group such as `record_type`, `function`, `program_project_event`, `source_collection`, `privacy_access`, `processing_status`, `usage`, or `reviewer_role`
 - tags live only in Sunshine Club DB
+- privacy/access is enforced as policy metadata even when it is also represented as a facet
 
 ### Mapping Model
 

@@ -1,0 +1,1611 @@
+{
+  "version": "0.1",
+  "prepared_date": "2026-05-25",
+  "principle": "Folders are for human custody and deterministic routing; tags/facets are for meaning, retrieval, privacy, review, and output use.",
+  "canonical_folders": [
+    {
+      "folder_key": "00_read_me_runbooks",
+      "drive_folder": "00_READ_ME_AND_RUNBOOKS",
+      "purpose": "One-page role cards, runbooks, system overview, taxonomy version notes, escalation instructions.",
+      "owner_role": "President / Verdify admin",
+      "default_privacy": "club_internal"
+    },
+    {
+      "folder_key": "01_governance_admin",
+      "drive_folder": "01_Governance_Admin",
+      "purpose": "Bylaws, policies, surveys, minutes/agendas, officer roles, elections, board decisions.",
+      "owner_role": "President / board",
+      "default_privacy": "board_only"
+    },
+    {
+      "folder_key": "02_finance_donations",
+      "drive_folder": "02_Finance_Donations",
+      "purpose": "Treasurer reports, budgets, donations, receipts, PayPal/Zeffy exports, reserve/endowment material.",
+      "owner_role": "Treasurer",
+      "default_privacy": "treasurer_only"
+    },
+    {
+      "folder_key": "03_membership",
+      "drive_folder": "03_Membership",
+      "purpose": "Rosters, yearbooks as member authority, officer/service roles, senior/inactive status, nominations.",
+      "owner_role": "Correspondence Secretary / Historian",
+      "default_privacy": "member_private"
+    },
+    {
+      "folder_key": "04_programs_partnerships",
+      "drive_folder": "04_Programs_Partnerships",
+      "purpose": "Dental mission, Senior Smiles, scholarships, Atwood House, SVVSD, Dental Aid, VCP, Rotary and other partners.",
+      "owner_role": "Program owner / President",
+      "default_privacy": "club_internal"
+    },
+    {
+      "folder_key": "05_events",
+      "drive_folder": "05_Events",
+      "purpose": "Annual Spring Tea, Annual Meeting, Christmas party, luncheons, museum event logistics and materials.",
+      "owner_role": "Event chair",
+      "default_privacy": "club_internal"
+    },
+    {
+      "folder_key": "06_history_archive",
+      "drive_folder": "06_History_Archive",
+      "purpose": "Scrapbooks, scans, photos, yearbook source images, transcriptions, history book source material, provenance records.",
+      "owner_role": "Historian / archive committee",
+      "default_privacy": "club_internal"
+    },
+    {
+      "folder_key": "07_communications",
+      "drive_folder": "07_Communications",
+      "purpose": "Templates, letters, invitations, thank-yous, condolence/get-well/milestone language, website copy.",
+      "owner_role": "Correspondence Secretary",
+      "default_privacy": "club_internal"
+    },
+    {
+      "folder_key": "08_operations_assets",
+      "drive_folder": "08_Operations_Assets",
+      "purpose": "Silver inventory, supplies, insurance applications/quotes, storage lists, QR codes, operational checklists.",
+      "owner_role": "Operations owner / Tea chair",
+      "default_privacy": "club_internal"
+    },
+    {
+      "folder_key": "09_125th_anniversary",
+      "drive_folder": "09_125th_Anniversary",
+      "purpose": "125th anniversary committees, documentary, cookbook, garden collaboration, special Tea, public timeline, fact bank.",
+      "owner_role": "Anniversary lead",
+      "default_privacy": "club_internal"
+    },
+    {
+      "folder_key": "90_intake_needs_review",
+      "drive_folder": "90_Intake_Needs_Review",
+      "purpose": "Universal intake and review hold for uncertain, duplicate, private, or unmapped items.",
+      "owner_role": "Verdify admin / assigned reviewer",
+      "default_privacy": "restricted"
+    },
+    {
+      "folder_key": "99_system_exports_logs",
+      "drive_folder": "99_System_Exports_Logs",
+      "purpose": "Machine exports, manifests, classification reports, review logs, migrations, backups.",
+      "owner_role": "Verdify admin",
+      "default_privacy": "system_admin"
+    }
+  ],
+  "primary_tags": [
+    {
+      "tag_key": "runbooks_handoff",
+      "display_name": "Runbooks and Handoff",
+      "folder_key": "00_read_me_runbooks",
+      "placement_rule": "flat",
+      "date_source": "upload_date",
+      "definition": "Operating instructions, role cards, project briefs, taxonomy docs, Verdify handoff material.",
+      "default_privacy": "club_internal",
+      "reviewer_role": "president",
+      "auto_route": "high confidence ok"
+    },
+    {
+      "tag_key": "governance_bylaws_policy",
+      "display_name": "Governance, Bylaws, and Policy",
+      "folder_key": "01_governance_admin",
+      "placement_rule": "flat",
+      "date_source": "document_date",
+      "definition": "Bylaws, standing rules, policy audit, survey results, officer/election/member-status governance.",
+      "default_privacy": "board_only",
+      "reviewer_role": "president_board",
+      "auto_route": "review before broad sharing"
+    },
+    {
+      "tag_key": "meeting_records",
+      "display_name": "Meeting Records",
+      "folder_key": "01_governance_admin",
+      "placement_rule": "by_year",
+      "date_source": "document_date",
+      "definition": "Minutes, agendas, meeting packets, vote notes, agenda-only best-available evidence.",
+      "default_privacy": "club_internal",
+      "reviewer_role": "president_board",
+      "auto_route": "only if date and record type are clear"
+    },
+    {
+      "tag_key": "finance_treasurer_records",
+      "display_name": "Finance and Treasurer Records",
+      "folder_key": "02_finance_donations",
+      "placement_rule": "by_year",
+      "date_source": "document_date",
+      "definition": "Treasurer reports, budgets, account balances, endowment/memorial/Raymond James/LCF material.",
+      "default_privacy": "treasurer_only",
+      "reviewer_role": "treasurer",
+      "auto_route": "review for sensitivity"
+    },
+    {
+      "tag_key": "donations_receipts_fundraising",
+      "display_name": "Donations, Receipts, and Fundraising",
+      "folder_key": "02_finance_donations",
+      "placement_rule": "by_year",
+      "date_source": "document_date",
+      "definition": "PayPal/Zeffy/Giving Fund exports, donation lists, receipts, giving campaigns, donor stewardship.",
+      "default_privacy": "donor_sensitive",
+      "reviewer_role": "treasurer",
+      "auto_route": "never public; treasurer review"
+    },
+    {
+      "tag_key": "membership_rosters_yearbooks",
+      "display_name": "Membership, Rosters, and Yearbooks",
+      "folder_key": "03_membership",
+      "placement_rule": "by_year",
+      "date_source": "document_date",
+      "definition": "Yearbook-first member authority, rosters, senior/inactive/active status, nominations, officer and committee lists.",
+      "default_privacy": "member_private",
+      "reviewer_role": "historian_correspondence",
+      "auto_route": "review if contact info present"
+    },
+    {
+      "tag_key": "dental_program",
+      "display_name": "Dental Program",
+      "folder_key": "04_programs_partnerships",
+      "placement_rule": "by_year",
+      "date_source": "document_date",
+      "definition": "Children/student/veteran/low-income dental care, screenings, school clinics, Dental Aid references.",
+      "default_privacy": "club_internal",
+      "reviewer_role": "program_owner",
+      "auto_route": "privacy review if recipients appear"
+    },
+    {
+      "tag_key": "senior_smiles",
+      "display_name": "Senior Smiles",
+      "folder_key": "04_programs_partnerships",
+      "placement_rule": "by_year",
+      "date_source": "document_date",
+      "definition": "Senior dental program, senior dental support, Dental Aid senior-related material.",
+      "default_privacy": "club_internal",
+      "reviewer_role": "program_owner",
+      "auto_route": "privacy review if recipients appear"
+    },
+    {
+      "tag_key": "scholarships",
+      "display_name": "Scholarships",
+      "folder_key": "04_programs_partnerships",
+      "placement_rule": "by_year",
+      "date_source": "document_date",
+      "definition": "Dental career scholarships, scholarship applications, awards, recipients, criteria.",
+      "default_privacy": "beneficiary_sensitive",
+      "reviewer_role": "board_restricted",
+      "auto_route": "restricted unless sanitized/public award"
+    },
+    {
+      "tag_key": "partner_programs",
+      "display_name": "Partner Programs and Community Giving",
+      "folder_key": "04_programs_partnerships",
+      "placement_rule": "by_year",
+      "date_source": "document_date",
+      "definition": "Atwood House, EFAA, Veterans Community Project, Rotary, SVVSD, Longmont Museum, First Congregational, other partners.",
+      "default_privacy": "club_internal",
+      "reviewer_role": "president_board",
+      "auto_route": "ok when no private recipient data"
+    },
+    {
+      "tag_key": "annual_spring_tea",
+      "display_name": "Annual Spring Tea",
+      "folder_key": "05_events",
+      "placement_rule": "by_year",
+      "date_source": "document_date",
+      "definition": "Tea invitations, guest lists, sales, programs, house logistics, silver, bake sale, attendance and event photos.",
+      "default_privacy": "club_internal",
+      "reviewer_role": "tea_chair",
+      "auto_route": "privacy review for guest/contact lists"
+    },
+    {
+      "tag_key": "other_events",
+      "display_name": "Other Events",
+      "folder_key": "05_events",
+      "placement_rule": "by_year",
+      "date_source": "document_date",
+      "definition": "Christmas parties, luncheons, annual meeting when event-focused, museum event logistics not tied to 125th project management.",
+      "default_privacy": "club_internal",
+      "reviewer_role": "event_chair",
+      "auto_route": "ok if event/date clear"
+    },
+    {
+      "tag_key": "history_archive_general",
+      "display_name": "History and Archive General",
+      "folder_key": "06_history_archive",
+      "placement_rule": "by_year",
+      "date_source": "document_date",
+      "definition": "Historical records that do not belong more specifically to scrapbooks, photos, yearbooks, press, or publications.",
+      "default_privacy": "club_internal",
+      "reviewer_role": "historian",
+      "auto_route": "review provenance before final"
+    },
+    {
+      "tag_key": "scrapbooks",
+      "display_name": "Scrapbooks",
+      "folder_key": "06_history_archive",
+      "placement_rule": "by_year",
+      "date_source": "document_date",
+      "definition": "Scrapbook scans, page images, page inventories, processed scrapbook outputs.",
+      "default_privacy": "club_internal",
+      "reviewer_role": "historian",
+      "auto_route": "date uncertainty should trigger review"
+    },
+    {
+      "tag_key": "historical_photos",
+      "display_name": "Historical Photos",
+      "folder_key": "06_history_archive",
+      "placement_rule": "by_year",
+      "date_source": "captured_date",
+      "definition": "Standalone photos, extracted scrapbook photos, event photos, website/photo archive material.",
+      "default_privacy": "club_internal",
+      "reviewer_role": "historian",
+      "auto_route": "use upload year only if captured year missing"
+    },
+    {
+      "tag_key": "press_publications",
+      "display_name": "Press, Publications, and Public History",
+      "folder_key": "06_history_archive",
+      "placement_rule": "by_year",
+      "date_source": "document_date",
+      "definition": "Newspaper clippings, programs, booklets, history book drafts, public-facing historical summaries.",
+      "default_privacy": "public",
+      "reviewer_role": "historian_president",
+      "auto_route": "public only after review"
+    },
+    {
+      "tag_key": "communications_templates",
+      "display_name": "Communications and Templates",
+      "folder_key": "07_communications",
+      "placement_rule": "flat",
+      "date_source": "upload_date",
+      "definition": "Reusable correspondence templates, style guide, thank-yous, invitations, condolence/get-well/milestone text.",
+      "default_privacy": "club_internal",
+      "reviewer_role": "correspondence_secretary",
+      "auto_route": "ok for templates; review personal letters"
+    },
+    {
+      "tag_key": "operations_assets",
+      "display_name": "Operations and Physical Assets",
+      "folder_key": "08_operations_assets",
+      "placement_rule": "flat",
+      "date_source": "upload_date",
+      "definition": "Silver, supplies, storage, QR codes, checklists, physical archive inventory, non-finance operational assets.",
+      "default_privacy": "club_internal",
+      "reviewer_role": "operations_owner",
+      "auto_route": "ok if no private data"
+    },
+    {
+      "tag_key": "legal_insurance_compliance",
+      "display_name": "Legal, Insurance, and Compliance",
+      "folder_key": "08_operations_assets",
+      "placement_rule": "by_year",
+      "date_source": "document_date",
+      "definition": "Insurance applications/quotes/policies, IRS/501(c)(3), EIN, risk notes, compliance docs.",
+      "default_privacy": "legal_irs_sensitive",
+      "reviewer_role": "president_board",
+      "auto_route": "board review"
+    },
+    {
+      "tag_key": "anniversary_125th",
+      "display_name": "125th Anniversary",
+      "folder_key": "09_125th_anniversary",
+      "placement_rule": "flat",
+      "date_source": "upload_date",
+      "definition": "Overall 125th planning, committee materials, project tracker, budget, milestone timeline, public communications calendar.",
+      "default_privacy": "club_internal",
+      "reviewer_role": "anniversary_lead",
+      "auto_route": "ok when clearly anniversary project management"
+    },
+    {
+      "tag_key": "cookbook_project",
+      "display_name": "Cookbook Project",
+      "folder_key": "09_125th_anniversary",
+      "placement_rule": "flat",
+      "date_source": "upload_date",
+      "definition": "Cookbook reissue, recipes, Morris Publishing, recipe scans, cookbook committee handoff and budget.",
+      "default_privacy": "club_internal",
+      "reviewer_role": "cookbook_chair",
+      "auto_route": "review member/family recipe rights if public"
+    },
+    {
+      "tag_key": "documentary_project",
+      "display_name": "Documentary Project",
+      "folder_key": "09_125th_anniversary",
+      "placement_rule": "flat",
+      "date_source": "upload_date",
+      "definition": "Innovation Center documentary, interview lists, footage, release status, screening logistics.",
+      "default_privacy": "club_internal",
+      "reviewer_role": "documentary_chair",
+      "auto_route": "needs release/privacy review for people footage"
+    },
+    {
+      "tag_key": "central_garden_project",
+      "display_name": "Central Garden Project",
+      "folder_key": "09_125th_anniversary",
+      "placement_rule": "flat",
+      "date_source": "upload_date",
+      "definition": "Central Elementary garden collaboration, dedication, naming ideas, Kerri Burks coordination, PTO overlap.",
+      "default_privacy": "club_internal",
+      "reviewer_role": "central_garden_chair",
+      "auto_route": "ok unless student data appears"
+    },
+    {
+      "tag_key": "website_public_materials",
+      "display_name": "Website and Public Materials",
+      "folder_key": "07_communications",
+      "placement_rule": "flat",
+      "date_source": "upload_date",
+      "definition": "Website backup, public graphics, logos, flyers, public donation materials, approved public copy.",
+      "default_privacy": "public",
+      "reviewer_role": "communications_owner",
+      "auto_route": "public assets ok; links/QRs require review"
+    },
+    {
+      "tag_key": "system_exports_logs",
+      "display_name": "System Exports and Logs",
+      "folder_key": "99_system_exports_logs",
+      "placement_rule": "by_year_month",
+      "date_source": "upload_date",
+      "definition": "Manifests, classification reports, review exports, migration logs, generated structured datasets.",
+      "default_privacy": "system_admin",
+      "reviewer_role": "verdify_admin",
+      "auto_route": "admin-only"
+    }
+  ],
+  "record_types": [
+    {
+      "key": "photo",
+      "definition": "Image of people, events, places, documents, objects, or website graphics.",
+      "notes": "Use visual/OCR workflow; extract people/date/source; default to privacy review for living people or students."
+    },
+    {
+      "key": "scrapbook_page",
+      "definition": "Full scrapbook page or extracted page image.",
+      "notes": "Preserve page number, volume, source collection, and full-page image as original evidence."
+    },
+    {
+      "key": "yearbook_scan",
+      "definition": "Yearbook page/image or yearbook-derived file.",
+      "notes": "Yearbook-first member authority; capture member, officer, committee, and role facts."
+    },
+    {
+      "key": "meeting_minutes",
+      "definition": "Formal minutes or transcribed minutes.",
+      "notes": "Use for official actions, votes, reports, program decisions; source-cite facts."
+    },
+    {
+      "key": "agenda",
+      "definition": "Meeting agenda or agenda-only best-available record.",
+      "notes": "Do not treat as minutes unless no minutes exist; mark agenda-only when relevant."
+    },
+    {
+      "key": "treasurer_report",
+      "definition": "Budget, balance, report, account statement, reserve/endowment material.",
+      "notes": "Treasurer-only or board-only until reviewed."
+    },
+    {
+      "key": "donation_export",
+      "definition": "PayPal/Zeffy/check/cash donor export or receipt request.",
+      "notes": "Donor-sensitive; exclude from normal search/chat."
+    },
+    {
+      "key": "event_material",
+      "definition": "Invitation, RSVP, program, sign-up, bake-sale sheet, event logistics.",
+      "notes": "Route by event and year; capture donor/contact privacy."
+    },
+    {
+      "key": "governance_document",
+      "definition": "Bylaw, survey, policy, role definition, election/nomination material.",
+      "notes": "Board review; track version/draft/final status."
+    },
+    {
+      "key": "membership_record",
+      "definition": "Roster, member status, officer list, committee list, member bio.",
+      "notes": "Member-private unless historically public and reviewed."
+    },
+    {
+      "key": "press_clipping",
+      "definition": "Newspaper/magazine/web article or clipping.",
+      "notes": "Capture publication, date, OCR confidence, copyright/publication status."
+    },
+    {
+      "key": "presentation",
+      "definition": "Canva/slides/deck/workbook for Rotary, museum, anniversary, board.",
+      "notes": "Capture output usage and source evidence status."
+    },
+    {
+      "key": "inventory",
+      "definition": "Physical asset or archive inventory.",
+      "notes": "Capture physical location, custodian, last verified date."
+    },
+    {
+      "key": "publication",
+      "definition": "Cookbook, history book, program booklet, public brochure.",
+      "notes": "Capture version and publication rights/review status."
+    },
+    {
+      "key": "research_note",
+      "definition": "AI or human synthesis, house history, fact bank, narrative draft.",
+      "notes": "Must point back to source citations before public use."
+    },
+    {
+      "key": "legal_insurance",
+      "definition": "Insurance, compliance, IRS/EIN, risk docs.",
+      "notes": "Restricted; board review."
+    },
+    {
+      "key": "email_correspondence",
+      "definition": "Draft/sent email, thank-you, condolence, committee handoff, board communication.",
+      "notes": "Capture author voice/template vs personal communication."
+    },
+    {
+      "key": "web_asset",
+      "definition": "Logo, website screenshot, QR code, public flyer, website backup item.",
+      "notes": "Review active links and public safety before publication."
+    },
+    {
+      "key": "dataset_workbook",
+      "definition": "Workbook/tracker/database export structured around records.",
+      "notes": "Preserve schema/tab notes and source confidence."
+    },
+    {
+      "key": "runbook",
+      "definition": "Operating instructions, SOP, one-page role card, handoff.",
+      "notes": "Keep current version in readme/runbooks folder."
+    }
+  ],
+  "functions": [
+    {
+      "key": "governance",
+      "definition": "Decision rules, bylaws, elections, surveys, policy audit, officer roles."
+    },
+    {
+      "key": "finance",
+      "definition": "Budgets, treasurer reports, reserves, endowment, memorial fund, financial analysis."
+    },
+    {
+      "key": "donations_fundraising",
+      "definition": "Donors, receipts, campaigns, PayPal/Venmo/Zeffy, fundraising workflows."
+    },
+    {
+      "key": "membership",
+      "definition": "Rosters, yearbooks, nominations, status changes, officer/service history."
+    },
+    {
+      "key": "programs_mission",
+      "definition": "Dental work, Senior Smiles, scholarships, Atwood, VCP, partner services."
+    },
+    {
+      "key": "events",
+      "definition": "Tea, annual meeting, luncheons, parties, museum event, bake sale logistics."
+    },
+    {
+      "key": "communications",
+      "definition": "Letters, invites, thank-yous, templates, public copy, website/social material."
+    },
+    {
+      "key": "history_archive",
+      "definition": "Scrapbooks, photos, scans, transcriptions, timelines, source provenance."
+    },
+    {
+      "key": "operations_assets",
+      "definition": "Silver, supplies, storage, insurance, checklists, physical asset custody."
+    },
+    {
+      "key": "public_relations",
+      "definition": "Rotary presentation, press, public speaking, museum/story outputs."
+    },
+    {
+      "key": "anniversary_projects",
+      "definition": "125th committees, documentary, cookbook, Central garden, enhanced Tea."
+    }
+  ],
+  "programs_projects_events": [
+    {
+      "display_name": "Annual Spring Tea",
+      "synonyms": [
+        "Tea",
+        "Sunshine Tea",
+        "Annual Tea",
+        "May Tea",
+        "silver tea"
+      ],
+      "notes": "Fundraiser/event and annual meeting tradition; tag guest lists, programs, bake sale, silver logistics, photos."
+    },
+    {
+      "display_name": "Annual Meeting",
+      "synonyms": [
+        "annual business meeting",
+        "May meeting"
+      ],
+      "notes": "Official meeting/election/business context, often tied to Tea."
+    },
+    {
+      "display_name": "Bake Sale",
+      "synonyms": [
+        "bake-sale",
+        "baked goods",
+        "table sales"
+      ],
+      "notes": "Tea or event fundraising sales distinct from donations."
+    },
+    {
+      "display_name": "Dental Program",
+      "synonyms": [
+        "dental",
+        "dental clinic",
+        "dental screening",
+        "children dental",
+        "school dental"
+      ],
+      "notes": "Core mission dental care for students/children/veterans/low-income residents."
+    },
+    {
+      "display_name": "Senior Smiles",
+      "synonyms": [
+        "senior dental",
+        "older adults dental",
+        "seniors dental program"
+      ],
+      "notes": "Senior dental support started in the modern era."
+    },
+    {
+      "display_name": "Scholarships",
+      "synonyms": [
+        "dental career scholarship",
+        "scholarship application",
+        "award"
+      ],
+      "notes": "Dental career scholarship records; beneficiary-sensitive by default."
+    },
+    {
+      "display_name": "Atwood House",
+      "synonyms": [
+        "Atwood",
+        "transitional shelter"
+      ],
+      "notes": "Program/partner support."
+    },
+    {
+      "display_name": "SVVSD Dental Support",
+      "synonyms": [
+        "school district dental",
+        "St. Vrain schools"
+      ],
+      "notes": "School and student dental support context."
+    },
+    {
+      "display_name": "Dental Aid Partnership",
+      "synonyms": [
+        "Dental Aid",
+        "clinic partner"
+      ],
+      "notes": "Partner organization tied to dental services."
+    },
+    {
+      "display_name": "Veterans Community Project",
+      "synonyms": [
+        "VCP",
+        "veterans dental"
+      ],
+      "notes": "Modern partner/mission support."
+    },
+    {
+      "display_name": "Longmont Rotary Partnership",
+      "synonyms": [
+        "Rotary",
+        "Rotary presentation",
+        "shared families"
+      ],
+      "notes": "Partnership, presentation, and historical overlap with Rotary."
+    },
+    {
+      "display_name": "First Congregational Church Relationship",
+      "synonyms": [
+        "Congregational Church",
+        "Rev. Markley",
+        "Markley letter"
+      ],
+      "notes": "Historic relationship and source material."
+    },
+    {
+      "display_name": "Emperor Visit 1921",
+      "synonyms": [
+        "Crown Prince",
+        "Japan",
+        "1921 visit"
+      ],
+      "notes": "Specific historical photo/story collection."
+    },
+    {
+      "display_name": "125th Anniversary",
+      "synonyms": [
+        "quasquicentennial",
+        "anniversary year",
+        "125"
+      ],
+      "notes": "Use this project tag independent of final date convention."
+    },
+    {
+      "display_name": "Museum Anniversary Event",
+      "synonyms": [
+        "Longmont Museum",
+        "museum event",
+        "Ally Vair"
+      ],
+      "notes": "125th anniversary event committee material."
+    },
+    {
+      "display_name": "Documentary",
+      "synonyms": [
+        "Innovation Center",
+        "interviews",
+        "film"
+      ],
+      "notes": "Documentary project."
+    },
+    {
+      "display_name": "Cookbook",
+      "synonyms": [
+        "recipes",
+        "Morris Publishing",
+        "cookbook reissue"
+      ],
+      "notes": "Cookbook committee and recipe/source material."
+    },
+    {
+      "display_name": "Central Garden",
+      "synonyms": [
+        "Central Elementary",
+        "Kerri Burks",
+        "garden dedication"
+      ],
+      "notes": "Central garden collaboration."
+    },
+    {
+      "display_name": "Tea Enhancement",
+      "synonyms": [
+        "enhanced Tea",
+        "anniversary Tea"
+      ],
+      "notes": "Anniversary overlay on the Annual Spring Tea."
+    },
+    {
+      "display_name": "Insurance Project",
+      "synonyms": [
+        "D&O",
+        "general liability",
+        "GL",
+        "policy quote"
+      ],
+      "notes": "Insurance and risk work."
+    },
+    {
+      "display_name": "Governance Survey",
+      "synonyms": [
+        "survey",
+        "25-question survey",
+        "member survey"
+      ],
+      "notes": "Member governance survey."
+    },
+    {
+      "display_name": "Policy Audit",
+      "synonyms": [
+        "bylaw audit",
+        "standing rules",
+        "policy review"
+      ],
+      "notes": "Policy/bylaw audit."
+    },
+    {
+      "display_name": "Stuart Funds Policy",
+      "synonyms": [
+        "Lila Jean Stewart",
+        "Stewart Foundation",
+        "reserve",
+        "endowment"
+      ],
+      "notes": "Stewart gifts and spending/reserve policy."
+    },
+    {
+      "display_name": "PayPal Donation Infrastructure",
+      "synonyms": [
+        "PayPal",
+        "Venmo",
+        "receipts",
+        "donation landing page"
+      ],
+      "notes": "Payment/donation infrastructure."
+    },
+    {
+      "display_name": "Silver Service",
+      "synonyms": [
+        "silver inventory",
+        "sugar",
+        "creamer",
+        "silver tote"
+      ],
+      "notes": "Tea silver assets and custody."
+    },
+    {
+      "display_name": "History Book",
+      "synonyms": [
+        "history book",
+        "Kim Henry",
+        "fact bank"
+      ],
+      "notes": "History book and story-ready source outputs."
+    },
+    {
+      "display_name": "Buddy Bench",
+      "synonyms": [
+        "buddy benches",
+        "SVVSD elementary"
+      ],
+      "notes": "Possible signature project under strategic vision."
+    }
+  ],
+  "source_collections": [
+    {
+      "display_name": "Green Scrapbook",
+      "source_type": "physical/archive scan",
+      "notes": "Green Scrapbook pages 1-30 and 31-113, inventories and extracted photos."
+    },
+    {
+      "display_name": "50 Year Scrapbook",
+      "source_type": "physical/archive scan",
+      "notes": "Large unprocessed or partially processed 50-year scrapbook stream."
+    },
+    {
+      "display_name": "Brown Scrapbook",
+      "source_type": "physical/archive scan",
+      "notes": "Brown scrapbook processed inventory/output stream."
+    },
+    {
+      "display_name": "Small Green Scrapbook",
+      "source_type": "physical/archive scan",
+      "notes": "SmallGreen PDF/processed inventory/page stream."
+    },
+    {
+      "display_name": "1980s Scrapbook",
+      "source_type": "physical/archive scan",
+      "notes": "1980s page and photo stream."
+    },
+    {
+      "display_name": "1990s Scrapbook",
+      "source_type": "physical/archive scan",
+      "notes": "1990s scrapbook page/photo/inventory stream."
+    },
+    {
+      "display_name": "2005-2009 Scrapbook",
+      "source_type": "physical/archive scan",
+      "notes": "2005-2009 scrapbook processed pages and inventory."
+    },
+    {
+      "display_name": "2010-2014 Scrapbook",
+      "source_type": "physical/archive scan",
+      "notes": "2010-2014 scrapbook pages/photos/inventory."
+    },
+    {
+      "display_name": "Black Chest Archive",
+      "source_type": "physical archive",
+      "notes": "Physical black chest archive; include guest books, yearbooks, museum-scan candidates, family-return materials."
+    },
+    {
+      "display_name": "Sunshine Tea Guest Books",
+      "source_type": "physical/scanned archive",
+      "notes": "Original Tea guest books and scanned guest records."
+    },
+    {
+      "display_name": "Yearbooks",
+      "source_type": "physical/scanned archive",
+      "notes": "Yearbooks as membership source authority."
+    },
+    {
+      "display_name": "Hand-Painted Yearbooks",
+      "source_type": "physical/scanned archive",
+      "notes": "Nina Olden hand-painted cover yearbooks."
+    },
+    {
+      "display_name": "Yearbook Rescan",
+      "source_type": "NAS local source",
+      "notes": "May 2026 early yearbook rescan images, currently /mnt/emily/Sunshine/Yearbook Rescan."
+    },
+    {
+      "display_name": "Loose Anniversary Photos",
+      "source_type": "physical archive",
+      "notes": "Extra anniversary-event photos intended for member distribution."
+    },
+    {
+      "display_name": "Leaf Landers Articles",
+      "source_type": "physical archive",
+      "notes": "Articles flagged for possible family return; preserve family-return status."
+    },
+    {
+      "display_name": "Dental Clinic Photos",
+      "source_type": "Drive/local photos",
+      "notes": "Dental clinic archival and modern photos."
+    },
+    {
+      "display_name": "Rotary History Folder",
+      "source_type": "Google Drive/local",
+      "notes": "Rotary presentation sources and shared history assets."
+    },
+    {
+      "display_name": "Emperor Visit 1921 Folder",
+      "source_type": "Google Drive/local",
+      "notes": "Emperor Visit 1921 historical photos."
+    },
+    {
+      "display_name": "Panorama Docs / Emperor Visit",
+      "source_type": "Google Drive/local",
+      "notes": "Duplicate/alternate Emperor Visit source folder."
+    },
+    {
+      "display_name": "Markley Letter Collection",
+      "source_type": "Google Drive/local",
+      "notes": "Transcribed historical letters including Rev. Markley."
+    },
+    {
+      "display_name": "Governance Folder",
+      "source_type": "Google Drive/local",
+      "notes": "Bylaws, surveys, policy docs."
+    },
+    {
+      "display_name": "Treasurer / Finance Records",
+      "source_type": "Google Drive/local/email",
+      "notes": "Treasurer reports, budgets, endowment/LCF source packets."
+    },
+    {
+      "display_name": "Tea Workbook",
+      "source_type": "Excel/local/Drive",
+      "notes": "Tea tracker and PayPal bake-sale workbook."
+    },
+    {
+      "display_name": "Silver Inventory",
+      "source_type": "Excel/printed",
+      "notes": "Silver service inventory and reconciliation."
+    },
+    {
+      "display_name": "Canva Rotary Deck",
+      "source_type": "Canva",
+      "notes": "Live Rotary slide deck and related workbooks."
+    },
+    {
+      "display_name": "Committee Handoff Documents",
+      "source_type": "Word/local/Drive",
+      "notes": "Anniversary committee signup and handoff emails."
+    },
+    {
+      "display_name": "PayPal Export",
+      "source_type": "PayPal/email",
+      "notes": "Donation and payment exports; donor-sensitive."
+    },
+    {
+      "display_name": "Website Public Materials",
+      "source_type": "Google Drive/local",
+      "notes": "Website backup, logos, public materials."
+    },
+    {
+      "display_name": "Slack Upload",
+      "source_type": "Slack/file intake",
+      "notes": "Files received via Slack upload and preserved in intake manifests."
+    },
+    {
+      "display_name": "Emily Local Files",
+      "source_type": "local laptop/NAS",
+      "notes": "Emily-created local work products that must migrate away from personal custody."
+    },
+    {
+      "display_name": "Google Drive Current Folder",
+      "source_type": "Google Drive",
+      "notes": "Current Sunshine Drive source and final canonical library."
+    },
+    {
+      "display_name": "NAS Working Corpus",
+      "source_type": "NAS",
+      "notes": "James/Verdify staging corpus; not final source of truth."
+    },
+    {
+      "display_name": "Museum Scan Candidate",
+      "source_type": "physical/archive",
+      "notes": "Items needing museum/larger-format scanning."
+    },
+    {
+      "display_name": "History Book Resources",
+      "source_type": "local/Drive",
+      "notes": "History book folder, photos, tracking logs, articles and features."
+    },
+    {
+      "display_name": "Yearbook Membership Reset",
+      "source_type": "local workbook",
+      "notes": "Yearbook-first member database reset workbook and supporting evidence."
+    },
+    {
+      "display_name": "Budget Review 2016-2026",
+      "source_type": "local workbook/PDF/text",
+      "notes": "Budget packet review and source extracts."
+    },
+    {
+      "display_name": "Financial Analysis",
+      "source_type": "local workbook",
+      "notes": "Financial tracker workbooks and notes."
+    }
+  ],
+  "privacy_access": [
+    {
+      "key": "public",
+      "definition": "Approved public history, website assets, flyers, public event materials.",
+      "routing_note": "Can appear in public search/chat after review."
+    },
+    {
+      "key": "club_internal",
+      "definition": "Routine internal club records and historical archive materials.",
+      "routing_note": "Visible to active internal users; not public by default."
+    },
+    {
+      "key": "board_only",
+      "definition": "Governance disputes, policy drafts, board deliberation, sensitive planning.",
+      "routing_note": "Exclude from general member search unless approved."
+    },
+    {
+      "key": "treasurer_only",
+      "definition": "Financial account detail, treasurer reports, reconciliation, donor/payment operational records.",
+      "routing_note": "Treasurer and approved officers only."
+    },
+    {
+      "key": "donor_sensitive",
+      "definition": "Donor names, addresses, amounts, receipts, stewardship notes.",
+      "routing_note": "Exclude from normal chat/search; allow aggregate reporting only."
+    },
+    {
+      "key": "member_private",
+      "definition": "Member contact info, private status, life-event communications, nominations.",
+      "routing_note": "Protect contact details and personal notes."
+    },
+    {
+      "key": "beneficiary_sensitive",
+      "definition": "Students, seniors, veterans, scholarship applicants, dental recipients.",
+      "routing_note": "Strictest privacy; no public use unless sanitized."
+    },
+    {
+      "key": "legal_irs_sensitive",
+      "definition": "EIN/IRS/compliance/insurance/policy docs.",
+      "routing_note": "Board/treasurer/admin only."
+    },
+    {
+      "key": "family_return_sensitive",
+      "definition": "Items flagged for return to family or involving family provenance rights.",
+      "routing_note": "Historian review before publishing or moving."
+    },
+    {
+      "key": "system_admin",
+      "definition": "Logs, manifests, credentials references, migrations, classification reports.",
+      "routing_note": "Verdify/admin only."
+    },
+    {
+      "key": "restricted",
+      "definition": "Unknown or mixed sensitivity until reviewed.",
+      "routing_note": "Default for uncertain intake."
+    }
+  ],
+  "processing_statuses": [
+    {
+      "key": "not_digitized",
+      "definition": "Physical item exists; no usable scan/photo yet."
+    },
+    {
+      "key": "scanned_photographed",
+      "definition": "Digital image exists; text/facts not extracted."
+    },
+    {
+      "key": "ocr_needed",
+      "definition": "Needs OCR or transcription."
+    },
+    {
+      "key": "ocr_complete",
+      "definition": "Machine-readable text exists."
+    },
+    {
+      "key": "ai_cataloged",
+      "definition": "AI extracted metadata/facts/entities."
+    },
+    {
+      "key": "human_review_needed",
+      "definition": "Needs reviewer judgment; include reason."
+    },
+    {
+      "key": "human_reviewed",
+      "definition": "Approved by assigned reviewer."
+    },
+    {
+      "key": "duplicate_candidate",
+      "definition": "Possible exact/near duplicate or newer version."
+    },
+    {
+      "key": "needs_date_confirmation",
+      "definition": "Date is missing/approximate/inferred."
+    },
+    {
+      "key": "needs_person_identification",
+      "definition": "People in image/text need identification or disambiguation."
+    },
+    {
+      "key": "needs_privacy_review",
+      "definition": "Could contain donor/member/beneficiary/private info."
+    },
+    {
+      "key": "needs_source_verification",
+      "definition": "AI/human summary needs source citation before public use."
+    },
+    {
+      "key": "ready_for_drive_import",
+      "definition": "Safe to import/move once action approved."
+    },
+    {
+      "key": "ready_for_publication",
+      "definition": "Approved/sanitized for website, deck, program, history book, etc."
+    },
+    {
+      "key": "restricted",
+      "definition": "Held from normal user search/chat."
+    },
+    {
+      "key": "archived_final",
+      "definition": "Final record; no current action expected."
+    }
+  ],
+  "usage_tags": [
+    {
+      "key": "drive_search",
+      "definition": "Should be discoverable in internal Drive/search."
+    },
+    {
+      "key": "grounded_chat",
+      "definition": "Allowed as source for chat at its privacy level."
+    },
+    {
+      "key": "anniversary_history_book",
+      "definition": "Useful for history book."
+    },
+    {
+      "key": "documentary",
+      "definition": "Useful for documentary."
+    },
+    {
+      "key": "rotary_presentation",
+      "definition": "Useful for Rotary or public presentation."
+    },
+    {
+      "key": "museum_event",
+      "definition": "Useful for museum anniversary event."
+    },
+    {
+      "key": "tea_program",
+      "definition": "Useful for Annual Tea program."
+    },
+    {
+      "key": "cookbook",
+      "definition": "Useful for cookbook/reissue."
+    },
+    {
+      "key": "website",
+      "definition": "Useful for public website."
+    },
+    {
+      "key": "governance_review",
+      "definition": "Useful for policy/bylaw/survey decisions."
+    },
+    {
+      "key": "treasurer_reconciliation",
+      "definition": "Useful for finance reconciliation."
+    },
+    {
+      "key": "donor_stewardship",
+      "definition": "Useful for thank-you/receipt/campaign work."
+    },
+    {
+      "key": "member_roster_reset",
+      "definition": "Useful for yearbook-first member database."
+    },
+    {
+      "key": "public_fact_bank",
+      "definition": "Potential did-you-know / timeline fact."
+    },
+    {
+      "key": "training_runbook",
+      "definition": "Useful for role handoff or Verdify template."
+    }
+  ],
+  "reviewer_roles": [
+    {
+      "key": "historian",
+      "definition": "Historical people, dates, events, provenance, archive classifications."
+    },
+    {
+      "key": "treasurer",
+      "definition": "Donation, receipt, budget, account, reserve/endowment records."
+    },
+    {
+      "key": "president_board",
+      "definition": "Governance, policy, insurance, board-level sensitive items."
+    },
+    {
+      "key": "correspondence_secretary",
+      "definition": "Member contact info, correspondence templates, personal letters."
+    },
+    {
+      "key": "tea_chair",
+      "definition": "Annual Tea materials, silver, supplies, guest/event workflows."
+    },
+    {
+      "key": "program_owner",
+      "definition": "Dental/Senior Smiles/scholarship/partner program owner."
+    },
+    {
+      "key": "board_restricted",
+      "definition": "Beneficiary-sensitive or legal/IRS-sensitive material."
+    },
+    {
+      "key": "anniversary_lead",
+      "definition": "125th project materials and committee coordination."
+    },
+    {
+      "key": "archive_committee",
+      "definition": "Physical archive provenance, museum-scan candidates, family-return questions."
+    },
+    {
+      "key": "communications_owner",
+      "definition": "Website, public copy, social/public-facing materials."
+    },
+    {
+      "key": "verdify_admin",
+      "definition": "Taxonomy mapping, system migrations, classifier review, logs."
+    }
+  ],
+  "retrieval_questions": [
+    {
+      "id": "Q01",
+      "question": "Find all materials about the Dental Program before 1950.",
+      "taxonomy_test": "dental_program + year < 1950 + source citations"
+    },
+    {
+      "id": "Q02",
+      "question": "Find all references to Senior Smiles.",
+      "taxonomy_test": "senior_smiles + synonyms; include source confidence"
+    },
+    {
+      "id": "Q03",
+      "question": "Find all documents related to the Stuart Family funds.",
+      "taxonomy_test": "Stuart Funds Policy + finance/governance + board privacy"
+    },
+    {
+      "id": "Q04",
+      "question": "Find all usable photos for the Rotary deck.",
+      "taxonomy_test": "usage rotary_presentation + photo + ready_for_publication/public or club_internal reviewed"
+    },
+    {
+      "id": "Q05",
+      "question": "Find all Tea attendance figures by decade.",
+      "taxonomy_test": "Annual Spring Tea + extracted metric attendance + decade"
+    },
+    {
+      "id": "Q06",
+      "question": "Find all members from families with multi-generation Sunshine involvement.",
+      "taxonomy_test": "membership/yearbooks + family entity + role facts"
+    },
+    {
+      "id": "Q07",
+      "question": "Find all items that mention Longmont Rotary.",
+      "taxonomy_test": "organization Longmont Rotary + related documents across history/programs"
+    },
+    {
+      "id": "Q08",
+      "question": "Find all 125th anniversary committee materials.",
+      "taxonomy_test": "125th Anniversary + committee entity + current status"
+    },
+    {
+      "id": "Q09",
+      "question": "Find all files that need human review before publication.",
+      "taxonomy_test": "processing_status human_review_needed/needs_privacy_review/needs_source_verification + usage public outputs"
+    },
+    {
+      "id": "Q10",
+      "question": "Find all donor records that should not be visible to general members.",
+      "taxonomy_test": "privacy donor_sensitive/treasurer_only + donations_receipts_fundraising"
+    },
+    {
+      "id": "Q11",
+      "question": "Find all yearbook-derived facts for a named officer/member.",
+      "taxonomy_test": "membership_rosters_yearbooks + person authority + role facts"
+    },
+    {
+      "id": "Q12",
+      "question": "Find all agenda-only records where minutes are still missing.",
+      "taxonomy_test": "record_type agenda + status agenda-only/open minutes gap"
+    },
+    {
+      "id": "Q13",
+      "question": "Find all source files for the history book fact bank.",
+      "taxonomy_test": "usage anniversary_history_book/public_fact_bank + needs_source_verification status"
+    },
+    {
+      "id": "Q14",
+      "question": "Find all physical archive items that still need digitization.",
+      "taxonomy_test": "source Black Chest Archive/Museum Scan Candidate + processing not_digitized"
+    },
+    {
+      "id": "Q15",
+      "question": "Find all restricted scholarship or dental-recipient records.",
+      "taxonomy_test": "privacy beneficiary_sensitive + scholarships/dental/senior_smiles"
+    }
+  ],
+  "golden_examples": [
+    {
+      "example_id": "GE01",
+      "file_path": "/mnt/emily/Sunshine/Sunshine in Progress/Verdify Taxonomy Handoff/source_briefs/Sunshine_Club_Verdify_Brief.docx",
+      "primary_tag": "runbooks_handoff",
+      "record_type": "runbook",
+      "date": "2026-05",
+      "function": "anniversary_projects",
+      "programs": "125th Anniversary; PayPal Donation Infrastructure; Governance Survey; Documentary; Cookbook",
+      "source_collection": "Slack Upload",
+      "privacy": "club_internal",
+      "processing_status": "human_reviewed",
+      "usage": "training_runbook; drive_search",
+      "notes": "Main client brief; make this a project source of truth, not just another doc."
+    },
+    {
+      "example_id": "GE02",
+      "file_path": "/mnt/emily/Sunshine/Sunshine in Progress/Verdify Taxonomy Handoff/source_briefs/chatgptsunshine_verdify_chat.docx",
+      "primary_tag": "runbooks_handoff",
+      "record_type": "research_note",
+      "date": "2026-05",
+      "function": "history_archive",
+      "programs": "125th Anniversary",
+      "source_collection": "Slack Upload",
+      "privacy": "club_internal",
+      "processing_status": "human_reviewed",
+      "usage": "training_runbook; taxonomy_design",
+      "notes": "Contains taxonomy framing and GitHub evaluation; source for V1 taxonomy."
+    },
+    {
+      "example_id": "GE03",
+      "file_path": "/mnt/emily/Sunshine/Sunshine Club Strategic Vision - Draft Proposal.md",
+      "primary_tag": "governance_bylaws_policy",
+      "record_type": "governance_document",
+      "date": "2026-04",
+      "function": "governance",
+      "programs": "Stuart Funds Policy; Insurance Project; Buddy Bench",
+      "source_collection": "Emily Local Files",
+      "privacy": "board_only",
+      "processing_status": "needs_source_verification",
+      "usage": "governance_review",
+      "notes": "Strategic proposal; do not treat financial figures as final without source treasurer reports."
+    },
+    {
+      "example_id": "GE04",
+      "file_path": "/mnt/emily/Sunshine/Sunshine in Progress/Document Intake/2026-05-22 Slack Uploads/originals/2022 Sunshine Senior Active Years.docx",
+      "primary_tag": "membership_rosters_yearbooks",
+      "record_type": "membership_record",
+      "date": "2022",
+      "function": "membership",
+      "programs": "",
+      "source_collection": "Slack Upload; Yearbook Membership Reset",
+      "privacy": "member_private",
+      "processing_status": "human_review_needed",
+      "usage": "member_roster_reset",
+      "notes": "Supporting evidence only; yearbooks remain source authority."
+    },
+    {
+      "example_id": "GE05",
+      "file_path": "/mnt/emily/Sunshine/Sunshine in Progress/Scholarship/2021 Dental Career Scholarship Application - received 2026-05-22.docx",
+      "primary_tag": "scholarships",
+      "record_type": "governance_document",
+      "date": "2021",
+      "function": "programs_mission",
+      "programs": "Scholarships",
+      "source_collection": "Slack Upload",
+      "privacy": "beneficiary_sensitive",
+      "processing_status": "restricted; needs_privacy_review",
+      "usage": "drive_search restricted",
+      "notes": "Contains applicant contact details; exclude from normal search/chat."
+    },
+    {
+      "example_id": "GE06",
+      "file_path": "/mnt/emily/Sunshine/Sunshine in Progress/Minutes Transcription/Agendas and Supporting Documents/2022-04-12 Sunshine Club Agenda - Agenda 4-12-22 version.docx",
+      "primary_tag": "meeting_records",
+      "record_type": "agenda",
+      "date": "2022-04-12",
+      "function": "governance",
+      "programs": "",
+      "source_collection": "Slack Upload",
+      "privacy": "club_internal",
+      "processing_status": "human_reviewed",
+      "usage": "drive_search",
+      "notes": "Agenda-only; does not close April 2022 missing minutes gap."
+    },
+    {
+      "example_id": "GE07",
+      "file_path": "/mnt/emily/Sunshine/Sunshine in Progress/Financial Analysis/Sunshine_Financial_Tracker_2026-05-15.xlsx",
+      "primary_tag": "finance_treasurer_records",
+      "record_type": "dataset_workbook",
+      "date": "2026-05-15",
+      "function": "finance",
+      "programs": "Stuart Funds Policy",
+      "source_collection": "Financial Analysis",
+      "privacy": "treasurer_only",
+      "processing_status": "human_review_needed",
+      "usage": "treasurer_reconciliation; governance_review",
+      "notes": "Structured financial dataset; backfill source confidence before formal presentation."
+    },
+    {
+      "example_id": "GE08",
+      "file_path": "/mnt/emily/Sunshine/Sunshine in Progress/Budget Review 2016-2026/Treasurer_Budget_Packet_Review_2026-05-22.md",
+      "primary_tag": "finance_treasurer_records",
+      "record_type": "research_note",
+      "date": "2026-05-22",
+      "function": "finance",
+      "programs": "Stuart Funds Policy",
+      "source_collection": "Budget Review 2016-2026",
+      "privacy": "board_only",
+      "processing_status": "needs_source_verification",
+      "usage": "governance_review",
+      "notes": "Budget packet synthesis; preserve source links."
+    },
+    {
+      "example_id": "GE09",
+      "file_path": "/mnt/emily/Sunshine/Sunshine in Progress/Minutes Transcription/Yearbook Membership Reset/Sunshine_Yearbook_Membership_Reset.xlsx",
+      "primary_tag": "membership_rosters_yearbooks",
+      "record_type": "dataset_workbook",
+      "date": "2026-05-15",
+      "function": "membership",
+      "programs": "",
+      "source_collection": "Yearbook Membership Reset",
+      "privacy": "member_private",
+      "processing_status": "human_review_needed",
+      "usage": "member_roster_reset",
+      "notes": "Yearbook-first reset workbook; key source for person/role authority."
+    },
+    {
+      "example_id": "GE10",
+      "file_path": "/mnt/emily/Sunshine/Yearbook Rescan/1911/IMG_5047.JPG",
+      "primary_tag": "membership_rosters_yearbooks",
+      "record_type": "yearbook_scan",
+      "date": "1911",
+      "function": "membership",
+      "programs": "",
+      "source_collection": "Yearbook Rescan",
+      "privacy": "club_internal",
+      "processing_status": "scanned_photographed; ocr_needed",
+      "usage": "member_roster_reset; anniversary_history_book",
+      "notes": "Early yearbook source image; OCR/human review needed."
+    },
+    {
+      "example_id": "GE11",
+      "file_path": "/mnt/emily/Sunshine/Sunshine in Progress/Minutes Transcription/Scrapbook /Green Scrapbook pages 1-30/Full Pages/GreenSB_p02_DentalEffort_Bicentennial_1976.jpg",
+      "primary_tag": "scrapbooks",
+      "record_type": "scrapbook_page",
+      "date": "1976",
+      "function": "history_archive",
+      "programs": "Dental Program",
+      "source_collection": "Green Scrapbook",
+      "privacy": "club_internal",
+      "processing_status": "ai_cataloged; human_review_needed",
+      "usage": "anniversary_history_book; public_fact_bank",
+      "notes": "Scrapbook page with dental program relevance; retain page provenance."
+    },
+    {
+      "example_id": "GE12",
+      "file_path": "/mnt/emily/Sunshine/Sunshine in Progress/Minutes Transcription/Scrapbook /Green Scrapbook pages 1-30/Green_Scrapbook_Inventory.xlsx",
+      "primary_tag": "scrapbooks",
+      "record_type": "dataset_workbook",
+      "date": "2026",
+      "function": "history_archive",
+      "programs": "",
+      "source_collection": "Green Scrapbook",
+      "privacy": "club_internal",
+      "processing_status": "ai_cataloged",
+      "usage": "drive_search; training_runbook",
+      "notes": "Processed inventory output; system/export provenance matters."
+    },
+    {
+      "example_id": "GE13",
+      "file_path": "/mnt/emily/Sunshine/Sunshine in Progress/Minutes Transcription/Tracking logs/Sunshine_Rotary_Presentation_Workbook.xlsx",
+      "primary_tag": "press_publications",
+      "record_type": "dataset_workbook",
+      "date": "2026-04",
+      "function": "public_relations",
+      "programs": "Longmont Rotary Partnership",
+      "source_collection": "Rotary History Folder",
+      "privacy": "club_internal",
+      "processing_status": "needs_source_verification",
+      "usage": "rotary_presentation; public_fact_bank",
+      "notes": "Presentation source workbook; facts need citation status."
+    },
+    {
+      "example_id": "GE14",
+      "file_path": "/mnt/emily/Sunshine/Sunshine in Progress/Emily's Presidential Ideas/Anniversary Stuff/Committee_Handoff_Emails.docx",
+      "primary_tag": "anniversary_125th",
+      "record_type": "email_correspondence",
+      "date": "2026-03",
+      "function": "anniversary_projects",
+      "programs": "125th Anniversary; Museum Anniversary Event; Cookbook; Tea Enhancement; Central Garden; Documentary",
+      "source_collection": "Committee Handoff Documents",
+      "privacy": "club_internal",
+      "processing_status": "human_review_needed",
+      "usage": "anniversary_tracker; communications_templates",
+      "notes": "Split into committee-specific project records if needed."
+    },
+    {
+      "example_id": "GE15",
+      "file_path": "/mnt/emily/Sunshine/Sunshine in Progress/2026 tea/2026_Sunshine_Tea_Supply_Inventory_and_PayPal_Bake_Sale_Tracker.xlsx",
+      "primary_tag": "annual_spring_tea",
+      "record_type": "dataset_workbook",
+      "date": "2026",
+      "function": "events",
+      "programs": "Annual Spring Tea; Bake Sale; PayPal Donation Infrastructure; Silver Service",
+      "source_collection": "Tea Workbook",
+      "privacy": "club_internal",
+      "processing_status": "human_reviewed",
+      "usage": "donor_stewardship; treasurer_reconciliation; training_runbook",
+      "notes": "Event workflow bridge; needs downstream donor/treasurer integration."
+    },
+    {
+      "example_id": "GE16",
+      "file_path": "/mnt/emily/Sunshine/Sunshine in Progress/2026 tea/Paige_Silver_Items_Reconciliation_2013_vs_2023.md",
+      "primary_tag": "operations_assets",
+      "record_type": "inventory",
+      "date": "2026",
+      "function": "operations_assets",
+      "programs": "Silver Service; Annual Spring Tea",
+      "source_collection": "Silver Inventory",
+      "privacy": "club_internal",
+      "processing_status": "human_reviewed",
+      "usage": "training_runbook; drive_search",
+      "notes": "Physical asset chain-of-custody source."
+    },
+    {
+      "example_id": "GE17",
+      "file_path": "/mnt/emily/Sunshine/Sunshine in Progress/Emily's Presidential Ideas/Anniversary Stuff/Insurance/Insurance_Discussion_OnePager.docx",
+      "primary_tag": "legal_insurance_compliance",
+      "record_type": "legal_insurance",
+      "date": "2026",
+      "function": "operations_assets",
+      "programs": "Insurance Project",
+      "source_collection": "Governance Folder",
+      "privacy": "board_only",
+      "processing_status": "human_review_needed",
+      "usage": "governance_review",
+      "notes": "Board-sensitive risk/compliance material."
+    },
+    {
+      "example_id": "GE18",
+      "file_path": "/mnt/emily/Sunshine/Sunshine in Progress/Sunshine Website Backup/sunshine logo - Slack upload 2026-05-22.png",
+      "primary_tag": "website_public_materials",
+      "record_type": "web_asset",
+      "date": "2026-05-22",
+      "function": "communications",
+      "programs": "Website",
+      "source_collection": "Website Public Materials; Slack Upload",
+      "privacy": "public",
+      "processing_status": "archived_final",
+      "usage": "website",
+      "notes": "Small PNG logo; high-res versions also exist."
+    },
+    {
+      "example_id": "GE19",
+      "file_path": "/mnt/emily/Sunshine/Sunshine in Progress/History book resources/Longmont_Ledger_1922-03-10_Federated_Welfare_Association.png",
+      "primary_tag": "press_publications",
+      "record_type": "press_clipping",
+      "date": "1922-03-10",
+      "function": "history_archive",
+      "programs": "Longmont Rotary Partnership; First Congregational Church Relationship",
+      "source_collection": "History Book Resources",
+      "privacy": "public",
+      "processing_status": "needs_source_verification",
+      "usage": "anniversary_history_book; public_fact_bank",
+      "notes": "Potential founding/timeline evidence; use exact citation and date confidence."
+    },
+    {
+      "example_id": "GE20",
+      "file_path": "/mnt/emily/Sunshine/Sunshine in Progress/Emily's Presidential Ideas/Online Payments/2026 Tea Updated PayPal Materials/Donation_PayPal_QR_2026.png",
+      "primary_tag": "website_public_materials",
+      "record_type": "web_asset",
+      "date": "2026",
+      "function": "donations_fundraising",
+      "programs": "PayPal Donation Infrastructure; Annual Spring Tea",
+      "source_collection": "PayPal Export",
+      "privacy": "public",
+      "processing_status": "human_review_needed",
+      "usage": "website; donor_stewardship",
+      "notes": "Public QR/link asset; validate active destination before reuse."
+    }
+  ],
+  "james_backlog": [
+    {
+      "id": "B01",
+      "title": "Add a taxonomy seed import",
+      "detail": "Create a seed loader for the workbook/JSON so James does not hand-create every tag/folder mapping in the UI."
+    },
+    {
+      "id": "B02",
+      "title": "Add tag facets",
+      "detail": "Current tags only have primary/secondary. Add facet/tag_group so record_type, program, source_collection, privacy, usage, reviewer_role do not collapse into one flat tag pile."
+    },
+    {
+      "id": "B03",
+      "title": "Keep one primary routing tag but many secondary facets",
+      "detail": "Primary tag answers where the item routes. Secondary facets answer what it is about, who appears, source collection, privacy, status, and output usage."
+    },
+    {
+      "id": "B04",
+      "title": "Add privacy/access as first-class metadata",
+      "detail": "Do not rely only on tags for privacy. Restricted/donor/beneficiary records must be excluded from normal search/chat by policy."
+    },
+    {
+      "id": "B05",
+      "title": "Add date confidence fields",
+      "detail": "Store exact date, year, decade/date range, and date_confidence. Archives need approximate/inferred/unknown dates without pretending they are exact."
+    },
+    {
+      "id": "B06",
+      "title": "Add provenance/source collection fields",
+      "detail": "Every item needs source_collection, original_source_path/id, intake batch, checksum, and notes. Do not lose physical/archive provenance during NAS staging."
+    },
+    {
+      "id": "B07",
+      "title": "Add entity model or entity-mention tables",
+      "detail": "People, families, organizations, roles, program metrics, scholarships, donations, dental services, events, and source citations need structure beyond document tags."
+    },
+    {
+      "id": "B08",
+      "title": "Expand review task types",
+      "detail": "Add privacy_review, date_confirmation, person_identification, source_verification, publication_approval, family_return_review."
+    },
+    {
+      "id": "B09",
+      "title": "Add reviewer role routing",
+      "detail": "A review task should know whether Historian, Treasurer, President/board, Correspondence Secretary, Tea chair, or Verdify admin owns it."
+    },
+    {
+      "id": "B10",
+      "title": "Add acceptance tests from retrieval questions",
+      "detail": "Test real user questions, not just health/classifier contracts: Dental before 1950, Senior Smiles, Stuart funds, Rotary photos, Tea attendance, donor restrictions."
+    },
+    {
+      "id": "B11",
+      "title": "Separate archive module from nonprofit ops",
+      "detail": "Repo is Track A: document intelligence and Drive organization. Donor CRM, receipt automation, governance survey, and anniversary tracker need explicit Track B/C decisions."
+    },
+    {
+      "id": "B12",
+      "title": "Preserve Drive as club source of truth",
+      "detail": "NAS sunshineclub corpus is a staging area, not the final owner. Keep originals, import/move only through reviewable actions, never delete in MVP."
+    },
+    {
+      "id": "B13",
+      "title": "Support golden sample evaluation",
+      "detail": "Use 50-100 hand-labeled files as classifier evaluation. Track precision by primary tag and by sensitive/privacy tags."
+    },
+    {
+      "id": "B14",
+      "title": "Use project tag not hard-coded date",
+      "detail": "Use 125th Anniversary as a project tag even if the club later revises the official anniversary year/date convention."
+    }
+  ]
+}

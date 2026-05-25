@@ -6,6 +6,8 @@ Sunshine Club is a Google Drive organization system with semantic intelligence.
 
 The product is not a generic RAG app.
 
+Per the Verdify handoff, this repo is Track A: archive and Google Drive intelligence. It should not silently expand into donor CRM, receipt automation, event management, governance survey execution, correspondence operations, or anniversary project management unless those tracks are explicitly scoped later.
+
 Its primary purpose is to:
 
 - take scattered documents from Google Drive and the NAS staging corpus
@@ -16,20 +18,24 @@ Its primary purpose is to:
 
 ## Build-Out Corpus Strategy
 
-Before implementation begins, existing source material will be manually consolidated into one NAS working folder:
+Existing source material is consolidated into one NAS working root on Atlas:
 
-- `sunshineclub/`
+- `/mnt/sunshine`
 
 This build-out corpus will contain:
 
 - copied or exported material from the current Google Drive
 - NAS / Obsidian material
+- From Mac review-pass files
+- Google Drive delta files that were missing or mismatched locally
+- Paige-local agent/workspace artifacts and manifests
 - other relevant staged files
 
 This means:
 
 - Phase 1 does not pull source files directly from Google Drive
-- Phase 1 operates on the NAS `sunshineclub` folder as the working corpus
+- Phase 1 operates on `/mnt/sunshine` as the working corpus
+- Phase 1 must handle a photo-heavy corpus with scans, documents, spreadsheets, email, manifests, and workspace artifacts
 - Google Drive remains the canonical production destination after organization and import
 
 ## Canonical Product Decisions
@@ -41,7 +47,7 @@ These are current baseline decisions.
 - Google Drive is the canonical production library.
 - Sunshine Club's database is the source of truth for semantic state.
 - Tags do not live in Google Drive metadata.
-- During build-out, existing source material is first consolidated into the NAS `sunshineclub` folder and treated as the working corpus.
+- During build-out, existing source material is first consolidated into `/mnt/sunshine` and treated as the working corpus.
 - Original NAS/source copies are retained during MVP import and migration work.
 
 ### User Experience
@@ -78,10 +84,22 @@ These are current baseline decisions.
 ### Tag Hierarchy
 
 - Every routed file has exactly one primary tag.
-- Files may have zero or more optional secondary semantic tags.
+- Files may have zero or more optional secondary facet tags.
 - Primary tag controls top-level routing intent.
-- Secondary tags are for retrieval, relatedness, filtering, and explanation only.
+- Secondary facets are for retrieval, relatedness, filtering, explanation, privacy, review routing, source provenance, and output usage.
+- Secondary facets are grouped by facet type, not stored as one undifferentiated pile.
+- Required V1 facet groups are:
+  - `record_type`
+  - `function`
+  - `program_project_event`
+  - `source_collection`
+  - `privacy_access`
+  - `processing_status`
+  - `usage`
+  - `reviewer_role`
 - Objective subfolders such as year are rule-derived metadata outputs, not free-form AI taxonomy.
+
+The current taxonomy source of truth is the Verdify handoff in `docs/taxonomy-handoff/`, summarized in `docs/taxonomy.md`.
 
 ### Placement Rules
 
@@ -139,6 +157,16 @@ These are current baseline decisions.
   - learning
   - normal search
   - normal chat
+- Privacy-sensitive, beneficiary-sensitive, donor-sensitive, legal/IRS-sensitive, treasurer-only, and unresolved restricted files are excluded from normal search/chat unless the current user and workflow are explicitly allowed.
+
+Additional review reasons from the Verdify handoff:
+
+- privacy review
+- date confirmation
+- person identification
+- source verification
+- publication approval
+- family-return review
 
 ### Duplicate Rules
 

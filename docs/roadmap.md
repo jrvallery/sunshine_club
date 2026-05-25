@@ -16,27 +16,31 @@ Build:
 - API shell
 - worker shell
 - connector interfaces
+- Verdify taxonomy seed loading contract
 
 Exit criteria:
 
 - apps boot locally
 - migrations run
 - baseline contracts exist
-- the NAS `sunshineclub` working corpus is defined as the Phase 1 source root
+- the NAS `/mnt/sunshine` working corpus is defined as the Phase 1 source root
+- source collection and content class are represented in contracts and schema
+- the Verdify taxonomy handoff can be represented as folders, primary routing tags, secondary facets, placement rules, default privacy, and reviewer roles
 
 ## Phase 2: Extraction and Classification Core
 
 Build:
 
-- NAS `sunshineclub` source connector
+- NAS `/mnt/sunshine` source connector
 - extraction pipeline
+- content-class-specific extraction for documents, scans/images, spreadsheets, email, photos, manifests, and workspace artifacts
 - chunking and embeddings
 - classifier outputs
 - candidate tag scoring and explanations
 
 Exit criteria:
 
-- sample files from the unified NAS `sunshineclub` corpus can be processed end to end
+- sample files from the unified NAS `/mnt/sunshine` corpus can be processed end to end
 - classifier outputs top candidates and margin
 
 ## Phase 3: Tag and Placement Control Layer
@@ -44,14 +48,18 @@ Exit criteria:
 Build:
 
 - tags
+- tag facets / tag groups
 - folders
 - tag-to-folder mappings
 - placement rules
 - deterministic path resolution
+- privacy/access policy and reviewer-role defaults from taxonomy
 
 Exit criteria:
 
 - a primary tag plus metadata resolves to a deterministic destination path
+- secondary facets remain distinguishable by facet group
+- restricted privacy classes are excluded from normal search/chat by policy
 
 ## Phase 4: Review System
 
@@ -86,7 +94,7 @@ Exit criteria:
 
 Build:
 
-- organized import plan for material staged from the NAS `sunshineclub` corpus into Drive
+- organized import plan for material staged from the NAS `/mnt/sunshine` corpus into Drive
 - possible misfiled detection
 - review-driven move proposals
 
