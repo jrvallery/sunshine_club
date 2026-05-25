@@ -232,7 +232,7 @@ Role in the project:
 
 ### OCRmyPDF + Tesseract
 
-This is the OCR path for scanned and image-heavy PDFs.
+This is the OCR path for scanned and image-heavy PDFs, TIFFs, and document-like images.
 
 Why it is the right choice:
 
@@ -244,18 +244,23 @@ Why it is the right choice:
 Where it fits:
 
 - scanned PDFs
+- scanned TIFF/JPEG/PNG files
 - receipts
 - image-based reports
 - poor-text-source legacy documents
+- structured OCR artifacts with page/block/table output, quality signals, and warnings
 
 Role in the project:
 
-- the fallback and enhancement layer that makes image-heavy documents extractable enough for classification and retrieval
+- the primary extraction path for `scanned_document`
+- the enhancement layer that can upgrade image-like files into scanned documents when text/layout evidence is strong
+- the evidence producer for classification and retrieval
 
 Important architectural note:
 
 - low-text photos are still generally outside normal semantic document routing
 - OCR is for document-like image content, not arbitrary photo libraries
+- OCR output does not decide final folders; Sunshine Club routing stays deterministic from tag, mapping, and placement rule
 
 ### Marker as Optional Parser Fallback / Benchmark
 
@@ -344,11 +349,13 @@ Role in the project:
 
 Source:
 
-- manually consolidated NAS `sunshineclub/` corpus
+- manually consolidated NAS corpus at `/mnt/sunshine`
 
 Stack usage:
 
-- `Docling` and `OCRmyPDF + Tesseract` extract content
+- `Docling` extracts born-digital documents and office-like files
+- `OCRmyPDF + Tesseract` handle scanned PDFs, TIFFs, and document-like images
+- image metadata tooling handles photo-heavy event/member files before deciding whether OCR is useful
 - `LangGraph` orchestrates extraction and classification flows
 - `Temporal` runs durable batch jobs across the local corpus
 - `Postgres + pgvector` stores files, embeddings, tags, mappings, reviews, and decisions

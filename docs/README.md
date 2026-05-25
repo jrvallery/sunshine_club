@@ -36,12 +36,6 @@ Read in this order:
   - where each technology sits in the system
   - acceptable alternatives and rejected baselines
 
-- `corpus-inventory.md`
-  - current `/mnt/sunshine` mount shape
-  - source groups and manifests
-  - observed file types and counts
-  - extraction and routing implications
-
 - `taxonomy.md`
   - Verdify taxonomy handoff alignment
   - canonical folder families
@@ -49,8 +43,20 @@ Read in this order:
   - required secondary facet groups
   - privacy and review implications
 
-- `taxonomy-handoff/`
-  - preserved Verdify handoff markdown, seed JSON, workbook, and source briefs
+- `Sunshine_Verdify_Taxonomy_Tagging_Handoff_2026-05-25.md`
+  - preserved Verdify taxonomy handoff
+
+- `Sunshine_Taxonomy_Seed_v0.1_2026-05-25.json`
+  - engineer-friendly taxonomy seed
+
+- `Sunshine_Taxonomy_v0.1_Workbook_2026-05-25.xlsx`
+  - workbook version of the taxonomy seed and golden examples
+
+- `corpus-inventory.md`
+  - current `/mnt/sunshine` mount shape
+  - source groups and manifests
+  - observed file types and counts
+  - extraction and routing implications
 
 - `corpus-taxonomy-report.md`
   - corpus survey evidence

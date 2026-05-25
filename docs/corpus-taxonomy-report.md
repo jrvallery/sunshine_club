@@ -57,7 +57,7 @@ Mounted corpus and nearby source evidence:
 
 Atlas vault finding: `/mnt/atlas-vault` and `/mnt/james/atlas-vault` each contain 45 files, mostly Obsidian markdown plus one `text_memory.sqlite` around 364.7 MB. Text search found no Sunshine hits in the readable files. I do not recommend treating Atlas vault as a normal Sunshine corpus source for V1, except as evidence that Obsidian/system sidecars may appear in mounted data.
 
-Nearby Paige evidence is relevant. `/mnt/agents/paige/work/sunshine-consolidation-2026-05-25/` contains comparison, duplicate, NAS inventory, and Drive-focused inventory outputs. The Verdify handoff now preserved in `docs/taxonomy-handoff/` is treated as authoritative for taxonomy terms; this report grounds those terms in mounted corpus evidence.
+Nearby Paige evidence is relevant. `/mnt/agents/paige/work/sunshine-consolidation-2026-05-25/` contains comparison, duplicate, NAS inventory, and Drive-focused inventory outputs. The Verdify handoff now preserved in `docs/` is treated as authoritative for taxonomy terms; this report grounds those terms in mounted corpus evidence.
 
 ## Corpus Inventory Summary
 

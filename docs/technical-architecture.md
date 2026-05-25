@@ -181,7 +181,7 @@ Classification outputs:
 
 The classifier does not choose folders directly.
 
-The Verdify taxonomy seed in `docs/taxonomy-handoff/` is the current controlled vocabulary. Primary tags are routing tags. Secondary tags are faceted metadata, not one flat semantic list.
+The Verdify taxonomy seed in `docs/` is the current controlled vocabulary. Primary tags are routing tags. Secondary tags are faceted metadata, not one flat semantic list.
 
 ### 4. Placement Resolution
 
@@ -269,7 +269,9 @@ Chat is grounded by citations and links.
 
 ### Tag Model
 
-- tags are manually created
+- tags are controlled by admins
+- the initial V1 taxonomy is seeded from the admin-approved Verdify JSON/workbook
+- later tag additions and mapping changes remain admin-controlled
 - one primary tag per routed file
 - zero or more optional secondary facet tags allowed
 - secondary tags must carry a facet/tag group such as `record_type`, `function`, `program_project_event`, `source_collection`, `privacy_access`, `processing_status`, `usage`, or `reviewer_role`

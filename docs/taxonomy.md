@@ -6,9 +6,9 @@ Last aligned: 2026-05-25.
 
 For V1 planning, the Verdify taxonomy handoff is the taxonomy source of truth:
 
-- `docs/taxonomy-handoff/Sunshine_Verdify_Taxonomy_Tagging_Handoff_2026-05-25.md`
-- `docs/taxonomy-handoff/Sunshine_Taxonomy_Seed_v0.1_2026-05-25.json`
-- `docs/taxonomy-handoff/Sunshine_Taxonomy_v0.1_Workbook_2026-05-25.xlsx`
+- `docs/Sunshine_Verdify_Taxonomy_Tagging_Handoff_2026-05-25.md`
+- `docs/Sunshine_Taxonomy_Seed_v0.1_2026-05-25.json`
+- `docs/Sunshine_Taxonomy_v0.1_Workbook_2026-05-25.xlsx`
 
 The handoff rule is authoritative:
 
@@ -88,7 +88,7 @@ Processing status is also operational metadata. Files that need privacy review, 
 
 ## Implementation Implications
 
-V1 should seed the taxonomy from `docs/taxonomy-handoff/Sunshine_Taxonomy_Seed_v0.1_2026-05-25.json` rather than relying on manual re-entry from prose.
+V1 should seed the taxonomy from `docs/Sunshine_Taxonomy_Seed_v0.1_2026-05-25.json` rather than relying on manual re-entry from prose.
 
 The data model should support:
 

@@ -74,8 +74,9 @@ These are current baseline decisions.
 - Folders are manually created.
 - Top-level folders are manually created.
 - Subfolders are also manually created where needed.
-- Tags are manually created.
-- Only James creates tags.
+- V1 taxonomy terms are seeded from the admin-approved Verdify taxonomy files in `docs/`.
+- New tags after the seed are manually created through admin control.
+- Only James or an approved admin creates tags.
 - Tags are manually mapped to folders.
 - Many tags may map to one folder.
 - Each primary tag resolves to exactly one canonical top-level folder.
@@ -99,7 +100,7 @@ These are current baseline decisions.
   - `reviewer_role`
 - Objective subfolders such as year are rule-derived metadata outputs, not free-form AI taxonomy.
 
-The current taxonomy source of truth is the Verdify handoff in `docs/taxonomy-handoff/`, summarized in `docs/taxonomy.md`.
+The current taxonomy source of truth is the Verdify handoff in `docs/`, summarized in `docs/taxonomy.md`.
 
 ### Placement Rules
 

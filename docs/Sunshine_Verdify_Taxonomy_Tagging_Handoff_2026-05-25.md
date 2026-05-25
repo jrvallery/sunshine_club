@@ -19,8 +19,8 @@ Do not build a deep folder tree like `History > 1930s > Dental > Rotary > Margar
 
 - `Sunshine_Taxonomy_v0.1_Workbook_2026-05-25.xlsx` - working workbook for Emily/James with folders, primary routing tags, secondary facets, golden examples, and James backlog.
 - `Sunshine_Taxonomy_Seed_v0.1_2026-05-25.json` - engineer-friendly seed version of the same taxonomy.
-- `source_briefs/Sunshine_Club_Verdify_Brief.docx` - preserved Slack upload.
-- `source_briefs/chatgptsunshine_verdify_chat.docx` - preserved Slack upload.
+
+The original source brief DOCX uploads were reviewed during handoff creation but are not kept in this repo. The handoff markdown, seed JSON, and workbook are the repo-level taxonomy artifacts.
 
 ## How This Fits James's Repo
 
@@ -132,7 +132,7 @@ This gives James a testable target. If the classifier cannot label the golden se
 5. Add review task types for privacy, date confirmation, person identification, source verification, publication approval, and family-return review.
 6. Add reviewer-role routing.
 7. Add acceptance tests based on the retrieval questions in the workbook.
-8. Treat the NAS `sunshineclub/` folder as staging only; Google Drive remains the club-owned production source after reviewed import.
+8. Treat the NAS `/mnt/sunshine` working corpus as staging only; Google Drive remains the club-owned production source after reviewed import.
 
 ## Caution
 

@@ -1257,7 +1257,7 @@
   "golden_examples": [
     {
       "example_id": "GE01",
-      "file_path": "/mnt/emily/Sunshine/Sunshine in Progress/Verdify Taxonomy Handoff/source_briefs/Sunshine_Club_Verdify_Brief.docx",
+      "file_path": "docs/Sunshine_Verdify_Taxonomy_Tagging_Handoff_2026-05-25.md",
       "primary_tag": "runbooks_handoff",
       "record_type": "runbook",
       "date": "2026-05",
@@ -1267,11 +1267,11 @@
       "privacy": "club_internal",
       "processing_status": "human_reviewed",
       "usage": "training_runbook; drive_search",
-      "notes": "Main client brief; make this a project source of truth, not just another doc."
+      "notes": "Repo-level Verdify taxonomy handoff; make this a project source of truth, not just another doc."
     },
     {
       "example_id": "GE02",
-      "file_path": "/mnt/emily/Sunshine/Sunshine in Progress/Verdify Taxonomy Handoff/source_briefs/chatgptsunshine_verdify_chat.docx",
+      "file_path": "docs/taxonomy.md",
       "primary_tag": "runbooks_handoff",
       "record_type": "research_note",
       "date": "2026-05",
@@ -1281,7 +1281,7 @@
       "privacy": "club_internal",
       "processing_status": "human_reviewed",
       "usage": "training_runbook; taxonomy_design",
-      "notes": "Contains taxonomy framing and GitHub evaluation; source for V1 taxonomy."
+      "notes": "Repo-facing taxonomy summary derived from the Verdify handoff; source for V1 taxonomy."
     },
     {
       "example_id": "GE03",

@@ -177,7 +177,7 @@ Chat should:
 
 ## 12. Taxonomy and Facet Workflow
 
-The Verdify handoff in `docs/taxonomy-handoff/` is the current taxonomy source of truth.
+The Verdify handoff in `docs/` is the current taxonomy source of truth.
 
 Steps:
 
