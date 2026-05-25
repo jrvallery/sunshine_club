@@ -10,6 +10,7 @@ Read in this order:
 4. `technical-stack.md`
 5. `data-model.md`
 6. `roadmap.md`
+7. `implementation-plan.md`
 
 ## Document Map
 
@@ -49,3 +50,10 @@ Read in this order:
   - delivery phases
   - dependencies
   - exit criteria
+
+- `implementation-plan.md`
+  - implementation-ready phase plan
+  - proposed monorepo structure
+  - schema outline
+  - FastAPI, LangGraph, Temporal, and Postgres boundaries
+  - first thin slice

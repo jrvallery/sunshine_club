@@ -1,0 +1,10 @@
+{
+  "name": "sunshine-club",
+  "private": true,
+  "workspaces": [
+    "apps/dashboard"
+  ],
+  "scripts": {
+    "dev:dashboard": "npm --workspace apps/dashboard run dev"
+  }
+}

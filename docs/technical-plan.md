@@ -12,6 +12,7 @@ Read in this order:
 6. `docs/workflows.md`
 7. `docs/data-model.md`
 8. `docs/roadmap.md`
+9. `docs/implementation-plan.md`
 
 ## What Changed
 
