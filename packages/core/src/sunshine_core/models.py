@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 from uuid import UUID
@@ -9,6 +10,36 @@ class SourceType(str, Enum):
     GOOGLE_DRIVE = "google_drive"
     NAS = "nas"
     UPLOAD = "upload"
+
+
+class SourceCollection(str, Enum):
+    SUNSHINE_SHARED_FOLDERS = "sunshine_shared_folders"
+    FROM_MAC_PASS = "from_mac_pass"
+    PAIGE_AGENT_FILES = "paige_agent_files"
+    GOOGLE_DRIVE_DELTA = "google_drive_delta"
+    ARCHIVE = "archive"
+    MANIFEST = "manifest"
+    OTHER = "other"
+
+
+class FileContentClass(str, Enum):
+    DOCUMENT = "document"
+    IMAGE = "image"
+    SCANNED_DOCUMENT = "scanned_document"
+    SPREADSHEET = "spreadsheet"
+    PRESENTATION = "presentation"
+    EMAIL = "email"
+    GOOGLE_NATIVE_EXPORT = "google_native_export"
+    MANIFEST = "manifest"
+    CODE_OR_WORKSPACE_ARTIFACT = "code_or_workspace_artifact"
+    BINARY_OR_UNKNOWN = "binary_or_unknown"
+
+
+class ExtractionQuality(str, Enum):
+    STUB = "stub"
+    EMPTY = "empty"
+    OK = "ok"
+    POOR = "poor"
 
 
 class DocumentStatus(str, Enum):
@@ -54,9 +85,14 @@ class ActionType(str, Enum):
 
 class StagedFileRecord(BaseModel):
     source_type: SourceType = SourceType.NAS
+    source_collection: SourceCollection = SourceCollection.OTHER
     source_path: str
     name: str
     mime_type: str
+    extension: str | None = None
+    size_bytes: int | None = Field(default=None, ge=0)
+    source_mtime: datetime | None = None
+    content_class: FileContentClass = FileContentClass.BINARY_OR_UNKNOWN
     checksum: str | None = None
     raw_metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -71,7 +107,20 @@ class ExtractedDocument(BaseModel):
     document_id: UUID
     text: str
     metadata: dict[str, Any] = Field(default_factory=dict)
-    extraction_quality: Literal["stub", "empty", "ok", "poor"] = "stub"
+    extraction_quality: ExtractionQuality = ExtractionQuality.STUB
+
+
+class ExtractionArtifact(BaseModel):
+    document_id: UUID
+    extractor: str
+    extractor_version: str | None = None
+    content_class_before: FileContentClass
+    content_class_after: FileContentClass
+    text: str
+    normalized_payload: dict[str, Any] = Field(default_factory=dict)
+    quality: ExtractionQuality
+    warnings: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ControlledTag(BaseModel):

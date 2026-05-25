@@ -4,6 +4,7 @@ from sunshine_core.models import (
     ClassificationResult,
     DocumentStatus,
     ExtractedDocument,
+    ExtractionQuality,
     FoundationRunRequest,
     ReviewTaskType,
     TagKind,
@@ -124,7 +125,7 @@ def _stub_extract(document_id, name: str, metadata: dict) -> ExtractedDocument:
         document_id=document_id,
         text=text,
         metadata=extracted_metadata,
-        extraction_quality="stub",
+        extraction_quality=ExtractionQuality.STUB,
     )
 
 

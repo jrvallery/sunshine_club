@@ -3,10 +3,12 @@ from uuid import uuid4
 from sunshine_core.models import (
     ControlledTag,
     DateSource,
+    FileContentClass,
     FolderTarget,
     FoundationRunRequest,
     PlacementRule,
     PlacementRuleType,
+    SourceCollection,
     StagedFileRecord,
     TagFolderMapping,
     TagKind,
@@ -20,9 +22,13 @@ def test_foundation_slice_emits_pending_action_for_high_confidence_file() -> Non
     folder_id = uuid4()
     request = FoundationRunRequest(
         staged_file=StagedFileRecord(
-            source_path="sunshineclub/inbox/receipt-2026.pdf",
+            source_path="/mnt/sunshine/Sunshine shared folders/Treasurer/receipt-2026.pdf",
+            source_collection=SourceCollection.SUNSHINE_SHARED_FOLDERS,
             name="receipt-2026.pdf",
             mime_type="application/pdf",
+            extension="pdf",
+            size_bytes=12345,
+            content_class=FileContentClass.DOCUMENT,
             raw_metadata={"upload_date": "2026-05-24"},
         ),
         tags=[ControlledTag(id=tag_id, name="receipt", tag_kind=TagKind.PRIMARY)],
@@ -48,6 +54,8 @@ def test_foundation_slice_emits_pending_action_for_high_confidence_file() -> Non
 
     assert outcome.destination is not None
     assert outcome.destination.destination_path == "Receipts/2026"
+    assert outcome.document.source_collection == SourceCollection.SUNSHINE_SHARED_FOLDERS
+    assert outcome.document.content_class == FileContentClass.DOCUMENT
     assert outcome.drive_action is not None
     assert outcome.drive_action.status == "pending"
     assert outcome.review_task is None
@@ -56,7 +64,7 @@ def test_foundation_slice_emits_pending_action_for_high_confidence_file() -> Non
 def test_foundation_slice_emits_review_for_low_confidence_file() -> None:
     request = FoundationRunRequest(
         staged_file=StagedFileRecord(
-            source_path="sunshineclub/inbox/unknown.pdf",
+            source_path="/mnt/sunshine/Sunshine shared folders/unknown.pdf",
             name="unknown.pdf",
             mime_type="application/pdf",
         ),

@@ -100,6 +100,26 @@ Source areas under `/mnt/sunshine` must remain distinguishable in metadata:
 
 ## Core System Components
 
+### Local Container Topology
+
+The repository is containerized through Docker Compose.
+
+Default services:
+
+- `api`: FastAPI admin and product API
+- `dashboard`: Next.js admin dashboard shell
+- `db`: Postgres with pgvector, seeded from `infra/db/migrations` on first volume initialization
+- `temporal`: local Temporal server using Postgres persistence
+- `temporal-ui`: Temporal inspection UI
+
+The `worker` service exists as an opt-in Compose profile because
+`apps/worker/src/sunshine_worker/temporal_worker.py` is still a Phase 1
+placeholder. It should join the default stack after Temporal workflow
+registration is implemented.
+
+The NAS source root is mounted read-only into containers at `/mnt/sunshine`.
+Host machines can override the source path with `SUNSHINE_NAS_ROOT`.
+
 ### 1. Intake
 
 Users upload through the dashboard.

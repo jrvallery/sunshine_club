@@ -4,11 +4,39 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE TABLE documents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   source_type text NOT NULL CHECK (source_type IN ('google_drive', 'nas', 'upload')),
+  source_collection text NOT NULL DEFAULT 'other' CHECK (
+    source_collection IN (
+      'sunshine_shared_folders',
+      'from_mac_pass',
+      'paige_agent_files',
+      'google_drive_delta',
+      'archive',
+      'manifest',
+      'other'
+    )
+  ),
   source_file_id text,
   source_path text,
   current_drive_file_id text,
   name text NOT NULL,
   mime_type text NOT NULL,
+  extension text,
+  size_bytes bigint CHECK (size_bytes IS NULL OR size_bytes >= 0),
+  source_mtime timestamptz,
+  content_class text NOT NULL DEFAULT 'binary_or_unknown' CHECK (
+    content_class IN (
+      'document',
+      'image',
+      'scanned_document',
+      'spreadsheet',
+      'presentation',
+      'email',
+      'google_native_export',
+      'manifest',
+      'code_or_workspace_artifact',
+      'binary_or_unknown'
+    )
+  ),
   checksum text,
   raw_metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   status text NOT NULL CHECK (status IN ('discovered', 'processing', 'awaiting_review', 'routed', 'ignored', 'duplicate_hold', 'failed')),
@@ -27,6 +55,47 @@ CREATE TABLE document_chunks (
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (document_id, chunk_index)
+);
+
+CREATE TABLE extraction_artifacts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  document_id uuid NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  extractor text NOT NULL,
+  extractor_version text,
+  content_class_before text NOT NULL CHECK (
+    content_class_before IN (
+      'document',
+      'image',
+      'scanned_document',
+      'spreadsheet',
+      'presentation',
+      'email',
+      'google_native_export',
+      'manifest',
+      'code_or_workspace_artifact',
+      'binary_or_unknown'
+    )
+  ),
+  content_class_after text NOT NULL CHECK (
+    content_class_after IN (
+      'document',
+      'image',
+      'scanned_document',
+      'spreadsheet',
+      'presentation',
+      'email',
+      'google_native_export',
+      'manifest',
+      'code_or_workspace_artifact',
+      'binary_or_unknown'
+    )
+  ),
+  text text NOT NULL DEFAULT '',
+  normalized_payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  quality text NOT NULL CHECK (quality IN ('stub', 'empty', 'ok', 'poor')),
+  warnings jsonb NOT NULL DEFAULT '[]'::jsonb,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE chunk_embeddings (

@@ -24,6 +24,41 @@ The baseline stack for Sunshine Club is:
 - Sunshine Club-owned Postgres-backed audit, review, and action store
 - Sunshine Club-owned runtime guards for loop detection, retry control, and budget enforcement
 
+## Local Runtime and Containerization
+
+The development baseline uses two layers:
+
+- a project-local Python virtual environment for fast tests and package work
+- Docker Compose for the integrated service topology
+
+The Compose stack is defined in `compose.yaml` and runs:
+
+- `api`: FastAPI served by Uvicorn
+- `dashboard`: Next.js admin dashboard
+- `db`: Postgres with pgvector, initialized from `infra/db/migrations`
+- `temporal`: local Temporal server backed by the Compose Postgres service
+- `temporal-ui`: browser UI for inspecting Temporal
+- `worker`: opt-in profile service reserved for the Temporal worker once the placeholder is implemented
+
+The default container ports are:
+
+- API: `8000`
+- dashboard: `3000`
+- Postgres: `5432`
+- Temporal: `7233`
+- Temporal UI: `8080`
+
+`SUNSHINE_NAS_ROOT` defaults to `/mnt/sunshine` and is mounted read-only into
+the API and worker containers at `/mnt/sunshine`.
+
+The current Dockerfiles are development-oriented:
+
+- `docker/python.Dockerfile` builds API and worker Python images
+- `docker/dashboard.Dockerfile` builds dashboard development and runtime images
+
+The worker container is intentionally behind the `worker` Compose profile until
+Temporal workflow registration is implemented.
+
 ## Why This Stack Fits Sunshine Club
 
 Sunshine Club is not just a chat app or a generic RAG demo.

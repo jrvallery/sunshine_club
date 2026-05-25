@@ -4,6 +4,9 @@
   "workspaces": [
     "apps/dashboard"
   ],
+  "overrides": {
+    "postcss": "8.5.15"
+  },
   "scripts": {
     "dev:dashboard": "npm --workspace apps/dashboard run dev"
   }

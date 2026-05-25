@@ -37,6 +37,7 @@ Deliver:
 - worker shell
 - core domain contracts
 - initial Postgres migration
+- Docker Compose development stack for API, dashboard, Postgres/pgvector, Temporal, and Temporal UI
 - NAS source root configuration for `/mnt/sunshine`
 - corpus inventory contracts for source collection and content class
 - Verdify taxonomy seed representation for folders, primary tags, facets, placement rules, privacy, and reviewer roles
@@ -45,6 +46,7 @@ Exit criteria:
 
 - services have clear boundaries
 - migrations define operational state
+- default containers build and boot locally
 - the first thin slice can run against explicit contracts
 
 ### Phase 2: Extraction and Classification Core
@@ -52,6 +54,7 @@ Exit criteria:
 Deliver:
 
 - NAS filesystem connector
+- inventory CLI for sampling staged `StagedFileRecord` JSONL from `/mnt/sunshine`
 - Docling extraction adapter
 - OCRmyPDF/Tesseract fallback adapter for scanned PDFs
 - TIFF and image OCR path for historical scans
