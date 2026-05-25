@@ -90,3 +90,19 @@ docker compose --profile worker up worker
 
 Compose mounts the NAS corpus read-only at `/mnt/sunshine` by default. Override
 the host path with `SUNSHINE_NAS_ROOT=/path/to/corpus` if needed.
+
+## NAS Inventory
+
+Generate a reviewable corpus inventory from the mounted NAS root:
+
+```bash
+source .venv/bin/activate
+python -m sunshine_connectors.inventory /mnt/sunshine \
+  --output /mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/inventory.jsonl \
+  --summary /mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/summary.json
+```
+
+The inventory skips known system junk and temp/cache paths, emits one JSON row
+per included file, and writes a summary with counts by source collection,
+content class, extension, skipped reason, low-confidence assignments,
+`binary_or_unknown` files, and files needing extraction probes.

@@ -1,0 +1,68 @@
+[
+  {
+    "relative_path": ".DS_Store",
+    "expected_skip": true,
+    "expected_skip_reason": "skip_file:.ds_store"
+  },
+  {
+    "relative_path": "#recycle/desktop.ini",
+    "expected_skip": true,
+    "expected_skip_reason": "skip_directory:#recycle"
+  },
+  {
+    "relative_path": "Sunshine shared folders/Minutes-agendas- dental reports and treasurer reports/2025-2026/scan.tif",
+    "expected_skip": false,
+    "expected_source_collection": "sunshine_shared_folders",
+    "expected_content_class": "scanned_document"
+  },
+  {
+    "relative_path": "Sunshine shared folders/Historical Photos/Photos to share/member.jpg",
+    "expected_skip": false,
+    "expected_source_collection": "sunshine_shared_folders",
+    "expected_content_class": "image"
+  },
+  {
+    "relative_path": "Sunshine shared folders/Stewart Family Foundation/foundation-photo.webp",
+    "expected_skip": false,
+    "expected_source_collection": "sunshine_shared_folders",
+    "expected_content_class": "image",
+    "expected_reason": "image_extension_needs_probe"
+  },
+  {
+    "relative_path": "Sunshine shared folders/Mailing list/list.xlsx",
+    "expected_skip": false,
+    "expected_source_collection": "sunshine_shared_folders",
+    "expected_content_class": "spreadsheet"
+  },
+  {
+    "relative_path": "Sunshine shared folders/Correspondence/message.eml",
+    "expected_skip": false,
+    "expected_source_collection": "sunshine_shared_folders",
+    "expected_content_class": "email"
+  },
+  {
+    "relative_path": "_manifest/2026-05-25T1205MDT-sunshine-inventory/google_drive_full_inventory.jsonl",
+    "expected_skip": false,
+    "expected_source_collection": "manifest",
+    "expected_content_class": "manifest"
+  },
+  {
+    "relative_path": "Paige Agent Sunshine Files/source-path-snapshot/mnt/agents/paige/tool.py",
+    "expected_skip": false,
+    "expected_source_collection": "paige_agent_files",
+    "expected_content_class": "code_or_workspace_artifact"
+  },
+  {
+    "relative_path": "Sunshine shared folders/Admin Docs/Sunshine Club Digital Resources.pdf",
+    "expected_skip": false,
+    "expected_source_collection": "sunshine_shared_folders",
+    "expected_content_class": "document",
+    "expected_reason": "pdf_needs_text_probe"
+  },
+  {
+    "relative_path": "Sunshine shared folders/Unknown/random.bin",
+    "expected_skip": false,
+    "expected_source_collection": "sunshine_shared_folders",
+    "expected_content_class": "binary_or_unknown"
+  }
+]

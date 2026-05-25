@@ -122,6 +122,113 @@ OCR/document extraction should produce a normalized artifact, not just plain tex
 
 If OCR upgrades an `image` into a `scanned_document`, that content-class change should be stored as part of extraction provenance.
 
+## Inventory Quality Gate
+
+The current inventory command is:
+
+```bash
+python -m sunshine_connectors.inventory /mnt/sunshine \
+  --output /mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/inventory.jsonl \
+  --summary /mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/summary.json
+```
+
+The generated JSONL file is the reusable staged-file inventory. Each emitted row
+includes:
+
+- source type
+- source collection
+- absolute source path
+- relative source path in `raw_metadata.relative_path`
+- filename
+- extension
+- MIME type
+- size
+- source mtime
+- optional checksum status or value
+- initial content class, confidence, and reasons
+
+The summary JSON is the quality report. It includes:
+
+- scanned file count
+- emitted file count
+- skipped file count
+- counts by source collection
+- counts by content class
+- counts by extension
+- counts by skipped reason
+- low-confidence assignment count and samples
+- `binary_or_unknown` count and samples
+- files needing extraction probes and samples
+
+### Current Run
+
+Latest full no-checksum run:
+
+- inventory JSONL: `/mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/inventory.jsonl`
+- summary JSON: `/mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/summary.json`
+- scanned files: 32,111
+- emitted files: 31,513
+- skipped files: 598
+
+Content-class counts:
+
+- `scanned_document`: 26,400
+- `image`: 3,386
+- `document`: 1,275
+- `spreadsheet`: 234
+- `code_or_workspace_artifact`: 112
+- `binary_or_unknown`: 55
+- `manifest`: 35
+- `presentation`: 9
+- `email`: 7
+
+Skipped reasons:
+
+- `skip_directory:tmp`: 586
+- `skip_directory:@eadir`: 6
+- `skip_file:.ds_store`: 4
+- `skip_directory:#recycle`: 1
+- `skip_suffix:.tmp`: 1
+
+Quality flags:
+
+- low-confidence content-class assignments: 28,504
+- `binary_or_unknown`: 55
+- needs extraction probe: 3,191
+
+The large low-confidence count is expected for this first gate because many
+image/PDF cases require extraction evidence before they can be trusted as
+photos, scans, or born-digital documents.
+
+### Skip Policy
+
+The inventory omits known system junk and operational noise:
+
+- `.DS_Store`
+- `desktop.ini`
+- `Thumbs.db` / `ehthumbs.db`
+- `#recycle/`
+- Synology `@eaDir/`
+- macOS metadata directories such as `.Trashes`, `.Spotlight-V100`, `.fseventsd`, and `.TemporaryItems`
+- VCS/cache/build directories such as `.git`, `.hg`, `.svn`, `node_modules`, `.next`, `__pycache__`, and test/lint caches
+- temporary directories named `tmp` or `temp`
+- AppleDouble files beginning with `._`
+- Office lock files beginning with `~$` or `.~lock.`
+- temporary/download/cache suffixes such as `.tmp`, `.temp`, `.swp`, `.swo`, `.part`, `.download`, `.crdownload`, `.lock`, and `.pyc`
+
+The inventory does not blindly omit every binary file. Unknown or unsupported
+files remain visible as `binary_or_unknown` unless they match the explicit skip
+policy. This keeps potentially valuable but unsupported files reviewable.
+
+### Current Limitations
+
+- Content-class assignment is heuristic and path/extension based.
+- PDFs without scan path hints are flagged for text probing before trust.
+- Generic images without photo or scan path hints are flagged for extraction or metadata probing.
+- `binary_or_unknown` includes deferred formats such as video, shortcuts, publisher files, and other unsupported binaries.
+- Checksums are optional because full-corpus checksums require reading the entire corpus.
+- Semantic taxonomy classification is not implemented by this inventory gate.
+
 ## Safety Rules
 
 - Do not delete duplicate-looking files from the NAS pass without review.

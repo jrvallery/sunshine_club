@@ -55,6 +55,7 @@ Deliver:
 
 - NAS filesystem connector
 - inventory CLI for sampling staged `StagedFileRecord` JSONL from `/mnt/sunshine`
+- inventory quality gate with skip rules, golden samples, JSONL output, and summary reporting
 - Docling extraction adapter
 - OCRmyPDF/Tesseract fallback adapter for scanned PDFs
 - TIFF and image OCR path for historical scans

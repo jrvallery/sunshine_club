@@ -1,10 +1,21 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
-from sunshine_connectors.inventory import classify_content, infer_source_collection, inventory_file
+from sunshine_connectors.inventory import (
+    classify_content,
+    infer_source_collection,
+    inventory_file,
+    iter_inventory,
+    should_skip_path,
+    write_inventory,
+)
 from sunshine_core.models import FileContentClass, SourceCollection
+
+
+GOLDEN_SAMPLES_PATH = Path(__file__).parent / "fixtures" / "inventory_golden_samples.json"
 
 
 def _write(root: Path, relative_path: str, content: bytes = b"sample") -> Path:
@@ -123,3 +134,67 @@ def test_pdf_uses_path_hints_until_pdf_text_probe_exists(tmp_path: Path) -> None
 
     assert generic_decision.content_class == FileContentClass.DOCUMENT
     assert "pdf_needs_text_probe" in generic_decision.reasons
+
+
+def test_inventory_skips_known_system_junk(tmp_path: Path) -> None:
+    _write(tmp_path, ".DS_Store")
+    _write(tmp_path, "#recycle/desktop.ini")
+    _write(tmp_path, "Sunshine shared folders/Admin Docs/keep.md")
+    _write(tmp_path, "Sunshine shared folders/Admin Docs/~$draft.docx")
+    _write(tmp_path, "Sunshine shared folders/Admin Docs/.~lock.sheet.xlsx#")
+    _write(tmp_path, "Sunshine shared folders/Admin Docs/page.tmp")
+    _write(tmp_path, "Paige Agent Sunshine Files/source-path-snapshot/mnt/agents/paige/tmp/repo/.git/HEAD")
+
+    records = list(iter_inventory(tmp_path))
+
+    assert [record.raw_metadata["relative_path"] for record in records] == [
+        "Sunshine shared folders/Admin Docs/keep.md"
+    ]
+
+
+def test_golden_inventory_samples_match_expected_classification() -> None:
+    samples = json.loads(GOLDEN_SAMPLES_PATH.read_text(encoding="utf-8"))
+
+    for sample in samples:
+        path = Path("/mnt/sunshine") / sample["relative_path"]
+        skip_decision = should_skip_path(path)
+
+        assert skip_decision.should_skip is sample["expected_skip"]
+        if sample["expected_skip"]:
+            assert skip_decision.reason == sample["expected_skip_reason"]
+            continue
+
+        source_collection = infer_source_collection(path)
+        decision = classify_content(path, source_collection=source_collection)
+
+        assert source_collection.value == sample["expected_source_collection"]
+        assert decision.content_class.value == sample["expected_content_class"]
+        if expected_reason := sample.get("expected_reason"):
+            assert expected_reason in decision.reasons
+
+
+def test_write_inventory_outputs_jsonl_and_summary(tmp_path: Path) -> None:
+    _write(tmp_path, ".DS_Store")
+    _write(tmp_path, "#recycle/desktop.ini")
+    _write(tmp_path, "Sunshine shared folders/Admin Docs/Sunshine Club Digital Resources.pdf")
+    _write(tmp_path, "Sunshine shared folders/Unknown/random.bin")
+    _write(tmp_path, "Sunshine shared folders/Unsorted/member.jpg")
+    output_path = tmp_path / "_manifest" / "inventory.jsonl"
+    summary_path = tmp_path / "_manifest" / "summary.json"
+
+    summary = write_inventory(tmp_path, output_path=output_path, summary_path=summary_path)
+
+    records = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines()]
+    summary_data = json.loads(summary_path.read_text(encoding="utf-8"))
+
+    assert len(records) == 3
+    assert summary.emitted_files == 3
+    assert summary.skipped_files == 2
+    assert summary_data["emitted_files"] == 3
+    assert summary_data["skipped_by_reason"] == {
+        "skip_directory:#recycle": 1,
+        "skip_file:.ds_store": 1,
+    }
+    assert summary_data["by_content_class"]["binary_or_unknown"] == 1
+    assert summary_data["low_confidence"]["count"] == 3
+    assert summary_data["needs_extraction_probe"]["count"] == 2
