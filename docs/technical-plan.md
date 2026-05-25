@@ -8,9 +8,10 @@ Read in this order:
 2. `docs/README.md`
 3. `docs/product-spec.md`
 4. `docs/technical-architecture.md`
-5. `docs/workflows.md`
-6. `docs/data-model.md`
-7. `docs/roadmap.md`
+5. `docs/technical-stack.md`
+6. `docs/workflows.md`
+7. `docs/data-model.md`
+8. `docs/roadmap.md`
 
 ## What Changed
 
@@ -27,3 +28,8 @@ Current design highlights:
 - review and Drive action execution are separate systems
 - NAS content is a staging and migration source during build-out
 - search and chat sit on top of the semantic organization layer
+
+
+## Stack Baseline
+
+The selected implementation stack is documented in `docs/technical-stack.md`.

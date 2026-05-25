@@ -7,8 +7,9 @@ Read in this order:
 1. `product-spec.md`
 2. `technical-architecture.md`
 3. `workflows.md`
-4. `data-model.md`
-5. `roadmap.md`
+4. `technical-stack.md`
+5. `data-model.md`
+6. `roadmap.md`
 
 ## Document Map
 
@@ -24,6 +25,12 @@ Read in this order:
   - classification and routing design
   - service boundaries
   - safety rules
+
+- `technical-stack.md`
+  - chosen implementation stack
+  - why each technology fits
+  - where each technology sits in the system
+  - acceptable alternatives and rejected baselines
 
 - `workflows.md`
   - Google Drive cleanup
