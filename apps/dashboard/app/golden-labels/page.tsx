@@ -94,6 +94,21 @@ export default function GoldenLabelsPage() {
         </Button>
       </section>
 
+      <section className="panel actionPanel">
+        <div>
+          <h2>Golden Label Export</h2>
+          <p className="muted">Download the reviewed golden set for audit, backup, or command-line evaluation runs.</p>
+        </div>
+        <div className="buttonRow">
+          <a className="secondaryButton" href="/api/admin/review/golden-labels/export?format=csv&limit=10000" download>
+            Export CSV
+          </a>
+          <a className="secondaryButton" href="/api/admin/review/golden-labels/export?format=jsonl&limit=10000" download>
+            Export JSONL
+          </a>
+        </div>
+      </section>
+
       <section className="bands">
         {Object.entries(summary.data?.golden_by_primary_tag ?? {}).map(([tag, count]) => (
           <div className="breakdown" key={tag}>
