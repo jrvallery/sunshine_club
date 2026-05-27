@@ -18,7 +18,7 @@ export function VirtualDataTable<T>({
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 64,
+    estimateSize: () => 88,
     overscan: 12
   });
   const columns = table.getVisibleLeafColumns();

@@ -457,10 +457,102 @@ h2 {
   overflow: auto;
 }
 
+.fileBrowserTable {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.fileBrowserTable table {
+  border-collapse: separate;
+  border-spacing: 0 10px;
+  min-width: 820px;
+}
+
+.fileBrowserTable th,
+.fileBrowserTable td {
+  min-width: 0;
+}
+
+.fileBrowserTable th:first-child,
+.fileBrowserTable td:first-child {
+  min-width: 300px;
+  width: 44%;
+}
+
+.fileBrowserTable th:nth-child(2),
+.fileBrowserTable td:nth-child(2) {
+  min-width: 210px;
+  width: 26%;
+}
+
+.fileBrowserTable th:nth-child(3),
+.fileBrowserTable td:nth-child(3) {
+  min-width: 190px;
+  width: 22%;
+}
+
+.fileBrowserTable th:nth-child(4),
+.fileBrowserTable td:nth-child(4) {
+  min-width: 130px;
+  width: 130px;
+}
+
+.fileBrowserTable thead th {
+  border-bottom: 0;
+  padding-bottom: 8px;
+}
+
+.fileBrowserTable tbody td {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+  padding: 13px 14px;
+}
+
+.fileBrowserTable tbody td:first-child {
+  border-left: 1px solid var(--border);
+  border-radius: 8px 0 0 8px;
+}
+
+.fileBrowserTable tbody td:last-child {
+  border-radius: 0 8px 8px 0;
+  border-right: 1px solid var(--border);
+}
+
+.fileBrowserTable tbody tr:hover td {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+
+.fileMetaStack {
+  display: grid;
+  gap: 4px;
+  grid-template-rows: repeat(4, minmax(18px, auto));
+}
+
+.fileMetaLine {
+  color: var(--muted);
+  display: block;
+  font-size: 12px;
+  line-height: 18px;
+  min-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.fileMetaLine.primary {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.fileMetaLine.spacer {
+  visibility: hidden;
+}
+
 .virtualTable {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   overflow: auto;
 }
 
@@ -471,14 +563,16 @@ h2 {
 
 .virtualHeader {
   background: var(--surface-2);
-  border-bottom: 1px solid var(--border-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px 8px 0 0;
+  border-bottom: 0;
 }
 
 .virtualHeaderCell,
 .virtualCell {
   min-width: 0;
   overflow-wrap: anywhere;
-  padding: 12px;
+  padding: 10px 12px;
 }
 
 .virtualHeaderCell {
@@ -489,6 +583,9 @@ h2 {
 }
 
 .virtualScroll {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0 0 8px 8px;
   height: min(68vh, 720px);
   overflow: auto;
   position: relative;
@@ -499,12 +596,22 @@ h2 {
 }
 
 .virtualRow {
-  border-bottom: 1px solid var(--border-soft);
-  left: 0;
-  min-height: 64px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 1px 0 var(--shadow);
+  height: 76px;
+  left: 10px;
+  min-height: 76px;
   position: absolute;
-  right: 0;
   top: 0;
+  transition: background 120ms ease, border-color 120ms ease;
+  width: calc(100% - 20px) !important;
+}
+
+.virtualRow:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
 }
 
 .virtualCell {
@@ -649,8 +756,9 @@ td:first-child {
 
 .pathCell strong,
 .pathCell span {
-  line-height: 1.25;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cellStack {
@@ -702,7 +810,7 @@ td:first-child {
 
 .qualityBadge.good {
   background: var(--accent-soft);
-  border-color: var(--accent);
+  border-color: var(--accent-border);
 }
 
 .qualityBadge.danger {
@@ -757,108 +865,6 @@ td:first-child {
   margin-top: 14px;
 }
 
-.fileExplorerLayout .facetPanel {
-  max-height: none;
-  position: static;
-}
-
-.fileExplorerMain {
-  display: grid;
-  gap: 14px;
-  min-width: 0;
-}
-
-.fileResultsList {
-  display: grid;
-  gap: 10px;
-}
-
-.fileResultCard {
-  background: var(--surface);
-  border: 1px solid var(--border-soft);
-  border-radius: 8px;
-  color: var(--text);
-  display: grid;
-  gap: 10px;
-  padding: 13px;
-  width: 100%;
-}
-
-.fileResultCard:hover,
-.fileResultCard.selected {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent-border);
-}
-
-.fileResultCard.selected {
-  background: var(--accent-soft);
-}
-
-.fileResultSelect {
-  background: transparent;
-  border: 0;
-  color: inherit;
-  cursor: pointer;
-  display: grid;
-  gap: 12px;
-  padding: 0;
-  text-align: left;
-  width: 100%;
-}
-
-.fileResultIdentity {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.fileResultIdentity strong {
-  font-size: 15px;
-  line-height: 1.25;
-  overflow-wrap: anywhere;
-}
-
-.fileResultIdentity span,
-.fileResultBlock em {
-  color: var(--muted);
-  font-size: 12px;
-  font-style: normal;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
-}
-
-.fileResultMeta {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.fileResultBlock {
-  align-content: start;
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.fileResultBlock > span {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.fileResultBlock strong {
-  overflow-wrap: anywhere;
-}
-
-.fileResultOpenLink {
-  color: var(--link);
-  font-size: 12px;
-  font-weight: 700;
-  justify-self: start;
-  text-decoration: none;
-}
-
 .fileViewerPage {
   display: grid;
   gap: 16px;
@@ -880,15 +886,7 @@ td:first-child {
   overflow-wrap: anywhere;
 }
 
-.fileViewerGrid {
-  align-items: start;
-  display: grid;
-  gap: 16px;
-  grid-template-columns: minmax(0, 1fr) 380px;
-}
-
 .fileViewerPreview,
-.fileViewerSidebar,
 .fileViewerText {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -896,28 +894,28 @@ td:first-child {
   padding: 16px;
 }
 
-.fileViewerPreview {
-  min-height: 620px;
-}
-
 .fileViewerPreview .embeddedPreview {
-  height: min(82vh, 980px);
+  height: clamp(420px, 76vh, 920px);
 }
 
 .fileViewerPreview .imagePreview {
-  max-height: min(82vh, 980px);
+  max-height: min(76vh, 920px);
 }
 
-.fileViewerSidebar {
+.fileViewerDetailsGrid {
   display: grid;
   gap: 14px;
-  max-height: calc(100vh - 130px);
-  overflow: auto;
-  position: sticky;
-  top: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.fileViewerSidebar .drawerSection h2 {
+.fileViewerDetailsGrid .drawerSection {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.fileViewerDetailsGrid .drawerSection h2 {
   font-size: 18px;
   margin: 0 0 12px;
 }
@@ -928,9 +926,10 @@ td:first-child {
 }
 
 .fileViewerReadableText {
-  font-size: 16px;
-  line-height: 1.75;
+  font-size: 18px;
+  line-height: 1.8;
   max-height: none;
+  min-height: 132px;
 }
 
 .textMetaRow {
@@ -940,6 +939,12 @@ td:first-child {
   font-size: 13px;
   gap: 12px;
   margin-top: 6px;
+}
+
+.fileExplorerMain {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
 }
 
 .reviewToolbar {
@@ -972,6 +977,12 @@ td:first-child {
   gap: 14px;
   grid-template-columns: 260px minmax(0, 1fr);
   margin-top: 14px;
+}
+
+.evidenceGrid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .reviewResultsPanel {
@@ -1126,12 +1137,6 @@ td:first-child {
   margin-top: 12px;
 }
 
-.chipList {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
 .filterChip {
   background: var(--accent-soft);
   border: 1px solid var(--accent);
@@ -1281,30 +1286,6 @@ td:first-child {
   white-space: pre-wrap;
 }
 
-.compactTextPreview {
-  font-size: 13px;
-  line-height: 1.5;
-  max-height: 180px;
-  padding: 11px;
-}
-
-.ocrEvidencePanel {
-  display: grid;
-  gap: 10px;
-}
-
-.snippetBlock {
-  display: grid;
-  gap: 5px;
-}
-
-.snippetBlock > span {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
 .jsonPreview {
   background: #0b0f0d;
   border-radius: 7px;
@@ -1365,7 +1346,7 @@ td:first-child {
   gap: 10px;
   justify-items: center;
   overflow: auto;
-  padding: 10px;
+  padding: 12px;
 }
 
 .imagePreviewShell .buttonRow {
@@ -1567,13 +1548,14 @@ td:first-child {
 }
 
 @media (max-width: 1100px) {
-  .fileExplorerLayout,
+  .fileViewerDetailsGrid {
+    grid-template-columns: 1fr;
+  }
+
   .reviewWorkspace {
     grid-template-columns: 1fr;
   }
 
-  .fileInspector,
-  .facetPanel,
   .reviewFacetPanel {
     max-height: none;
     position: static;
@@ -1803,10 +1785,6 @@ td:first-child {
     width: 100%;
   }
 
-  .fileResultMeta {
-    grid-template-columns: 1fr;
-  }
-
   .shell {
     padding: 18px;
   }
@@ -1829,10 +1807,18 @@ td:first-child {
   .settingsGrid,
   .presetGrid,
   .drawerGrid,
-  .fileViewerGrid,
+  .fileDetailGrid,
+  .fileViewerDetailsGrid,
   .fileExplorerLayout,
   .reviewWorkspace {
     grid-template-columns: 1fr;
+  }
+
+  .facetPanel,
+  .fileInspector,
+  .reviewInspector {
+    max-height: none;
+    position: static;
   }
 
   .fileViewerPage {
@@ -1841,14 +1827,6 @@ td:first-child {
 
   .fileViewerHeader {
     flex-direction: column;
-  }
-
-  .facetPanel,
-  .fileInspector,
-  .fileViewerSidebar,
-  .reviewInspector {
-    max-height: none;
-    position: static;
   }
 
   .actionPanel {

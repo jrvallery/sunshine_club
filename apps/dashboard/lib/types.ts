@@ -39,6 +39,8 @@ export type ReviewItem = {
   correct_class?: string | null;
   correct_tag?: string | null;
   correct_secondary_tags?: string[];
+  expected_review_required?: boolean | null;
+  sensitive_record?: boolean;
   correct_destination_path?: string | null;
   correct_placement_year?: string | null;
   correct_privacy?: string | null;

@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 
-import { ProviderConfigBadge } from "../../../components/dashboard/ProviderConfigBadge";
 import { OcrEvidencePanel } from "../../../components/dashboard/OcrEvidencePanel";
+import { ProviderConfigBadge } from "../../../components/dashboard/ProviderConfigBadge";
 import { RunContextBadge } from "../../../components/dashboard/RunContextBadge";
 import { EmbeddedPreview } from "../../../components/file-preview/EmbeddedPreview";
 import { KeyValue } from "../../../components/ui/KeyValue";
@@ -96,68 +96,6 @@ function FileViewerPageContent() {
         </div>
       </header>
 
-      <section className="fileViewerGrid">
-        <section className="fileViewerPreview">
-          <EmbeddedPreview
-            previewUrl={`/api/admin/files/${file.id}/preview`}
-            filename={file.filename}
-            mimeType={file.mime_type ?? undefined}
-            extension={file.extension ?? undefined}
-            autoLoad
-          />
-        </section>
-
-        <section className="fileViewerSidebar">
-          <section className="drawerSection">
-            <h2>Actions</h2>
-            <div className="providerPickerGrid">
-              <ProviderSelect label="Embedding path" value={embeddingProvider} onChange={setEmbeddingProvider} />
-              <ProviderSelect label="LLM tag path" value={llmProvider} onChange={setLlmProvider} />
-              <ProviderSelect label="OCR fallback path" value={ocrProvider} onChange={setOcrProvider} />
-            </div>
-            <div className="buttonRow">
-              <button className="secondaryButton" onClick={() => copyText(file.source_path)}>Copy Path</button>
-              <button className="secondaryButton" disabled={addReview.isPending} onClick={() => addReview.mutate()}>Add To Review</button>
-              <button className="secondaryButton" disabled={runFile.isPending} onClick={() => runFile.mutate()}>Run File</button>
-            </div>
-          </section>
-
-          <section className="drawerSection">
-            <h2>Identity</h2>
-            <KeyValue label="Relative path" value={file.relative_path} />
-            <KeyValue label="Source path" value={file.source_path} />
-            <KeyValue label="Collection" value={file.source_collection ?? "-"} />
-            <KeyValue label="Type" value={`${file.extension ?? "-"} / ${file.content_class ?? "-"}`} />
-            <KeyValue label="Size" value={file.size_bytes == null ? "-" : `${file.size_bytes} bytes`} />
-            <KeyValue label="Latest run" value={<RunContextBadge runId={file.latest_run_id} runKey={file.latest_run_key} preset={file.latest_run_preset_key} />} />
-            <KeyValue
-              label="Latest providers"
-              value={
-                <ProviderConfigBadge
-                  embeddingProvider={file.latest_embedding_provider}
-                  llmEnabled={file.latest_enable_llm_tags}
-                  llmProvider={file.latest_llm_tag_provider}
-                  ocrProvider={file.latest_ocr_fallback_provider}
-                />
-              }
-            />
-          </section>
-
-          <section className="drawerSection">
-            <h2>Latest Pipeline Result</h2>
-            <KeyValue label="Class" value={result.final_class ?? file.content_class ?? "-"} />
-            <KeyValue label="Extraction" value={result.extraction_strategy ?? "-"} />
-            <KeyValue label="Status" value={result.extraction_status ?? "-"} />
-            <KeyValue label="Primary tag" value={result.top_tag_candidate ?? "-"} />
-            <KeyValue label="Secondary tags" value={(result.secondary_tags ?? []).join(", ") || "-"} />
-            <KeyValue label="Confidence" value={result.tag_confidence == null ? "-" : String(result.tag_confidence)} />
-            <KeyValue label="Destination" value={result.destination_path ?? "-"} />
-            <KeyValue label="Placement" value={result.placement_status ?? "-"} />
-            <WarningList warnings={result.warnings ?? []} />
-          </section>
-        </section>
-      </section>
-
       <section className="fileViewerText">
         <div>
           <h2>Extracted Text</h2>
@@ -167,11 +105,77 @@ function FileViewerPageContent() {
             <span>Confidence {String(data.ocr.mean_confidence ?? "-")}</span>
           </div>
         </div>
-        <OcrEvidencePanel
-          evidence={result.ocr_evidence}
-          fallbackText={data.text.snippet}
-          finalText={data.text.text || data.text.snippet}
+        <div className="textPreview fileViewerReadableText">{data.text.text || data.text.snippet || "No text available."}</div>
+      </section>
+
+      <section className="fileViewerPreview">
+        <EmbeddedPreview
+          previewUrl={`/api/admin/files/${file.id}/preview`}
+          filename={file.filename}
+          mimeType={file.mime_type ?? undefined}
+          extension={file.extension ?? undefined}
+          autoLoad
         />
+      </section>
+
+      <section className="fileViewerDetailsGrid">
+        <section className="drawerSection">
+          <h2>Actions</h2>
+          <div className="providerPickerGrid">
+            <ProviderSelect label="Embedding path" value={embeddingProvider} onChange={setEmbeddingProvider} />
+            <ProviderSelect label="LLM tag path" value={llmProvider} onChange={setLlmProvider} />
+            <ProviderSelect label="OCR fallback path" value={ocrProvider} onChange={setOcrProvider} />
+          </div>
+          <div className="buttonRow">
+            <button className="secondaryButton" onClick={() => copyText(file.source_path)}>Copy Path</button>
+            <button className="secondaryButton" disabled={addReview.isPending} onClick={() => addReview.mutate()}>Add To Review</button>
+            <button className="secondaryButton" disabled={runFile.isPending} onClick={() => runFile.mutate()}>Run File</button>
+          </div>
+        </section>
+
+        <section className="drawerSection">
+          <h2>Identity</h2>
+          <KeyValue label="Relative path" value={file.relative_path} />
+          <KeyValue label="Source path" value={file.source_path} />
+          <KeyValue label="Collection" value={file.source_collection ?? "-"} />
+          <KeyValue label="Type" value={`${file.extension ?? "-"} / ${file.content_class ?? "-"}`} />
+          <KeyValue label="Size" value={file.size_bytes == null ? "-" : `${file.size_bytes} bytes`} />
+          <KeyValue label="Latest run" value={<RunContextBadge runId={file.latest_run_id} runKey={file.latest_run_key} preset={file.latest_run_preset_key} />} />
+          <KeyValue
+            label="Latest providers"
+            value={
+              <ProviderConfigBadge
+                embeddingProvider={file.latest_embedding_provider}
+                llmEnabled={file.latest_enable_llm_tags}
+                llmProvider={file.latest_llm_tag_provider}
+                ocrProvider={file.latest_ocr_fallback_provider}
+              />
+            }
+          />
+        </section>
+
+        <section className="drawerSection">
+          <h2>Latest Pipeline Result</h2>
+          <KeyValue label="Class" value={result.final_class ?? file.content_class ?? "-"} />
+          <KeyValue label="Extraction" value={result.extraction_strategy ?? "-"} />
+          <KeyValue label="Status" value={result.extraction_status ?? "-"} />
+          <KeyValue label="Primary tag" value={result.top_tag_candidate ?? "-"} />
+          <KeyValue label="Secondary tags" value={(result.secondary_tags ?? []).join(", ") || "-"} />
+          <KeyValue label="Confidence" value={result.tag_confidence == null ? "-" : String(result.tag_confidence)} />
+          <KeyValue label="Destination" value={result.destination_path ?? "-"} />
+          <KeyValue label="Placement" value={result.placement_status ?? "-"} />
+          <WarningList warnings={result.warnings ?? []} />
+        </section>
+
+        <section className="drawerSection wideSection">
+          <h2>OCR Evidence</h2>
+          <KeyValue label="Fallback" value={String(data.ocr.fallback_provider ?? "-")} />
+          <OcrEvidencePanel
+            evidence={result.ocr_evidence}
+            fallbackText={data.text.snippet}
+            finalText={data.text.text || data.text.snippet}
+          />
+        </section>
       </section>
     </main>
   );

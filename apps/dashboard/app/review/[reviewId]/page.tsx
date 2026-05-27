@@ -111,96 +111,98 @@ function ReviewItemPageContent() {
         </div>
       </header>
 
-      <section className="fileViewerGrid">
-        <section className="fileViewerPreview">
-          <EmbeddedPreview previewUrl={`/api/admin/review/items/${item.id}/file`} filename={item.relative_path || item.source_path} autoLoad />
-        </section>
-
-        <section className="fileViewerSidebar">
-          <section className="drawerSection">
-            <h2>Run Context</h2>
-            <KeyValue label="Run" value={<RunContextBadge runId={item.run_id} runKey={item.run_key} preset={item.run_preset_key} />} />
-            <KeyValue label="Providers" value={<ProviderConfigBadge embeddingProvider={item.embedding_provider} llmEnabled={item.enable_llm_tags} llmProvider={item.llm_tag_provider} ocrProvider={item.ocr_fallback_provider} />} />
-            <KeyValue label="Class" value={item.proposed_class ?? "-"} />
-            <KeyValue label="Primary tag" value={item.proposed_tag ?? "-"} />
-            <KeyValue label="Secondary tags" value={item.secondary_tags.join(", ") || "-"} />
-            <KeyValue label="Warnings" value={(item.display_warnings ?? item.warnings).join(", ") || "-"} />
-          </section>
-
-          <section className="drawerSection">
-            <h2>Model Usage</h2>
-            <KeyValue label="Scope" value={item.model_usage_summary?.scope ?? "none"} />
-            <KeyValue label="Calls" value={String(item.model_usage_summary?.total_calls ?? 0)} />
-            <KeyValue label="External / local" value={`${item.model_usage_summary?.external_calls ?? 0} / ${item.model_usage_summary?.local_calls ?? 0}`} />
-            <KeyValue label="Failed" value={String(item.model_usage_summary?.failed_calls ?? 0)} />
-            <KeyValue label="Tokens" value={String(item.model_usage_summary?.total_tokens ?? 0)} />
-            <KeyValue label="Runtime" value={`${item.model_usage_summary?.total_runtime_ms ?? 0} ms`} />
-            <KeyValue label="External cost" value={`$${(item.model_usage_summary?.estimated_external_cost_usd ?? 0).toFixed(4)}`} />
-          </section>
-
-          <section className="drawerSection">
-            <h2>Placement</h2>
-            <KeyValue label="Destination" value={item.result.destination_path ?? "-"} />
-            <KeyValue label="Status" value={item.result.placement_status ?? "-"} />
-            <KeyValue label="Rule" value={item.result.placement_rule ?? "-"} />
-            <KeyValue label="Date confidence" value={item.result.placement_date_confidence ?? "-"} />
-            <KeyValue label="Privacy" value={item.result.default_privacy ?? "-"} />
-          </section>
-        </section>
-      </section>
-
       <section className="fileViewerText">
         <div>
-          <h2>OCR / Extracted Text</h2>
+          <h2>Extracted Text</h2>
           <div className="textMetaRow">
             <span>Status {item.status}</span>
             <span>Reason {item.review_reason ?? "-"}</span>
             <span>Confidence {item.confidence == null ? "-" : item.confidence.toFixed(2)}</span>
-            <span>OCR label {item.ocr_quality_label ?? "-"}</span>
           </div>
         </div>
-        <OcrEvidencePanel
-          evidence={item.ocr_evidence ?? item.result.ocr_evidence}
-          fallbackText={item.extraction_text_snippet}
-          finalText={extractedText}
-        />
+        <div className="textPreview fileViewerReadableText">{extractedText}</div>
+      </section>
+
+      <section className="fileViewerPreview">
+        <EmbeddedPreview previewUrl={`/api/admin/review/items/${item.id}/file`} filename={item.relative_path || item.source_path} autoLoad />
       </section>
 
       <section className="fileViewerDetailsGrid">
+        <section className="drawerSection">
+          <h2>Run Context</h2>
+          <KeyValue label="Run" value={<RunContextBadge runId={item.run_id} runKey={item.run_key} preset={item.run_preset_key} />} />
+          <KeyValue label="Providers" value={<ProviderConfigBadge embeddingProvider={item.embedding_provider} llmEnabled={item.enable_llm_tags} llmProvider={item.llm_tag_provider} ocrProvider={item.ocr_fallback_provider} />} />
+          <KeyValue label="Class" value={item.proposed_class ?? "-"} />
+          <KeyValue label="Primary tag" value={item.proposed_tag ?? "-"} />
+          <KeyValue label="Secondary tags" value={item.secondary_tags.join(", ") || "-"} />
+          <KeyValue label="Warnings" value={(item.display_warnings ?? item.warnings).join(", ") || "-"} />
+        </section>
+
+        <section className="drawerSection">
+          <h2>Model Usage</h2>
+          <KeyValue label="Scope" value={item.model_usage_summary?.scope ?? "none"} />
+          <KeyValue label="Calls" value={String(item.model_usage_summary?.total_calls ?? 0)} />
+          <KeyValue label="External / local" value={`${item.model_usage_summary?.external_calls ?? 0} / ${item.model_usage_summary?.local_calls ?? 0}`} />
+          <KeyValue label="Failed" value={String(item.model_usage_summary?.failed_calls ?? 0)} />
+          <KeyValue label="Tokens" value={String(item.model_usage_summary?.total_tokens ?? 0)} />
+          <KeyValue label="Runtime" value={`${item.model_usage_summary?.total_runtime_ms ?? 0} ms`} />
+          <KeyValue label="External cost" value={`$${(item.model_usage_summary?.estimated_external_cost_usd ?? 0).toFixed(4)}`} />
+          <KeyValue label="Providers" value={(item.model_usage_summary?.providers ?? []).join(", ") || "-"} />
+        </section>
+
+        <section className="drawerSection">
+          <h2>OCR Evidence</h2>
+          <KeyValue label="Reviewer OCR label" value={item.ocr_quality_label ?? "-"} />
+          <OcrEvidencePanel
+            evidence={item.ocr_evidence ?? item.result.ocr_evidence}
+            fallbackText={item.extraction_text_snippet}
+            finalText={extractedText}
+          />
+        </section>
+
+        <section className="drawerSection">
+          <h2>Placement</h2>
+          <KeyValue label="Destination" value={item.result.destination_path ?? "-"} />
+          <KeyValue label="Status" value={item.result.placement_status ?? "-"} />
+          <KeyValue label="Rule" value={item.result.placement_rule ?? "-"} />
+          <KeyValue label="Date confidence" value={item.result.placement_date_confidence ?? "-"} />
+          <KeyValue label="Privacy" value={item.result.default_privacy ?? "-"} />
+        </section>
+
         <ReviewDecisionPanel
           item={item}
           saving={decisionMutation.isPending}
-          assigning={assignmentMutation.isPending || ocrQualityMutation.isPending}
+          assigning={assignmentMutation.isPending}
           onSubmit={(body) => decisionMutation.mutate(body)}
           onAssign={(body) => assignmentMutation.mutate(body)}
+          markingOcr={ocrQualityMutation.isPending}
           onMarkOcrPoor={(body) => ocrQualityMutation.mutate(body)}
         />
+      </section>
 
-        <section className="drawerSection">
-          <h2>Tag Evidence</h2>
-          <ul className="evidenceList">{(item.result.tag_evidence ?? []).map((evidence) => <li key={evidence}>{evidence}</li>)}</ul>
-          {(item.result.tag_evidence ?? []).length ? null : <p className="muted">No tag evidence available.</p>}
-        </section>
-
-        <section className="drawerSection">
-          <h2>Nearest Examples</h2>
-          {(item.result.semantic_examples ?? []).length ? (
-            <ul className="evidenceList">
-              {(item.result.semantic_examples ?? []).map((example, index) => (
-                <li key={`${example.relative_path}-${index}`}>
-                  {example.correct_primary_tag} {example.score?.toFixed(3)} {example.relative_path}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="muted">No semantic examples used.</p>
-          )}
-        </section>
-
-        <section className="drawerSection wideSection">
-          <h2>Raw JSON</h2>
-          <pre className="jsonPreview">{JSON.stringify(item.result, null, 2)}</pre>
-        </section>
+      <section className="fileViewerText">
+        <h2>Evidence</h2>
+        <div className="evidenceGrid">
+          <section>
+            <h3>Tag Evidence</h3>
+            <ul className="evidenceList">{(item.result.tag_evidence ?? []).map((evidence) => <li key={evidence}>{evidence}</li>)}</ul>
+            {(item.result.tag_evidence ?? []).length ? null : <p className="muted">No tag evidence available.</p>}
+          </section>
+          <section>
+            <h3>Nearest Examples</h3>
+            {(item.result.semantic_examples ?? []).length ? (
+              <ul className="evidenceList">
+                {(item.result.semantic_examples ?? []).map((example, index) => (
+                  <li key={`${example.relative_path}-${index}`}>
+                    {example.correct_primary_tag} {example.score?.toFixed(3)} {example.relative_path}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="muted">No semantic examples used.</p>
+            )}
+          </section>
+        </div>
       </section>
     </main>
   );
@@ -212,6 +214,7 @@ function ReviewDecisionPanel({
   assigning,
   onSubmit,
   onAssign,
+  markingOcr,
   onMarkOcrPoor
 }: {
   item: ReviewItem;
@@ -219,15 +222,16 @@ function ReviewDecisionPanel({
   assigning: boolean;
   onSubmit: (body: Record<string, unknown>) => void;
   onAssign: (body: Record<string, unknown>) => void;
+  markingOcr: boolean;
   onMarkOcrPoor: (body: Record<string, unknown>) => void;
 }) {
   const [decision, setDecision] = useState("accept");
   const [correctClass, setCorrectClass] = useState(item.correct_class ?? item.proposed_class ?? "");
   const [correctTag, setCorrectTag] = useState(item.correct_tag ?? item.proposed_tag ?? "");
   const [secondary, setSecondary] = useState(item.correct_secondary_tags?.length ? item.correct_secondary_tags : item.secondary_tags);
-  const [ocrQuality, setOcrQuality] = useState(String(item.result.quality ?? ""));
-  const [expectedReviewRequired, setExpectedReviewRequired] = useState(item.route_status !== "route_candidate");
-  const [sensitiveRecord, setSensitiveRecord] = useState(false);
+  const [ocrQuality, setOcrQuality] = useState(String(item.ocr_quality_label ?? item.result.quality ?? ""));
+  const [expectedReviewRequired, setExpectedReviewRequired] = useState(item.expected_review_required ?? item.route_status !== "route_candidate");
+  const [sensitiveRecord, setSensitiveRecord] = useState(item.sensitive_record ?? false);
   const [destination, setDestination] = useState(item.correct_destination_path ?? item.result.destination_path ?? "");
   const [placementYear, setPlacementYear] = useState(item.correct_placement_year ?? "");
   const [privacy, setPrivacy] = useState(item.correct_privacy ?? item.result.default_privacy ?? "");
@@ -289,6 +293,21 @@ function ReviewDecisionPanel({
         <TextInput label="Reviewer" value={reviewer} onChange={(event) => setReviewer(event.target.value)} />
         <TextArea label="Notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} />
         <Button
+          disabled={markingOcr}
+          onClick={() => {
+            setOcrQuality("poor");
+            setExpectedReviewRequired(true);
+            setReviewStage("needs_ocr_review");
+            onMarkOcrPoor({
+              ocr_quality_label: "poor",
+              review_stage: "needs_ocr_review",
+              notes: "Marked OCR poor from review detail page."
+            });
+          }}
+        >
+          {markingOcr ? "Marking..." : "Mark OCR Poor"}
+        </Button>
+        <Button
           disabled={assigning}
           onClick={() =>
             onAssign({
@@ -299,21 +318,6 @@ function ReviewDecisionPanel({
           }
         >
           {assigning ? "Assigning..." : "Save Assignment"}
-        </Button>
-        <Button
-          disabled={assigning}
-          onClick={() => {
-            setOcrQuality("poor");
-            setExpectedReviewRequired(true);
-            setReviewStage("needs_ocr_review");
-            onMarkOcrPoor({
-              ocr_quality_label: "poor",
-              review_stage: "needs_ocr_review",
-              notes: "Marked OCR poor from review dashboard."
-            });
-          }}
-        >
-          Mark OCR Poor
         </Button>
         <Button
           variant="primary"
