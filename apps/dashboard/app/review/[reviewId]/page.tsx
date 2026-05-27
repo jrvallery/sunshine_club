@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 
+import { OcrEvidencePanel } from "../../../components/dashboard/OcrEvidencePanel";
 import { ProviderConfigBadge } from "../../../components/dashboard/ProviderConfigBadge";
 import { RunContextBadge } from "../../../components/dashboard/RunContextBadge";
 import { EmbeddedPreview } from "../../../components/file-preview/EmbeddedPreview";
@@ -135,6 +136,16 @@ function ReviewItemPageContent() {
           <KeyValue label="Primary tag" value={item.proposed_tag ?? "-"} />
           <KeyValue label="Secondary tags" value={item.secondary_tags.join(", ") || "-"} />
           <KeyValue label="Warnings" value={(item.display_warnings ?? item.warnings).join(", ") || "-"} />
+        </section>
+
+        <section className="drawerSection">
+          <h2>OCR Evidence</h2>
+          <KeyValue label="Reviewer OCR label" value={item.ocr_quality_label ?? "-"} />
+          <OcrEvidencePanel
+            evidence={item.ocr_evidence ?? item.result.ocr_evidence}
+            fallbackText={item.extraction_text_snippet}
+            finalText={extractedText}
+          />
         </section>
 
         <section className="drawerSection">
