@@ -70,6 +70,8 @@ class ReviewStore:
                 route_status = str(result.get("route_status") or "unknown")
                 secondary_tags_json = json.dumps(result.get("secondary_tags", []), sort_keys=True)
                 extraction_text_snippet = _extraction_text_snippet(extraction_by_source.get(source_path))
+                if "ocr_evidence" not in result:
+                    result = {**result, "ocr_evidence": _ocr_evidence_from_result(result, extraction_text_snippet)}
                 review_row = review_by_source.get(source_path)
                 review_reason = str(
                     (review_row or {}).get("review_reason")
@@ -716,6 +718,7 @@ class ReviewStore:
                 "ocr_status": latest_result.get("ocr_status"),
                 "mean_confidence": latest_result.get("mean_confidence"),
                 "fallback_provider": _ocr_fallback_provider(latest_result.get("warnings") or []),
+                "evidence": _ocr_evidence_from_result(latest_result, file_record.get("extraction_text_snippet")),
                 "warnings": latest_result.get("warnings") or [],
             },
             "text": {
@@ -2213,6 +2216,7 @@ def _review_item_from_row(row: sqlite3.Row, *, model_usage_summary: dict[str, An
         "confidence": row["confidence"],
         "warnings": _json_list(row["warnings_json"]),
         "display_warnings": _display_warnings(_json_list(row["warnings_json"])),
+        "ocr_evidence": _ocr_evidence_from_result(result, row["extraction_text_snippet"]),
         "run_id": _row_value(row, "run_id"),
         "run_key": _row_value(row, "run_key"),
         "run_preset_key": _row_value(row, "run_preset_key"),
@@ -2910,4 +2914,37 @@ def _json_object(value: str | None) -> dict[str, Any]:
 
 
 def _display_warnings(warnings: list[str]) -> list[str]:
-    return [warning for warning in warnings if not str(warning).startswith("ocr_fallback_note:")]
+    hidden_prefixes = ("ocr_fallback_note:", "ocr_original_snippet:", "ocr_fallback_snippet:")
+    return [warning for warning in warnings if not str(warning).startswith(hidden_prefixes)]
+
+
+def _ocr_evidence_from_result(result: dict[str, Any], fallback_final_snippet: str | None = None) -> dict[str, Any]:
+    evidence = result.get("ocr_evidence")
+    if isinstance(evidence, dict):
+        return evidence
+    warnings = result.get("warnings") or []
+    if not isinstance(warnings, list):
+        warnings = []
+    fallback_provider = _warning_value(warnings, "ocr_fallback_used:")
+    fallback_reason = _warning_value(warnings, "ocr_fallback_reason:")
+    fallback_snippet = _warning_value(warnings, "ocr_fallback_snippet:")
+    if fallback_provider and not fallback_snippet:
+        fallback_snippet = fallback_final_snippet
+    return {
+        "fallback_used": bool(fallback_provider),
+        "fallback_provider": fallback_provider,
+        "fallback_reason": fallback_reason,
+        "fallback_notes": _warning_values(warnings, "ocr_fallback_note:"),
+        "original_text_snippet": _warning_value(warnings, "ocr_original_snippet:"),
+        "fallback_text_snippet": fallback_snippet,
+        "final_text_snippet": result.get("extraction_text_snippet") or fallback_final_snippet,
+    }
+
+
+def _warning_value(warnings: list[Any], prefix: str) -> str | None:
+    values = _warning_values(warnings, prefix)
+    return values[0] if values else None
+
+
+def _warning_values(warnings: list[Any], prefix: str) -> list[str]:
+    return [str(warning)[len(prefix) :] for warning in warnings if str(warning).startswith(prefix)]

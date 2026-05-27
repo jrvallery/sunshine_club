@@ -26,6 +26,7 @@ export type ReviewItem = {
   confidence: number | null;
   warnings: string[];
   display_warnings?: string[];
+  ocr_evidence?: OcrEvidence;
   run_id?: number | null;
   run_key?: string | null;
   run_preset_key?: string | null;
@@ -60,6 +61,16 @@ export type ReviewItem = {
   result: PipelineResult;
 };
 
+export type OcrEvidence = {
+  fallback_used?: boolean;
+  fallback_provider?: string | null;
+  fallback_reason?: string | null;
+  fallback_notes?: string[];
+  original_text_snippet?: string | null;
+  fallback_text_snippet?: string | null;
+  final_text_snippet?: string | null;
+};
+
 export type PipelineResult = {
   sample_path?: string;
   source_path?: string;
@@ -83,6 +94,7 @@ export type PipelineResult = {
   semantic_examples?: SemanticExample[];
   competing_tags?: Array<Record<string, unknown>>;
   confidence_inputs?: Record<string, unknown>;
+  ocr_evidence?: OcrEvidence;
   warnings?: string[];
 };
 

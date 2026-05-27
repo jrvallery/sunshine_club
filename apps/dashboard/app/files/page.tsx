@@ -11,6 +11,7 @@ import { ActiveFilterChips } from "../../components/dashboard/ActiveFilterChips"
 import { DashboardSearchToolbar } from "../../components/dashboard/DashboardSearchToolbar";
 import { FacetPanel, type FacetDefinition } from "../../components/dashboard/FacetPanel";
 import { InspectorPanel } from "../../components/dashboard/InspectorPanel";
+import { OcrEvidencePanel } from "../../components/dashboard/OcrEvidencePanel";
 import { PathCell } from "../../components/dashboard/PathCell";
 import { ProviderConfigBadge } from "../../components/dashboard/ProviderConfigBadge";
 import { QualityBadge } from "../../components/dashboard/QualityBadge";
@@ -458,7 +459,11 @@ function FileInspector({
         <KeyValue label="OCR quality" value={String(inspection.ocr.quality ?? "-")} />
         <KeyValue label="OCR confidence" value={String(inspection.ocr.mean_confidence ?? "-")} />
         <KeyValue label="Fallback" value={String(inspection.ocr.fallback_provider ?? "-")} />
-        <div className="textPreview">{inspection.text.text || inspection.text.snippet || "No text available."}</div>
+        <OcrEvidencePanel
+          evidence={result.ocr_evidence}
+          fallbackText={inspection.text.snippet}
+          finalText={inspection.text.text || inspection.text.snippet}
+        />
       </section>
 
       <section className="drawerSection">

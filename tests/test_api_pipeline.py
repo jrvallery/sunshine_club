@@ -218,7 +218,12 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
         "placement_date_confidence": "missing",
         "default_privacy": "club_internal",
         "destination_path": "01_Governance_Admin/needs-date",
-        "warnings": ["ocr_fallback_note:mostly clear", "ocr_fallback_used:openai:gpt-4.1-mini"],
+        "warnings": [
+            "ocr_fallback_note:mostly clear",
+            "ocr_fallback_used:openai:gpt-4.1-mini",
+            "ocr_original_snippet:xqz",
+            "ocr_fallback_snippet:Extracted meeting minutes OCR snippet for review.",
+        ],
     }
     (output_dir / "sample-pipeline-results.jsonl").write_text(json.dumps(result) + "\n", encoding="utf-8")
     (output_dir / "sample-review-queue.jsonl").write_text(json.dumps(result) + "\n", encoding="utf-8")
@@ -424,6 +429,9 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert items.json()[0]["secondary_tags"] == ["meeting_minutes", "financial_report"]
     assert items.json()[0]["extraction_text_snippet"] == "Extracted meeting minutes OCR snippet for review."
     assert items.json()[0]["display_warnings"] == ["ocr_fallback_used:openai:gpt-4.1-mini"]
+    assert items.json()[0]["ocr_evidence"]["fallback_used"] is True
+    assert items.json()[0]["ocr_evidence"]["original_text_snippet"] == "xqz"
+    assert items.json()[0]["ocr_evidence"]["fallback_text_snippet"] == "Extracted meeting minutes OCR snippet for review."
     assert filtered_items.status_code == 200
     assert len(filtered_items.json()) == 1
     assert low_confidence_items.status_code == 200
@@ -498,6 +506,7 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert file_response.content == b"review pdf bytes"
     assert files.status_code == 200
     assert files.json()[0]["latest_result"]["top_tag_candidate"] == "meeting_records"
+    assert files.json()[0]["latest_result"]["ocr_evidence"]["fallback_provider"] == "openai:gpt-4.1-mini"
     assert file_text.json()["text"] == "Extracted meeting minutes OCR snippet for review."
     assert file_review.status_code == 200
     assert file_review.json()["review_reason"] == "manual_file_review"

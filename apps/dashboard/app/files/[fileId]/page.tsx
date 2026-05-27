@@ -6,6 +6,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 
 import { ProviderConfigBadge } from "../../../components/dashboard/ProviderConfigBadge";
+import { OcrEvidencePanel } from "../../../components/dashboard/OcrEvidencePanel";
 import { RunContextBadge } from "../../../components/dashboard/RunContextBadge";
 import { EmbeddedPreview } from "../../../components/file-preview/EmbeddedPreview";
 import { KeyValue } from "../../../components/ui/KeyValue";
@@ -166,7 +167,11 @@ function FileViewerPageContent() {
             <span>Confidence {String(data.ocr.mean_confidence ?? "-")}</span>
           </div>
         </div>
-        <div className="textPreview fileViewerReadableText">{data.text.text || data.text.snippet || "No text available."}</div>
+        <OcrEvidencePanel
+          evidence={result.ocr_evidence}
+          fallbackText={data.text.snippet}
+          finalText={data.text.text || data.text.snippet}
+        />
       </section>
     </main>
   );

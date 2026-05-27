@@ -1185,6 +1185,30 @@ td:first-child {
   white-space: pre-wrap;
 }
 
+.compactTextPreview {
+  font-size: 13px;
+  line-height: 1.5;
+  max-height: 180px;
+  padding: 11px;
+}
+
+.ocrEvidencePanel {
+  display: grid;
+  gap: 10px;
+}
+
+.snippetBlock {
+  display: grid;
+  gap: 5px;
+}
+
+.snippetBlock > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
 .jsonPreview {
   background: #0b0f0d;
   border-radius: 7px;

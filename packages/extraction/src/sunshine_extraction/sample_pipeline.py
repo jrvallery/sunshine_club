@@ -296,9 +296,13 @@ class EscalatingOcrExecutor(OcrExecutor):
             return primary_document, primary_pages
 
         fallback_document, fallback_pages = self.fallback.ocr_sample(sample, plan)
+        primary_text = _shorten(_joined_page_text(primary_pages), 360)
+        fallback_text = _shorten(_joined_page_text(fallback_pages), 360)
         fallback_warnings = [
             f"ocr_fallback_used:{self.fallback.engine_name}",
             f"ocr_fallback_reason:{escalation_reason}",
+            *([f"ocr_original_snippet:{primary_text}"] if primary_text else []),
+            *([f"ocr_fallback_snippet:{fallback_text}"] if fallback_text else []),
             *fallback_document.warnings,
         ]
         return (
@@ -992,6 +996,7 @@ def validate_and_repair_extraction(
             "strategy": plan.get("strategy"),
             "status": extraction.extraction_status,
             "text_length": len(extraction.text),
+            "text_snippet": _shorten(extraction.text, 360),
             "warnings": extraction.warnings,
         },
     }
@@ -1639,6 +1644,7 @@ def write_pipeline_result(
             "llm_review_reason": llm_inspection.get("review_reason"),
         },
         "confidence_calibration": confidence_calibration or {},
+        "ocr_evidence": _ocr_evidence(extraction),
         "route_status": route["route_status"],
         "review_reason": route.get("review_reason"),
         "warnings": extraction.warnings,
@@ -1976,6 +1982,10 @@ def _with_page_warning(page: OcrPageResult, warning: str) -> OcrPageResult:
     )
 
 
+def _joined_page_text(pages: list[OcrPageResult]) -> str:
+    return "\n\n".join(page.text for page in pages if page.text.strip())
+
+
 def _ocr_escalation_reason(document: OcrDocumentResult, pages: list[OcrPageResult]) -> str | None:
     if document.quality in {"poor", "metadata_only", "failed", "deferred"}:
         return document.quality
@@ -1983,6 +1993,37 @@ def _ocr_escalation_reason(document: OcrDocumentResult, pages: list[OcrPageResul
     if _looks_like_gibberish(text):
         return "gibberish_suspected"
     return None
+
+
+def _ocr_evidence(extraction: ExtractionResult) -> dict[str, Any]:
+    warnings = extraction.warnings
+    fallback_provider = _warning_value(warnings, "ocr_fallback_used:")
+    fallback_reason = _warning_value(warnings, "ocr_fallback_reason:")
+    original_extraction = extraction.metadata.get("original_extraction")
+    original_snippet = _warning_value(warnings, "ocr_original_snippet:")
+    if not original_snippet and isinstance(original_extraction, dict):
+        original_snippet = str(original_extraction.get("text_snippet") or "") or None
+    fallback_snippet = _warning_value(warnings, "ocr_fallback_snippet:")
+    if fallback_provider and not fallback_snippet:
+        fallback_snippet = _shorten(extraction.text, 360) or None
+    return {
+        "fallback_used": bool(fallback_provider),
+        "fallback_provider": fallback_provider,
+        "fallback_reason": fallback_reason,
+        "fallback_notes": _warning_values(warnings, "ocr_fallback_note:"),
+        "original_text_snippet": original_snippet,
+        "fallback_text_snippet": fallback_snippet,
+        "final_text_snippet": _shorten(extraction.text, 360) or None,
+    }
+
+
+def _warning_value(warnings: list[str], prefix: str) -> str | None:
+    values = _warning_values(warnings, prefix)
+    return values[0] if values else None
+
+
+def _warning_values(warnings: list[str], prefix: str) -> list[str]:
+    return [warning[len(prefix) :] for warning in warnings if isinstance(warning, str) and warning.startswith(prefix)]
 
 
 def _looks_like_gibberish(text: str) -> bool:

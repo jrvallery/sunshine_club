@@ -34,6 +34,7 @@ from sunshine_extraction.sample_pipeline import (
     resolve_route_or_review,
     run_sample_pipeline,
     validate_and_repair_extraction,
+    write_pipeline_result,
 )
 
 
@@ -270,6 +271,25 @@ def test_ocr_escalates_poor_local_result_to_fallback(tmp_path: Path) -> None:
     assert "Annual tea meeting minutes" in extraction.text
     assert "ocr_fallback_used:fallback-test-ocr" in extraction.warnings
     assert "ocr_fallback_reason:poor" in extraction.warnings
+    assert "ocr_original_snippet:xqz" in extraction.warnings
+    assert any(warning.startswith("ocr_fallback_snippet:Annual tea meeting minutes") for warning in extraction.warnings)
+    result = write_pipeline_result(
+        _sample(image),
+        {"final_class": "scanned_document"},
+        _plan("ocr_page_level"),
+        extraction,
+        quality,
+        chunks=[],
+        embeddings=[],
+        tag_candidates=[{"tag": "meeting_records", "confidence": 0.91, "evidence": [], "secondary_tags": []}],
+        route={"route_status": "route_candidate", "review_reason": None},
+        llm_inspection={"llm_status": "skipped"},
+    )
+    assert result["ocr_evidence"]["fallback_used"] is True
+    assert result["ocr_evidence"]["fallback_provider"] == "fallback-test-ocr"
+    assert result["ocr_evidence"]["fallback_reason"] == "poor"
+    assert result["ocr_evidence"]["original_text_snippet"] == "xqz"
+    assert "Annual tea meeting minutes" in result["ocr_evidence"]["fallback_text_snippet"]
 
 
 def test_ocr_does_not_escalate_good_local_result(tmp_path: Path) -> None:
@@ -312,6 +332,7 @@ def test_gibberish_pdf_text_layer_falls_back_to_ocr(tmp_path: Path) -> None:
 
     assert repaired.plan["strategy"] == "ocr_page_level"
     assert repaired.metadata["original_extraction"]["strategy"] == "text_extraction"
+    assert repaired.metadata["original_extraction"]["text_snippet"].startswith("• I r/l")
     assert "text_validation_failed:gibberish_suspected" in repaired.warnings
     assert "text_extraction_fallback_to_ocr:text_extraction" in repaired.warnings
     assert "Annual tea meeting minutes" in repaired.text

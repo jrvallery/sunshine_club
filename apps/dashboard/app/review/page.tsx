@@ -16,6 +16,7 @@ import { ActiveFilterChips } from "../../components/dashboard/ActiveFilterChips"
 import { DashboardSearchToolbar } from "../../components/dashboard/DashboardSearchToolbar";
 import { FacetPanel, type FacetDefinition } from "../../components/dashboard/FacetPanel";
 import { InspectorPanel } from "../../components/dashboard/InspectorPanel";
+import { OcrEvidencePanel } from "../../components/dashboard/OcrEvidencePanel";
 import { PathCell } from "../../components/dashboard/PathCell";
 import { ProviderConfigBadge } from "../../components/dashboard/ProviderConfigBadge";
 import { QualityBadge } from "../../components/dashboard/QualityBadge";
@@ -394,7 +395,11 @@ function ReviewDrawer({
         </section>
         <section>
           <h3>OCR / Text</h3>
-          <div className="textPreview">{item.extraction_text_snippet || "No text snippet available."}</div>
+          <OcrEvidencePanel
+            evidence={item.ocr_evidence ?? item.result.ocr_evidence}
+            fallbackText={item.extraction_text_snippet}
+            finalText={item.extraction_text_snippet}
+          />
         </section>
         <section>
           <h3>Tagging</h3>
