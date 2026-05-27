@@ -656,6 +656,61 @@ def test_llm_tag_schema_payload_is_normalized() -> None:
     ]
 
 
+def test_invalid_llm_primary_tag_is_rejected_before_candidate_merge() -> None:
+    taxonomy = TaxonomyOptions(
+        primary_tags=["annual_spring_tea"],
+        secondary_tags=["event_material"],
+        primary_definitions={"annual_spring_tea": "Tea files"},
+    )
+    from sunshine_extraction.sample_pipeline import normalize_llm_inspection
+
+    normalized = normalize_llm_inspection(
+        {
+            "primary_tag": "not_a_real_primary",
+            "secondary_tags": ["event_material"],
+            "confidence": 0.99,
+            "evidence": ["model invented a tag"],
+            "competing_tags": ["annual_spring_tea"],
+            "rationale": "Invalid response",
+            "needs_review": False,
+            "review_reason": "",
+        },
+        taxonomy,
+        model="test-model",
+    )
+    deterministic = [
+        {
+            "source_path": "/source/tea.pdf",
+            "relative_path": "Sunshine shared folders/Teas/tea.pdf",
+            "tag": "annual_spring_tea",
+            "confidence": 0.88,
+            "evidence": ["tea/guest-list evidence"],
+            "secondary_tags": [],
+            "assignment_source": "deterministic",
+        }
+    ]
+
+    combined = combine_tag_candidates(deterministic, normalized)
+    calibrated, calibration = calibrate_tag_confidence(
+        combined,
+        {"quality": "ok"},
+        _plan("text_extraction"),
+        llm_inspection=normalized,
+    )
+    route = resolve_route_or_review(calibrated, {"quality": "ok"}, _plan("text_extraction"))
+
+    assert normalized["llm_status"] == "invalid"
+    assert normalized["primary_tag"] is None
+    assert normalized["review_reason"] == "llm_primary_tag_invalid"
+    assert normalized["warnings"] == ["llm_primary_tag_invalid"]
+    assert [candidate["tag"] for candidate in combined] == ["annual_spring_tea"]
+    assert "not_a_real_primary" not in json.dumps(combined)
+    assert calibration["requires_review"] is True
+    assert calibration["review_reason"] == "llm_primary_tag_invalid"
+    assert route["route_status"] == "review_tag_confidence_calibration"
+    assert route["review_reason"] == "llm_primary_tag_invalid"
+
+
 def test_invalid_llm_structured_fields_force_review() -> None:
     deterministic = [
         {
