@@ -130,6 +130,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert summary["high_risk_primary_accuracy_min"] is None
     assert summary["high_confidence_primary_accuracy"] == 0.5
     assert summary["high_confidence_false_accepts"] == 0
+    assert summary["invalid_primary_tag_count"] == 0
     assert summary["source_file_mutations"] == 0
     assert summary["golden_label_readiness"]["ready"] is False
     assert summary["golden_label_readiness"]["total_golden_labels"] == 2
@@ -162,6 +163,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "source_file_mutations")["status"] == "pass"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "ocr_acceptable_rate")["status"] == "pass"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "llm_structured_output_validity_rate")["status"] == "pass"
+    assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "invalid_primary_tag_count")["status"] == "pass"
     assert summary["production_readiness"]["status"] == "not_ready"
     assert summary["production_readiness"]["larger_batch_allowed"] is False
     assert summary["production_readiness"]["customer_claims_allowed"] is False

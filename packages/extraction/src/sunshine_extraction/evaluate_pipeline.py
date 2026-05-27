@@ -42,6 +42,7 @@ DEFAULT_ACCEPTANCE_THRESHOLDS = {
     "high_confidence_false_accepts": 0,
     "semantic_same_family_top5_rate": 0.80,
     "llm_structured_output_validity_rate": 1.0,
+    "invalid_primary_tag_count": 0,
     "external_model_usage_tracked": 1.0,
     "sensitive_false_accepts": 0,
     "source_file_mutations": 0,
@@ -359,7 +360,8 @@ def _summary(
     model_usage = _model_usage_summary(model_usage_rows)
     primary_tag_metrics = _primary_tag_metrics(evaluated)
     confidence_bucket_metrics = _confidence_bucket_metrics(evaluated)
-    golden_label_readiness = _golden_label_readiness(labels, run_metadata.get("taxonomy_path") or DEFAULT_TAXONOMY_PATH)
+    taxonomy_path = run_metadata.get("taxonomy_path") or DEFAULT_TAXONOMY_PATH
+    golden_label_readiness = _golden_label_readiness(labels, taxonomy_path)
     high_risk_metrics = {
         tag: metric
         for tag, metric in primary_tag_metrics.items()
@@ -392,6 +394,7 @@ def _summary(
         "high_risk_primary_accuracy_min": high_risk_min_accuracy,
         "high_confidence_primary_accuracy": (confidence_bucket_metrics.get("high") or {}).get("primary_accuracy"),
         "high_confidence_false_accepts": (confidence_bucket_metrics.get("high") or {}).get("false_accepts"),
+        "invalid_primary_tag_count": _invalid_primary_tag_count(evaluated, taxonomy_path),
         "source_file_mutations": totals["source_file_mutations"],
     }
     production_status_counts = {
@@ -537,6 +540,8 @@ def _production_next_actions(
         actions.append("Improve the embedding index or retrieved examples so golden files retrieve same-family labels in the top 5.")
     if "llm_structured_output_validity_rate" in blocking_reasons:
         actions.append("Fix structured LLM tag output validation; invalid model responses must not produce accepted tags.")
+    if "invalid_primary_tag_count" in blocking_reasons:
+        actions.append("Fix tag validation so no result persists a primary tag outside the active taxonomy.")
     if "privacy_accuracy" in blocking_reasons or "sensitive_false_accepts" in blocking_reasons:
         actions.append("Audit privacy and sensitive-record review routing; sensitive false accepts must be zero.")
     if "embedding_placeholder_calls" in blocking_reasons or "embedding_failed_calls" in blocking_reasons:
@@ -572,6 +577,7 @@ def _acceptance_gate(metrics: dict[str, Any], model_usage: dict[str, Any], golde
         _maximum_check("high_confidence_false_accepts", metrics.get("high_confidence_false_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["high_confidence_false_accepts"]),
         _minimum_check("semantic_same_family_top5_rate", metrics.get("semantic_same_family_top5_rate"), DEFAULT_ACCEPTANCE_THRESHOLDS["semantic_same_family_top5_rate"]),
         _minimum_check("llm_structured_output_validity_rate", metrics.get("llm_structured_output_validity_rate"), DEFAULT_ACCEPTANCE_THRESHOLDS["llm_structured_output_validity_rate"]),
+        _maximum_check("invalid_primary_tag_count", metrics.get("invalid_primary_tag_count"), DEFAULT_ACCEPTANCE_THRESHOLDS["invalid_primary_tag_count"]),
         _maximum_check("sensitive_false_accepts", metrics.get("sensitive_false_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["sensitive_false_accepts"]),
         _maximum_check("source_file_mutations", metrics.get("source_file_mutations"), DEFAULT_ACCEPTANCE_THRESHOLDS["source_file_mutations"]),
         _maximum_check("embedding_placeholder_calls", model_usage.get("embedding_placeholder_calls", 0), 0),
@@ -729,6 +735,16 @@ def _ocr_quality_is_expected_acceptable(value: Any) -> bool:
 
 def _ocr_quality_is_predicted_acceptable(value: Any) -> bool:
     return str(value or "").strip().lower() in {"ok", "good", "acceptable"}
+
+
+def _invalid_primary_tag_count(rows: list[dict[str, Any]], taxonomy_path: str | Path) -> int:
+    taxonomy = load_taxonomy_options(taxonomy_path)
+    allowed = set(taxonomy.primary_tags)
+    return sum(
+        1
+        for row in rows
+        if row.get("predicted_primary_tag") and row.get("predicted_primary_tag") not in allowed
+    )
 
 
 def _confidence_bucket_metrics(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
