@@ -13,6 +13,7 @@ export function EmbeddedPreview({ previewUrl, filename, mimeType, extension }: E
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [activated, setActivated] = useState(false);
   const normalizedExtension = (extension || filename.split(".").pop() || "").toLowerCase().replace(/^\./, "");
   const isPdf = mimeType === "application/pdf" || normalizedExtension === "pdf";
   const isImage = (mimeType || "").startsWith("image/") || ["jpg", "jpeg", "png", "gif", "webp"].includes(normalizedExtension);
@@ -22,7 +23,21 @@ export function EmbeddedPreview({ previewUrl, filename, mimeType, extension }: E
     setLoading(true);
     setZoom(1);
     setRotation(0);
+    setActivated(false);
+    const loadingTimer = window.setTimeout(() => setLoading(false), 1600);
+    return () => window.clearTimeout(loadingTimer);
   }, [previewUrl]);
+
+  if (!activated) {
+    return (
+      <div className="previewPlaceholder">
+        <p className="muted">Preview is ready to load. Files are not opened automatically when selected.</p>
+        <button className="primaryButton" onClick={() => setActivated(true)}>
+          Load Preview
+        </button>
+      </div>
+    );
+  }
 
   if (isPdf || isText) {
     return (
@@ -59,10 +74,7 @@ export function EmbeddedPreview({ previewUrl, filename, mimeType, extension }: E
   }
   return (
     <div className="unsupportedPreview">
-      <p className="muted">Embedded preview is not available for this file type.</p>
-      <a className="primaryButton" href={previewUrl} target="_blank">
-        Open File
-      </a>
+      <p className="muted">Embedded preview is not available for this file type. Use Download File when you want to save the original.</p>
     </div>
   );
 }
