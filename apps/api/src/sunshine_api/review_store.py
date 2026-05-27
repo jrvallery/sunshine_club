@@ -285,6 +285,7 @@ class ReviewStore:
         content_class: str | None = None,
         quality: str | None = None,
         placement_status: str | None = None,
+        confidence_bucket: str | None = None,
         warning_type: str | None = None,
         source_collection: str | None = None,
         run_id: int | None = None,
@@ -332,6 +333,9 @@ class ReviewStore:
         if placement_status:
             predicates.append("json_extract(result_json, '$.placement_status') = ?")
             params.append(placement_status)
+        confidence_predicate = _confidence_bucket_predicate(confidence_bucket)
+        if confidence_predicate:
+            predicates.append(confidence_predicate)
         if warning_type:
             predicates.append("warnings_json like ?")
             params.append(f"%{warning_type}%")
@@ -377,6 +381,7 @@ class ReviewStore:
         content_class: str | None = None,
         quality: str | None = None,
         placement_status: str | None = None,
+        confidence_bucket: str | None = None,
         warning_type: str | None = None,
         source_collection: str | None = None,
         run_id: int | None = None,
@@ -396,6 +401,7 @@ class ReviewStore:
             content_class=content_class,
             quality=quality,
             placement_status=placement_status,
+            confidence_bucket=confidence_bucket,
             warning_type=warning_type,
             source_collection=source_collection,
             run_id=run_id,
@@ -431,6 +437,7 @@ class ReviewStore:
                 "content_class": "coalesce(proposed_class, 'unknown')",
                 "quality": "coalesce(json_extract(result_json, '$.quality'), 'unknown')",
                 "placement_status": "coalesce(json_extract(result_json, '$.placement_status'), 'unknown')",
+                "confidence_bucket": _confidence_bucket_expression(),
                 "review_status": "coalesce(status, 'unknown')",
                 "source_collection": source_collection_expression,
             }.items():
@@ -2384,6 +2391,7 @@ def _review_items_where(
     content_class: str | None = None,
     quality: str | None = None,
     placement_status: str | None = None,
+    confidence_bucket: str | None = None,
     warning_type: str | None = None,
     source_collection: str | None = None,
     run_id: int | None = None,
@@ -2423,6 +2431,9 @@ def _review_items_where(
     if placement_status:
         predicates.append("json_extract(result_json, '$.placement_status') = ?")
         params.append(placement_status)
+    confidence_predicate = _confidence_bucket_predicate(confidence_bucket)
+    if confidence_predicate:
+        predicates.append(confidence_predicate)
     if warning_type:
         predicates.append("warnings_json like ?")
         params.append(f"%{warning_type}%")
@@ -2451,6 +2462,32 @@ def _review_items_where(
     if not predicates:
         return "", params
     return "where " + " and ".join(predicates), params
+
+
+def _confidence_bucket_expression() -> str:
+    return """
+        case
+            when confidence is null then 'missing'
+            when confidence >= 0.85 then 'high'
+            when confidence >= 0.70 then 'medium'
+            else 'low'
+        end
+    """
+
+
+def _confidence_bucket_predicate(bucket: str | None) -> str | None:
+    if not bucket:
+        return None
+    normalized = bucket.strip().lower()
+    if normalized == "high":
+        return "confidence >= 0.85"
+    if normalized == "medium":
+        return "confidence >= 0.70 and confidence < 0.85"
+    if normalized == "low":
+        return "confidence < 0.70"
+    if normalized == "missing":
+        return "confidence is null"
+    return None
 
 
 def _file_search_order(sort: str) -> str:

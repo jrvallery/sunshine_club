@@ -237,6 +237,7 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
         "/admin/review/items",
         params={"warning_type": "ocr_fallback_used", "source_collection": "sunshine_shared_folders"},
     )
+    low_confidence_items = client.get("/admin/review/items", params={"status": "all", "confidence_bucket": "low"})
     item_id = items.json()[0]["id"]
     item_detail = client.get(f"/admin/review/items/{item_id}")
     review_facets = client.get("/admin/review/facets", params={"status": "all"})
@@ -425,10 +426,13 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert items.json()[0]["display_warnings"] == ["ocr_fallback_used:openai:gpt-4.1-mini"]
     assert filtered_items.status_code == 200
     assert len(filtered_items.json()) == 1
+    assert low_confidence_items.status_code == 200
+    assert low_confidence_items.json()[0]["confidence"] == 0.52
     assert item_detail.status_code == 200
     assert item_detail.json()["id"] == item_id
     assert review_facets.status_code == 200
     assert review_facets.json()["review_reason"]["tag_confidence_below_threshold"] == 1
+    assert review_facets.json()["confidence_bucket"]["low"] == 1
     assert review_facets.json()["primary_tag"]["meeting_records"] == 1
     assert assigned_item.status_code == 200
     assert assigned_item.json()["assigned_reviewer"] == "reviewer-a"

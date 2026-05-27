@@ -41,6 +41,7 @@ type Filters = {
   content_class: string;
   quality: string;
   placement_status: string;
+  confidence_bucket: string;
   warning_type: string;
   source_collection: string;
   run_id: string;
@@ -61,6 +62,7 @@ const initialFilters: Filters = {
   content_class: "",
   quality: "",
   placement_status: "",
+  confidence_bucket: "",
   warning_type: "",
   source_collection: "",
   run_id: "",
@@ -80,6 +82,7 @@ const savedReviewQueues: Array<{ label: string; filters: Partial<Filters> }> = [
   { label: "Fast run OCR failures", filters: { status: "all", ocr_fallback_provider: "disabled", warning_type: "ocr_quality_below_threshold" } },
   { label: "LLM tag disagreements", filters: { status: "all", review_reason: "llm_tag_disagreement" } },
   { label: "Low confidence tags", filters: { status: "all", review_reason: "tag_confidence_below_threshold" } },
+  { label: "Low confidence bucket", filters: { status: "all", confidence_bucket: "low" } },
   { label: "Placement / date review", filters: { status: "all", placement_status: "needs_review" } },
   { label: "Privacy-sensitive", filters: { status: "all", warning_type: "privacy" } },
   { label: "Route candidate audit sample", filters: { status: "all", review_reason: "qa_random_route_candidate_sample" } },
@@ -95,6 +98,7 @@ const reviewFacetDefinitions: Array<FacetDefinition<keyof Filters & string>> = [
   { key: "primary_tag", title: "Primary Tag", facetKey: "primary_tag", limit: 8 },
   { key: "content_class", title: "Class", facetKey: "content_class", limit: 8 },
   { key: "quality", title: "Quality", facetKey: "quality", limit: 8 },
+  { key: "confidence_bucket", title: "Confidence", facetKey: "confidence_bucket", limit: 8 },
   { key: "warning_type", title: "Warnings", facetKey: "warning_type", limit: 8 },
   { key: "placement_status", title: "Placement", facetKey: "placement_status", limit: 8 },
   { key: "source_collection", title: "Collection", facetKey: "source_collection", limit: 8 },
