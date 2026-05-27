@@ -1,3 +1,11 @@
+"""SQLite-backed persistence for dashboard review, file, and run state.
+
+``ReviewStore`` owns the local review database schema and the query/update
+methods used by API routers. It currently includes review queue operations,
+golden labels, file browser indexes, pipeline run metadata, run events, and
+model usage records.
+"""
+
 from __future__ import annotations
 
 import json
