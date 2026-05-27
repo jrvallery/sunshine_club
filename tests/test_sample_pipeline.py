@@ -33,6 +33,7 @@ from sunshine_extraction.sample_pipeline import (
     ocr_executor_from_env,
     resolve_route_or_review,
     run_sample_pipeline,
+    validate_extracted_text,
     validate_and_repair_extraction,
     write_pipeline_result,
 )
@@ -392,6 +393,43 @@ def test_gibberish_non_ocr_text_routes_to_text_quality_review(tmp_path: Path) ->
     assert repaired.plan["strategy"] == "text_extraction"
     assert quality["quality"] == "poor"
     assert route == {"route_status": "review_text_quality", "review_reason": "text_quality_not_trusted"}
+
+
+def test_table_distorted_text_layer_fails_validation(tmp_path: Path) -> None:
+    source = tmp_path / "budget.pdf"
+    source.write_text("fake pdf", encoding="utf-8")
+    distorted_table = "\n".join(
+        [
+            "__| __| wr Ler'ee | oreer've | eresy'ee | ossatre | oo'sey've | ELORb'ye |",
+            "ZS89V'ST_ LSBOV'ST | LL 09ST | LLO9H'ST | LLOSH'ST | SOESH'ST |",
+            "__| v8r | OBL _ wz | OL | 1982 Zo8t _ 350109U| = | 866TH'ST |",
+            "soueje Suwuidag| Runosoy suit Jojwadg| 820'% SeBzO | ET BLOG |",
+            "_SONVIVE ONIONS - if | ee | _ dl SAVILNO W101 (0068s) |",
+            "looses) Buppayp oy saysuedt | ISAVILNO| t t | vee wo wo v0 zo",
+            "WONT W101) vee 20 a |v0 wo | evo 0 | eo st0 eo wo 920",
+            "99IU| cose i_ | 00'sZ s[euOUlaW | x '3WOONI | Lesess's seez0e",
+        ]
+        * 3
+    )
+    extraction = ExtractionResult(
+        sample=_sample(source),
+        plan=_plan("text_extraction"),
+        extraction_status="extracted",
+        text=distorted_table,
+        metadata={},
+        page_count=1,
+        warnings=[],
+    )
+
+    validation = validate_extracted_text(extraction)
+    repaired = validate_and_repair_extraction(_sample(source), _plan("text_extraction"), extraction, ocr_executor=None)
+    quality = extraction_quality_gate(repaired)
+
+    assert validation == {"status": "failed", "reason": "table_distortion_suspected"}
+    assert repaired.plan["strategy"] == "ocr_page_level"
+    assert quality["quality"] == "deferred"
+    assert quality["requires_review"] is True
+    assert "text_validation_failed:table_distortion_suspected" in repaired.warnings
 
 
 def test_ocr_summary_records_failed_page_rate() -> None:
