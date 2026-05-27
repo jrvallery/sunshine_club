@@ -327,7 +327,7 @@ function ReviewItemRows({ runId, rows }: { runId: number; rows: Array<Record<str
                     <td>{String(row.proposed_tag ?? row.top_tag_candidate ?? "-")}</td>
                     <td><QualityBadge value={String((row.result as Record<string, unknown> | undefined)?.quality ?? row.quality ?? "-")} /></td>
                     <td>
-                      <Link className="viewLink" href={`/review?run_id=${runId}&status=all&q=${encodeURIComponent(relativePath)}`}>
+                      <Link className="viewLink" href={reviewItemHref(row, runId, relativePath)}>
                         Open
                       </Link>
                     </td>
@@ -340,6 +340,15 @@ function ReviewItemRows({ runId, rows }: { runId: number; rows: Array<Record<str
       ) : null}
     </div>
   );
+}
+
+function reviewItemHref(row: Record<string, unknown>, runId: number, relativePath: string) {
+  const id = Number(row.id);
+  const params = `run_id=${runId}&status=all`;
+  if (Number.isFinite(id) && id > 0) {
+    return `/review/${id}?${params}`;
+  }
+  return `/review?${params}&q=${encodeURIComponent(relativePath)}`;
 }
 
 function TrainingCycleTab({ report }: { report: RunReport }) {
