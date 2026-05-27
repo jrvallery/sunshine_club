@@ -147,8 +147,10 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
 
       <section className="metrics">
         <Metric label="Processed" value={formatProcessed(data)} />
+        <Metric label="Accepted" value={String(data.status_buckets.accepted ?? 0)} />
         <Metric label="Review required" value={String(data.overview.review_required_count ?? 0)} />
         <Metric label="Failed" value={String(data.overview.failed_count ?? 0)} />
+        <Metric label="Deferred" value={String(data.status_buckets.deferred ?? 0)} />
         <Metric label="Model calls" value={String(modelSummary?.total_calls ?? 0)} />
         <Metric label="External cost" value={formatCost(modelSummary?.estimated_external_cost_usd ?? 0)} />
       </section>
@@ -183,6 +185,7 @@ function OverviewTab({ report }: { report: RunReport }) {
         <h2>Run Overview</h2>
       </div>
       <div className="reportGrid">
+        <Breakdown title="Production Buckets" values={report.status_buckets ?? {}} />
         <Breakdown title="Routes" values={report.distributions.route_status ?? {}} />
         <Breakdown title="Quality" values={report.distributions.quality ?? {}} />
         <Breakdown title="Content Class" values={report.distributions.final_class ?? {}} />

@@ -544,6 +544,11 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert run_model_usage.json()["summary"]["estimated_external_cost_usd"] == 0.0123
     assert run_report.status_code == 200
     assert run_report.json()["model_usage"]["summary"]["total_calls"] == 2
+    assert run_report.json()["status_buckets"]["accepted"] == 1
+    assert run_report.json()["status_buckets"]["review_required"] == 0
+    assert run_report.json()["status_buckets"]["failed"] == 0
+    assert run_report.json()["status_buckets"]["deferred"] == 0
+    assert run_report.json()["overview"]["status_buckets"]["accepted"] == 1
     assert run_report.json()["distributions"]["primary_tag"]["annual_spring_tea"] == 1
     assert run_report.json()["review_queue"]["links"]["all"] == f"/review?run_id={current_run.json()['id']}&status=all"
     assert "tag_disagreements" in run_report.json()["review_queue"]["links"]
