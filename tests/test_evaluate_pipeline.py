@@ -209,6 +209,13 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
         "review_routing_mismatch": 1,
         "semantic_retrieval_missing": 1,
     }
+    assert summary["failure_groups"][0]["reason"] == "embedding_quality_unavailable"
+    assert summary["failure_groups"][0]["count"] == 2
+    assert summary["failure_groups"][0]["affected_primary_tags"] == {
+        "annual_spring_tea": 1,
+        "history_archive_general": 1,
+    }
+    assert any(group["reason"] == "primary_tag_mismatch" for group in summary["failure_groups"])
     assert summary["model_usage"]["by_purpose"] == {
         "chunk_embedding": 2,
         "semantic_retrieval_embedding": 2,
@@ -230,10 +237,12 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert (output_dir / "eval-confusion-matrix.json").exists()
     assert (output_dir / "eval-confusion-matrix.csv").exists()
     assert (output_dir / "eval-failures.jsonl").exists()
+    assert (output_dir / "eval-failure-groups.json").exists()
     assert (output_dir / "eval-model-usage.jsonl").exists()
 
     results = [json.loads(line) for line in (output_dir / "eval-results.jsonl").read_text(encoding="utf-8").splitlines()]
     failures = [json.loads(line) for line in (output_dir / "eval-failures.jsonl").read_text(encoding="utf-8").splitlines()]
+    failure_groups = json.loads((output_dir / "eval-failure-groups.json").read_text(encoding="utf-8"))
     model_usage = [json.loads(line) for line in (output_dir / "eval-model-usage.jsonl").read_text(encoding="utf-8").splitlines()]
 
     assert sorted(row["primary_correct"] for row in results) == [False, True]
@@ -243,6 +252,8 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert {row["llm_structured_output_valid"] for row in results} == {True}
     assert all(row["tag_evidence"] for row in results)
     assert failures[0]["correct_primary_tag"] == "history_archive_general"
+    assert failure_groups[0]["reason"] == "embedding_quality_unavailable"
+    assert failure_groups[0]["examples"][0]["relative_path"]
     assert {row["golden_label_id"] for row in model_usage} == {1, 2}
     assert (output_dir / "graph-runs" / "00001" / "graph-result.json").exists()
 

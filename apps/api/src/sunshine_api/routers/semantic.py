@@ -111,16 +111,18 @@ def pipeline_eval_run_results(eval_run_id: int, result_type: str = "results", li
     filenames = {
         "results": "eval-results.jsonl",
         "failures": "eval-failures.jsonl",
+        "failure_groups": "eval-failure-groups.json",
         "model_usage": "eval-model-usage.jsonl",
     }
     filename = filenames.get(result_type)
     if filename is None:
-        raise HTTPException(status_code=400, detail="result_type must be results, failures, or model_usage")
-    rows = _read_eval_jsonl(output_dir / filename, limit=max(1, min(limit, 1000)))
+        raise HTTPException(status_code=400, detail="result_type must be results, failures, failure_groups, or model_usage")
+    path = output_dir / filename
+    rows = _read_eval_json(path, limit=max(1, min(limit, 1000))) if result_type == "failure_groups" else _read_eval_jsonl(path, limit=max(1, min(limit, 1000)))
     return {
         "eval_run": eval_run,
         "result_type": result_type,
-        "path": str(output_dir / filename),
+        "path": str(path),
         "count": len(rows),
         "items": rows,
     }
@@ -265,3 +267,14 @@ def _read_eval_jsonl(path: Path, *, limit: int) -> list[dict[str, Any]]:
             if isinstance(row, dict):
                 rows.append(row)
     return rows
+
+
+def _read_eval_json(path: Path, *, limit: int) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+    rows = payload if isinstance(payload, list) else payload.get("items", []) if isinstance(payload, dict) else []
+    return [row for row in rows if isinstance(row, dict)][:limit]

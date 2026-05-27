@@ -189,7 +189,10 @@ def run_golden_pipeline_evaluation(
         model_usage_rows=model_usage_rows,
         run_metadata=run_metadata,
     )
-    _write_eval_artifacts(output_path, summary, evaluated, confusion, failures, model_usage_rows)
+    failure_groups = _failure_groups(evaluated)
+    summary["failure_groups"] = failure_groups
+    summary["artifacts"]["failure_groups"] = str(output_path / "eval-failure-groups.json")
+    _write_eval_artifacts(output_path, summary, evaluated, confusion, failures, model_usage_rows, failure_groups)
     return summary
 
 
@@ -454,6 +457,7 @@ def _summary(
             "results": str(output_dir / "eval-results.jsonl"),
             "confusion_matrix": str(output_dir / "eval-confusion-matrix.json"),
             "failures": str(output_dir / "eval-failures.jsonl"),
+            "failure_groups": str(output_dir / "eval-failure-groups.json"),
             "model_usage": str(output_dir / "eval-model-usage.jsonl"),
         },
     }
@@ -1003,9 +1007,11 @@ def _write_eval_artifacts(
     confusion: dict[str, dict[str, int]],
     failures: list[dict[str, Any]],
     model_usage_rows: list[dict[str, Any]],
+    failure_groups: list[dict[str, Any]],
 ) -> None:
     (output_dir / "eval-summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     (output_dir / "eval-confusion-matrix.json").write_text(json.dumps(confusion, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (output_dir / "eval-failure-groups.json").write_text(json.dumps(failure_groups, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     _write_jsonl(output_dir / "eval-results.jsonl", evaluated)
     _write_jsonl(output_dir / "eval-failures.jsonl", failures)
     _write_jsonl(output_dir / "eval-model-usage.jsonl", model_usage_rows)
@@ -1021,6 +1027,59 @@ def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     with path.open("w", encoding="utf-8") as output_file:
         for row in rows:
             output_file.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def _failure_groups(rows: list[dict[str, Any]], *, max_examples: int = 25) -> list[dict[str, Any]]:
+    groups: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        reasons = _string_list(row.get("failure_reasons"))
+        for reason in reasons:
+            group = groups.setdefault(
+                reason,
+                {
+                    "reason": reason,
+                    "count": 0,
+                    "affected_primary_tags": Counter(),
+                    "affected_route_statuses": Counter(),
+                    "examples": [],
+                },
+            )
+            group["count"] += 1
+            group["affected_primary_tags"][str(row.get("correct_primary_tag") or "unknown")] += 1
+            group["affected_route_statuses"][str(row.get("route_status") or "unknown")] += 1
+            if len(group["examples"]) < max_examples:
+                group["examples"].append(
+                    {
+                        "golden_label_id": row.get("golden_label_id"),
+                        "source_path": row.get("source_path"),
+                        "relative_path": row.get("relative_path"),
+                        "correct_primary_tag": row.get("correct_primary_tag"),
+                        "predicted_primary_tag": row.get("predicted_primary_tag"),
+                        "expected_content_class": row.get("correct_content_class"),
+                        "predicted_content_class": row.get("predicted_content_class"),
+                        "expected_ocr_quality": row.get("expected_ocr_quality"),
+                        "predicted_ocr_quality": row.get("predicted_ocr_quality"),
+                        "expected_review_required": row.get("expected_review_required"),
+                        "predicted_review_required": row.get("predicted_review_required"),
+                        "route_status": row.get("route_status"),
+                        "review_reason": row.get("review_reason"),
+                        "semantic_retrieval_quality": row.get("semantic_retrieval_quality"),
+                        "warnings": row.get("warnings", []),
+                    }
+                )
+
+    normalized = []
+    for group in groups.values():
+        normalized.append(
+            {
+                "reason": group["reason"],
+                "count": int(group["count"]),
+                "affected_primary_tags": dict(sorted(group["affected_primary_tags"].items())),
+                "affected_route_statuses": dict(sorted(group["affected_route_statuses"].items())),
+                "examples": group["examples"],
+            }
+        )
+    return sorted(normalized, key=lambda item: (-int(item["count"]), str(item["reason"])))
 
 
 def _label_input_path(label: GoldenEvalLabel) -> Path | None:

@@ -10,7 +10,7 @@ import { StatusBadge } from "../../components/ui/StatusBadge";
 import { fetchJson, postJson, queryString } from "../../lib/api";
 import type { PipelineEvalComparison, PipelineEvalDrilldown, PipelineEvalRun, PipelineEvalRunResponse } from "../../lib/types";
 
-type DrilldownType = "failures" | "results" | "model_usage";
+type DrilldownType = "failures" | "failure_groups" | "results" | "model_usage";
 
 export default function PipelineEvalPage() {
   const queryClient = useQueryClient();
@@ -370,6 +370,9 @@ export default function PipelineEvalPage() {
             <Button variant={drilldownType === "failures" ? "primary" : "secondary"} onClick={() => setDrilldownType("failures")}>
               Failures
             </Button>
+            <Button variant={drilldownType === "failure_groups" ? "primary" : "secondary"} onClick={() => setDrilldownType("failure_groups")}>
+              Failure Groups
+            </Button>
             <Button variant={drilldownType === "results" ? "primary" : "secondary"} onClick={() => setDrilldownType("results")}>
               Results
             </Button>
@@ -402,10 +405,10 @@ function EvalRows({ rows }: { rows: Array<Record<string, unknown>> }) {
           {rows.map((row, index) => (
             <tr key={`${row.source_path ?? index}`}>
               <td className="pathText">{String(row.relative_path ?? row.source_path ?? "-")}</td>
-              <td>{String(row.correct_primary_tag ?? row.expected_destination_path ?? row.provider ?? "-")}</td>
+              <td>{expectedValue(row)}</td>
               <td>{String(row.predicted_primary_tag ?? row.predicted_destination_path ?? row.model ?? "-")}</td>
-              <td>{Array.isArray(row.failure_reasons) ? row.failure_reasons.join(", ") : String(row.reason ?? row.purpose ?? "-")}</td>
-              <td>{String(row.route_status ?? row.status ?? "-")}</td>
+              <td>{reasonValue(row)}</td>
+              <td>{routeValue(row)}</td>
               <td>
                 <div className="cellStack">
                   <strong>{String(row.semantic_retrieval_quality ?? "-")}</strong>
@@ -418,6 +421,27 @@ function EvalRows({ rows }: { rows: Array<Record<string, unknown>> }) {
       </table>
     </div>
   );
+}
+
+function expectedValue(row: Record<string, unknown>) {
+  if (typeof row.count === "number" && row.reason) {
+    return `${row.count} affected`;
+  }
+  return String(row.correct_primary_tag ?? row.expected_destination_path ?? row.provider ?? "-");
+}
+
+function reasonValue(row: Record<string, unknown>) {
+  if (Array.isArray(row.failure_reasons)) {
+    return row.failure_reasons.join(", ");
+  }
+  return String(row.reason ?? row.purpose ?? "-");
+}
+
+function routeValue(row: Record<string, unknown>) {
+  if (row.affected_route_statuses && typeof row.affected_route_statuses === "object" && !Array.isArray(row.affected_route_statuses)) {
+    return formatMap(row.affected_route_statuses);
+  }
+  return String(row.route_status ?? row.status ?? "-");
 }
 
 function Metric({ label, value }: { label: string; value: number }) {
