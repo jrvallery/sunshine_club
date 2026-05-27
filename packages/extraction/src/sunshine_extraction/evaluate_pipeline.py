@@ -280,7 +280,7 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
         review_routing_correct = review_required == label.expected_review_required
     ocr_fallback_used = _has_warning_prefix(final_result.get("warnings", []), "ocr_fallback_used:")
     llm_status = final_result.get("llm_status")
-    llm_structured_output_valid = True if llm_status == "inspected" else False if llm_status in {"invalid", "failed"} else None
+    llm_structured_output_valid = True if llm_status == "inspected" else False if llm_status in {"invalid", "failed", "inspected_with_invalid_fields"} else None
     placement_destination_correct = None
     if label.correct_destination_path:
         placement_destination_correct = final_result.get("destination_path") == label.correct_destination_path

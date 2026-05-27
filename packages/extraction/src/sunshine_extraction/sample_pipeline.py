@@ -1256,39 +1256,49 @@ def normalize_llm_inspection(payload: dict[str, Any], taxonomy: TaxonomyOptions,
     primary_tag = payload.get("primary_tag")
     if primary_tag not in taxonomy.primary_tags:
         primary_tag = None
-    secondary_tags = [
-        tag
-        for tag in payload.get("secondary_tags", [])
-        if isinstance(tag, str) and tag in taxonomy.secondary_tags
-    ][:5]
+    raw_secondary_tags = [tag for tag in payload.get("secondary_tags", []) if isinstance(tag, str)]
+    invalid_secondary_tags = [tag for tag in raw_secondary_tags if tag not in taxonomy.secondary_tags]
+    secondary_tags = [tag for tag in raw_secondary_tags if tag in taxonomy.secondary_tags][:5]
     confidence = payload.get("confidence", 0)
     if not isinstance(confidence, int | float):
         confidence = 0
     evidence = [str(item) for item in payload.get("evidence", [])[:5]]
-    competing_tags = [
-        tag
-        for tag in payload.get("competing_tags", [])
-        if isinstance(tag, str) and tag in taxonomy.primary_tags and tag != primary_tag
-    ][:3]
+    raw_competing_tags = [tag for tag in payload.get("competing_tags", []) if isinstance(tag, str)]
+    invalid_competing_tags = [tag for tag in raw_competing_tags if tag not in taxonomy.primary_tags]
+    competing_tags = [tag for tag in raw_competing_tags if tag in taxonomy.primary_tags and tag != primary_tag][:3]
     needs_review = bool(payload.get("needs_review", False))
     review_reason = str(payload.get("review_reason") or "").strip()
+    warnings: list[str] = []
     if primary_tag is None:
         review_reason = review_reason or "llm_primary_tag_invalid"
+        warnings.append("llm_primary_tag_invalid")
     elif needs_review:
         review_reason = review_reason or "llm_requested_review"
+    if invalid_secondary_tags:
+        warnings.append(f"llm_invalid_secondary_tags:{','.join(invalid_secondary_tags[:5])}")
+    if invalid_competing_tags:
+        warnings.append(f"llm_invalid_competing_tags:{','.join(invalid_competing_tags[:5])}")
+    llm_status = "inspected"
+    if primary_tag is None:
+        llm_status = "invalid"
+    elif warnings:
+        llm_status = "inspected_with_invalid_fields"
     return {
-        "llm_status": "inspected" if primary_tag else "invalid",
+        "llm_status": llm_status,
         "model": model,
         "provider": provider,
         "primary_tag": primary_tag,
         "secondary_tags": secondary_tags,
+        "invalid_secondary_tags": invalid_secondary_tags[:5],
         "confidence": max(0.0, min(float(confidence), 1.0)),
         "evidence": evidence,
         "competing_tags": competing_tags,
+        "invalid_competing_tags": invalid_competing_tags[:5],
         "rationale": str(payload.get("rationale", "")),
         "needs_review": needs_review,
         "review_reason": review_reason or None,
-        "warning": None if primary_tag else "llm_primary_tag_invalid",
+        "warnings": warnings,
+        "warning": warnings[0] if warnings else None,
     }
 
 
@@ -1382,7 +1392,7 @@ def combine_tag_candidates(
     llm_inspection: dict[str, Any],
     semantic_examples: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    if llm_inspection.get("llm_status") != "inspected" or not llm_inspection.get("primary_tag"):
+    if not _llm_inspection_has_usable_primary(llm_inspection):
         return _apply_semantic_example_adjustments(deterministic_candidates, semantic_examples or [])
 
     primary_tag = llm_inspection["primary_tag"]
@@ -1415,6 +1425,10 @@ def combine_tag_candidates(
         )
     combined.sort(key=lambda row: row["confidence"], reverse=True)
     return _apply_semantic_example_adjustments(combined, semantic_examples or [])[:5]
+
+
+def _llm_inspection_has_usable_primary(llm_inspection: dict[str, Any]) -> bool:
+    return llm_inspection.get("llm_status") in {"inspected", "inspected_with_invalid_fields"} and bool(llm_inspection.get("primary_tag"))
 
 
 def _apply_semantic_example_adjustments(candidates: list[dict[str, Any]], semantic_examples: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1509,6 +1523,16 @@ def calibrate_tag_confidence(
         factors.append("llm_requested_review")
         requires_review = True
         review_reason = "llm_requested_review"
+    if llm.get("llm_status") in {"failed", "invalid"}:
+        confidence = min(confidence, 0.79)
+        factors.append(f"llm_structured_output_unusable:{llm.get('llm_status')}")
+        requires_review = True
+        review_reason = llm.get("review_reason") or "llm_structured_output_unusable"
+    elif llm.get("llm_status") == "inspected_with_invalid_fields" or _llm_warning_list(llm):
+        confidence = min(confidence, 0.79)
+        factors.append("llm_structured_output_invalid_fields")
+        requires_review = True
+        review_reason = "llm_structured_output_invalid"
     if llm.get("llm_status") == "inspected" and llm_primary and llm_primary != top.get("tag") and llm_confidence >= 0.7:
         confidence = min(confidence, 0.78)
         factors.append(f"llm_primary_disagrees:{llm_primary}")
@@ -1638,6 +1662,7 @@ def write_pipeline_result(
         "llm_confidence": llm_inspection.get("confidence"),
         "llm_competing_tags": llm_inspection.get("competing_tags", []),
         "llm_review_reason": llm_inspection.get("review_reason"),
+        "llm_warnings": _llm_warning_list(llm_inspection),
         "confidence_inputs": {
             "top_candidate": top if top else None,
             "candidate_count": len(tag_candidates),
@@ -1650,8 +1675,15 @@ def write_pipeline_result(
         "ocr_evidence": _ocr_evidence(extraction),
         "route_status": route["route_status"],
         "review_reason": route.get("review_reason"),
-        "warnings": extraction.warnings,
+        "warnings": [*extraction.warnings, *_llm_warning_list(llm_inspection)],
     }
+
+
+def _llm_warning_list(llm_inspection: dict[str, Any]) -> list[str]:
+    warnings = [str(warning) for warning in llm_inspection.get("warnings", []) if warning]
+    if llm_inspection.get("warning"):
+        warnings.append(str(llm_inspection["warning"]))
+    return sorted(dict.fromkeys(warnings))
 
 
 def quarantine_placement_for_review_route(placement: dict[str, Any], route: dict[str, Any]) -> dict[str, Any]:
