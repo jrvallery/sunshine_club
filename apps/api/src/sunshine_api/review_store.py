@@ -695,7 +695,7 @@ class ReviewStore:
                        content_class, correct_primary_tag, correct_secondary_tags_json, ocr_quality_label,
                        expected_review_required, sensitive_record, correct_destination_path, correct_placement_year,
                        correct_privacy, reviewer, notes, proposed_tag,
-                       proposed_secondary_tags_json, proposed_confidence, created_at, updated_at
+                       proposed_secondary_tags_json, proposed_confidence, reviewed_at, created_at, updated_at
                 from golden_labels
                 where source_path = ?
                 """,
@@ -934,8 +934,8 @@ class ReviewStore:
                         content_class, correct_primary_tag, correct_secondary_tags_json, ocr_quality_label,
                         expected_review_required, sensitive_record, correct_destination_path, correct_placement_year,
                         correct_privacy, reviewer, notes, proposed_tag,
-                        proposed_secondary_tags_json, proposed_confidence, created_at, updated_at
-                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                        proposed_secondary_tags_json, proposed_confidence, reviewed_at, created_at, updated_at
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), datetime('now'))
                     on conflict(source_path) do update set
                         review_item_id=excluded.review_item_id,
                         relative_path=excluded.relative_path,
@@ -955,6 +955,7 @@ class ReviewStore:
                         proposed_tag=excluded.proposed_tag,
                         proposed_secondary_tags_json=excluded.proposed_secondary_tags_json,
                         proposed_confidence=excluded.proposed_confidence,
+                        reviewed_at=datetime('now'),
                         updated_at=datetime('now')
                     """,
                     (
@@ -1094,7 +1095,7 @@ class ReviewStore:
                        content_class, correct_primary_tag, correct_secondary_tags_json, ocr_quality_label,
                        expected_review_required, sensitive_record, correct_destination_path, correct_placement_year,
                        correct_privacy, reviewer, notes, proposed_tag,
-                       proposed_secondary_tags_json, proposed_confidence, created_at, updated_at
+                       proposed_secondary_tags_json, proposed_confidence, reviewed_at, created_at, updated_at
                 from golden_labels
                 order by updated_at desc, id desc
                 limit ?
@@ -1114,7 +1115,7 @@ class ReviewStore:
                        content_class, correct_primary_tag, correct_secondary_tags_json, ocr_quality_label,
                        expected_review_required, sensitive_record, correct_destination_path, correct_placement_year,
                        correct_privacy, reviewer, notes, proposed_tag,
-                       proposed_secondary_tags_json, proposed_confidence, created_at, updated_at
+                       proposed_secondary_tags_json, proposed_confidence, reviewed_at, created_at, updated_at
                 from golden_labels
                 where id = ?
                 """,
@@ -1175,6 +1176,7 @@ class ReviewStore:
                     correct_privacy = ?,
                     reviewer = ?,
                     notes = ?,
+                    reviewed_at = coalesce(reviewed_at, datetime('now')),
                     updated_at = datetime('now')
                 where id = ?
                 """,
@@ -1826,6 +1828,7 @@ class ReviewStore:
                     correct_placement_year text,
                     correct_privacy text,
                     reviewer text,
+                    reviewed_at text,
                     notes text,
                     proposed_tag text,
                     proposed_secondary_tags_json text not null default '[]',
@@ -1977,6 +1980,7 @@ class ReviewStore:
             _ensure_column(connection, "golden_labels", "correct_destination_path", "correct_destination_path text")
             _ensure_column(connection, "golden_labels", "correct_placement_year", "correct_placement_year text")
             _ensure_column(connection, "golden_labels", "correct_privacy", "correct_privacy text")
+            _ensure_column(connection, "golden_labels", "reviewed_at", "reviewed_at text")
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.db_path)
@@ -2890,6 +2894,7 @@ def _golden_label_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "proposed_tag": row["proposed_tag"],
         "proposed_secondary_tags": _json_list(row["proposed_secondary_tags_json"]),
         "proposed_confidence": row["proposed_confidence"],
+        "reviewed_at": row["reviewed_at"] or row["updated_at"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }

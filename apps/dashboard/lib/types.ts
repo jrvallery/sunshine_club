@@ -366,6 +366,7 @@ export type GoldenLabel = {
   proposed_tag?: string | null;
   proposed_secondary_tags?: string[];
   proposed_confidence?: number | null;
+  reviewed_at?: string | null;
   created_at: string;
   updated_at: string;
 };

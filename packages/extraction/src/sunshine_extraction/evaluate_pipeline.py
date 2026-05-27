@@ -76,6 +76,8 @@ class GoldenEvalLabel:
     correct_destination_path: str | None
     correct_placement_year: str | None
     correct_privacy: str | None
+    reviewer: str | None
+    reviewed_at: str | None
     notes: str | None
 
 
@@ -203,6 +205,8 @@ def load_golden_eval_labels(labels_db: str | Path, *, limit: int | None = None) 
         _optional_column(columns, "correct_destination_path"),
         _optional_column(columns, "correct_placement_year"),
         _optional_column(columns, "correct_privacy"),
+        _optional_column(columns, "reviewer"),
+        _optional_column(columns, "reviewed_at"),
         _optional_column(columns, "notes"),
     ]
     query = f"""
@@ -234,6 +238,8 @@ def load_golden_eval_labels(labels_db: str | Path, *, limit: int | None = None) 
                 correct_destination_path=_optional_row_text(row, "correct_destination_path"),
                 correct_placement_year=_optional_row_text(row, "correct_placement_year"),
                 correct_privacy=_optional_row_text(row, "correct_privacy"),
+                reviewer=_optional_row_text(row, "reviewer"),
+                reviewed_at=_optional_row_text(row, "reviewed_at"),
                 notes=_optional_row_text(row, "notes"),
             )
         )

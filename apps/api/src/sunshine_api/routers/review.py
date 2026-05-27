@@ -163,6 +163,7 @@ def golden_labels_export(format: str = "csv", limit: int = 10000) -> StreamingRe
         "proposed_secondary_tags",
         "proposed_confidence",
         "reviewer",
+        "reviewed_at",
         "notes",
         "updated_at",
     ]
@@ -189,6 +190,7 @@ def golden_labels_export(format: str = "csv", limit: int = 10000) -> StreamingRe
                 "proposed_secondary_tags": ";".join(row.get("proposed_secondary_tags") or []),
                 "proposed_confidence": row.get("proposed_confidence"),
                 "reviewer": row.get("reviewer"),
+                "reviewed_at": row.get("reviewed_at"),
                 "notes": row.get("notes"),
                 "updated_at": row.get("updated_at"),
             }

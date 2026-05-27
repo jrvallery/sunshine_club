@@ -138,7 +138,7 @@ export default function GoldenLabelsPage() {
                 <th>Correct Secondary</th>
                 <th>Proposed</th>
                 <th>Reviewer</th>
-                <th>Updated</th>
+                <th>Reviewed</th>
               </tr>
             </thead>
             <tbody>
@@ -156,7 +156,7 @@ export default function GoldenLabelsPage() {
                   <td>{label.correct_secondary_tags.join(", ") || "-"}</td>
                   <td>{label.proposed_tag ?? "-"}</td>
                   <td>{label.reviewer ?? "-"}</td>
-                  <td>{label.updated_at}</td>
+                  <td>{label.reviewed_at ?? label.updated_at}</td>
                 </tr>
               ))}
             </tbody>
