@@ -333,6 +333,8 @@ export default function PipelineEvalPage() {
               <KeyValue label="Failed embeddings" value={String((summary?.model_usage?.embedding_failed_calls as number | undefined) ?? 0)} />
               <KeyValue label="Embedding providers" value={formatMap(summary?.model_usage?.embedding_provider_models)} />
               <KeyValue label="Embedding dimensions" value={formatMap(summary?.model_usage?.embedding_dimensions)} />
+              <KeyValue label="Required fields" value={formatPercent(summary?.model_usage?.required_field_completeness_rate as number | null | undefined)} />
+              <KeyValue label="Missing fields" value={formatMap(summary?.model_usage?.missing_required_field_counts)} />
               <KeyValue label="Runtime ms" value={String((summary?.model_usage?.total_runtime_ms as number | undefined) ?? 0)} />
             </section>
             <section>

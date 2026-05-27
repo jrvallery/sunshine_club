@@ -202,6 +202,9 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert summary["model_usage"]["embedding_failed_calls"] == 0
     assert summary["model_usage"]["embedding_provider_models"] == {"placeholder:local-placeholder": 2}
     assert summary["model_usage"]["embedding_dimensions"] == {"4": 2}
+    assert summary["model_usage"]["required_field_completeness_rate"] == 1.0
+    assert summary["model_usage"]["missing_required_field_counts"] == {}
+    assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "model_usage_required_fields_tracked")["status"] == "pass"
     assert (output_dir / "eval-summary.json").exists()
     assert (output_dir / "eval-results.jsonl").exists()
     assert (output_dir / "eval-confusion-matrix.json").exists()

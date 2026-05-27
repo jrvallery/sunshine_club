@@ -43,6 +43,7 @@ DEFAULT_ACCEPTANCE_THRESHOLDS = {
     "semantic_same_family_top5_rate": 0.80,
     "llm_structured_output_validity_rate": 1.0,
     "invalid_primary_tag_count": 0,
+    "model_usage_required_fields_tracked": 1.0,
     "external_model_usage_tracked": 1.0,
     "sensitive_false_accepts": 0,
     "source_file_mutations": 0,
@@ -542,6 +543,8 @@ def _production_next_actions(
         actions.append("Fix structured LLM tag output validation; invalid model responses must not produce accepted tags.")
     if "invalid_primary_tag_count" in blocking_reasons:
         actions.append("Fix tag validation so no result persists a primary tag outside the active taxonomy.")
+    if "model_usage_required_fields_tracked" in blocking_reasons:
+        actions.append("Complete model usage lineage for every model call: provider, model, purpose, status, runtime, and cost basis.")
     if "privacy_accuracy" in blocking_reasons or "sensitive_false_accepts" in blocking_reasons:
         actions.append("Audit privacy and sensitive-record review routing; sensitive false accepts must be zero.")
     if "embedding_placeholder_calls" in blocking_reasons or "embedding_failed_calls" in blocking_reasons:
@@ -578,6 +581,11 @@ def _acceptance_gate(metrics: dict[str, Any], model_usage: dict[str, Any], golde
         _minimum_check("semantic_same_family_top5_rate", metrics.get("semantic_same_family_top5_rate"), DEFAULT_ACCEPTANCE_THRESHOLDS["semantic_same_family_top5_rate"]),
         _minimum_check("llm_structured_output_validity_rate", metrics.get("llm_structured_output_validity_rate"), DEFAULT_ACCEPTANCE_THRESHOLDS["llm_structured_output_validity_rate"]),
         _maximum_check("invalid_primary_tag_count", metrics.get("invalid_primary_tag_count"), DEFAULT_ACCEPTANCE_THRESHOLDS["invalid_primary_tag_count"]),
+        _minimum_check(
+            "model_usage_required_fields_tracked",
+            model_usage.get("required_field_completeness_rate"),
+            DEFAULT_ACCEPTANCE_THRESHOLDS["model_usage_required_fields_tracked"],
+        ),
         _maximum_check("sensitive_false_accepts", metrics.get("sensitive_false_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["sensitive_false_accepts"]),
         _maximum_check("source_file_mutations", metrics.get("source_file_mutations"), DEFAULT_ACCEPTANCE_THRESHOLDS["source_file_mutations"]),
         _maximum_check("embedding_placeholder_calls", model_usage.get("embedding_placeholder_calls", 0), 0),
@@ -812,7 +820,15 @@ def _model_usage_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     embedding_failed_calls = 0
     embedding_provider_models: Counter[str] = Counter()
     embedding_dimensions: Counter[str] = Counter()
+    missing_required_fields: Counter[str] = Counter()
+    complete_required_field_rows = 0
     for row in rows:
+        row_missing_fields = _missing_model_usage_required_fields(row)
+        if row_missing_fields:
+            for field in row_missing_fields:
+                missing_required_fields[field] += 1
+        else:
+            complete_required_field_rows += 1
         by_provider[str(row.get("provider") or "unknown")] += 1
         by_purpose[str(row.get("purpose") or "unknown")] += 1
         cost_basis = str(row.get("cost_basis") or "unknown")
@@ -843,6 +859,8 @@ def _model_usage_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "by_cost_basis": dict(sorted(by_cost_basis.items())),
         "external_call_count": sum(count for basis, count in by_cost_basis.items() if basis == "external"),
         "unknown_external_cost_calls": unknown_external_cost_calls,
+        "required_field_completeness_rate": _safe_divide(complete_required_field_rows, len(rows)),
+        "missing_required_field_counts": dict(sorted(missing_required_fields.items())),
         "embedding_attempted_calls": embedding_attempted_calls,
         "embedding_successful_calls": embedding_successful_calls,
         "embedding_placeholder_calls": embedding_placeholder_calls,
@@ -853,6 +871,17 @@ def _model_usage_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "external_cost": None,
         "external_cost_note": "Cost is unavailable unless provider token/cost metadata is present.",
     }
+
+
+def _missing_model_usage_required_fields(row: dict[str, Any]) -> list[str]:
+    missing = []
+    for field in ["provider", "model", "purpose", "status", "cost_basis"]:
+        value = str(row.get(field) or "").strip().lower()
+        if not value or value == "unknown":
+            missing.append(field)
+    if row.get("runtime_ms") is None:
+        missing.append("runtime_ms")
+    return missing
 
 
 def _eval_run_metadata(
