@@ -6,6 +6,7 @@ import argparse
 import csv
 import hashlib
 import json
+import os
 import sqlite3
 import subprocess
 from collections import Counter
@@ -114,6 +115,7 @@ def run_golden_pipeline_evaluation(
     graph_runs_dir = output_path / "graph-runs"
     graph_runs_dir.mkdir(parents=True, exist_ok=True)
     active_embedding_provider, provider_warnings = _resolve_eval_embedding_provider(embedding_provider)
+    active_ocr_executor, ocr_warnings = _resolve_eval_ocr_executor(ocr_executor)
     run_metadata = _eval_run_metadata(
         labels_db=labels_db,
         output_dir=output_path,
@@ -122,8 +124,8 @@ def run_golden_pipeline_evaluation(
         semantic_index_path=semantic_index_path,
         embedding_provider=active_embedding_provider,
         llm_tag_inspector=llm_tag_inspector,
-        ocr_executor=ocr_executor,
-        warnings=provider_warnings,
+        ocr_executor=active_ocr_executor,
+        warnings=[*provider_warnings, *ocr_warnings],
     )
 
     evaluated: list[dict[str, Any]] = []
@@ -167,7 +169,7 @@ def run_golden_pipeline_evaluation(
             embedding_provider=active_embedding_provider,
             embedding_failure_mode="review",
             llm_tag_inspector=llm_tag_inspector,
-            ocr_executor=ocr_executor,
+            ocr_executor=active_ocr_executor,
             semantic_index_path=semantic_index_path,
             progress=progress,
         )
@@ -1122,7 +1124,10 @@ def _eval_run_metadata(
         "embedding_dimensions": getattr(embedding_provider, "dimensions", None),
         "llm_provider": str(getattr(llm_tag_inspector, "provider_name", "")) if llm_tag_inspector is not None else "disabled",
         "llm_model": str(getattr(llm_tag_inspector, "model", "disabled")) if llm_tag_inspector is not None else "disabled",
-        "ocr_mode": ocr_executor.__class__.__name__ if ocr_executor is not None else "default",
+        "ocr_mode": _ocr_mode(ocr_executor),
+        "ocr_primary_engine": _ocr_primary_engine(ocr_executor),
+        "ocr_fallback_mode": _ocr_fallback_mode(ocr_executor),
+        "ocr_fallback_model": _ocr_fallback_model(ocr_executor),
         "git_commit": _git_commit(),
         "warnings": warnings or [],
     }
@@ -1135,6 +1140,44 @@ def _resolve_eval_embedding_provider(provider: EmbeddingProvider | None) -> tupl
         return provider_from_env(), []
     except EmbeddingConfigurationError as error:
         return PlaceholderEmbeddingProvider(), [f"embedding_provider_configuration_failed:{error}"]
+
+
+def _resolve_eval_ocr_executor(executor: OcrExecutor | None) -> tuple[OcrExecutor, list[str]]:
+    if executor is not None:
+        return executor, []
+    requested_fallback = os.environ.get("SUNSHINE_OCR_FALLBACK_PROVIDER", "disabled").strip().lower()
+    active_executor = ocr_executor_from_env()
+    warnings: list[str] = []
+    if requested_fallback not in {"", "disabled", "none"} and _ocr_fallback_mode(active_executor) == "disabled":
+        warnings.append(f"ocr_fallback_configuration_failed:{requested_fallback}")
+    return active_executor, warnings
+
+
+def _ocr_mode(executor: OcrExecutor | None) -> str:
+    if executor is None:
+        return "disabled"
+    return str(getattr(executor, "engine_name", "") or executor.__class__.__name__)
+
+
+def _ocr_primary_engine(executor: OcrExecutor | None) -> str:
+    primary = getattr(executor, "primary", None)
+    active = primary or executor
+    if active is None:
+        return "disabled"
+    return str(getattr(active, "engine_name", "") or active.__class__.__name__)
+
+
+def _ocr_fallback_mode(executor: OcrExecutor | None) -> str:
+    fallback = getattr(executor, "fallback", None)
+    if fallback is None:
+        return "disabled"
+    return str(getattr(fallback, "engine_name", "") or fallback.__class__.__name__)
+
+
+def _ocr_fallback_model(executor: OcrExecutor | None) -> str | None:
+    fallback = getattr(executor, "fallback", None)
+    model = getattr(fallback, "model", None)
+    return str(model) if model else None
 
 
 def _provider_name(provider: Any) -> str | None:

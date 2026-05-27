@@ -14,6 +14,7 @@ from sunshine_extraction.evaluate_pipeline import (
     _parse_args,
     _per_file_model_usage_summary,
     _resolve_eval_embedding_provider,
+    _resolve_eval_ocr_executor,
     _update_totals,
     run_golden_pipeline_evaluation,
 )
@@ -316,6 +317,17 @@ def test_eval_embedding_provider_resolution_records_configuration_fallback(monke
     assert warnings[0].startswith("embedding_provider_configuration_failed:")
 
 
+def test_eval_ocr_resolution_records_fallback_configuration_failure(monkeypatch) -> None:
+    monkeypatch.setenv("SUNSHINE_OCR_FALLBACK_PROVIDER", "openai")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API", raising=False)
+
+    executor, warnings = _resolve_eval_ocr_executor(None)
+
+    assert executor.engine_name == "tesseract"
+    assert warnings == ["ocr_fallback_configuration_failed:openai"]
+
+
 def test_sensitive_false_accept_counts_even_when_primary_tag_is_correct(tmp_path: Path) -> None:
     label = GoldenEvalLabel(
         id=1,
@@ -358,7 +370,8 @@ def test_sensitive_false_accept_counts_even_when_primary_tag_is_correct(tmp_path
     assert totals["sensitive_false_accepts"] == 1
 
 
-def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Path) -> None:
+def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SUNSHINE_OCR_FALLBACK_PROVIDER", "disabled")
     tea = tmp_path / "tea.txt"
     tea.write_text("Annual Sunshine Tea guest list and event notes.", encoding="utf-8")
     history = tmp_path / "history.txt"
@@ -543,6 +556,10 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert summary["run_metadata"]["embedding_provider"] == "placeholder"
     assert summary["run_metadata"]["embedding_model"] == "local-placeholder"
     assert summary["run_metadata"]["embedding_dimensions"] == 4
+    assert summary["run_metadata"]["ocr_mode"] == "tesseract"
+    assert summary["run_metadata"]["ocr_primary_engine"] == "tesseract"
+    assert summary["run_metadata"]["ocr_fallback_mode"] == "disabled"
+    assert summary["run_metadata"]["ocr_fallback_model"] is None
     assert summary["run_metadata"]["warnings"] == []
     assert summary["run_warnings"] == []
     assert summary["by_failure_reason"] == {
