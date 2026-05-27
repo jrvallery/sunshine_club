@@ -135,6 +135,7 @@ def run_golden_pipeline_evaluation(
             _record_confusion(confusion, label.correct_primary_tag, None)
             continue
 
+        source_before = _source_file_snapshot(input_path)
         graph_result = run_document_graph(
             input_path,
             output_dir=graph_output_dir,
@@ -150,9 +151,14 @@ def run_golden_pipeline_evaluation(
             semantic_index_path=semantic_index_path,
             progress=progress,
         )
+        source_after = _source_file_snapshot(input_path)
+        source_mutation = _source_file_mutation(source_before, source_after)
         final_result = graph_result.get("final_result", {})
         model_usage_rows.extend(_model_usage_with_label(label, graph_result.get("model_usage", [])))
         row = _evaluation_row(label, final_result, graph_output_dir)
+        row["source_file_mutation"] = source_mutation
+        if source_mutation["mutated"]:
+            row["failure_reasons"].append("source_file_mutated")
         evaluated.append(row)
         _record_confusion(confusion, label.correct_primary_tag, row.get("predicted_primary_tag"))
         _update_eval_counters(counters, final_result)
@@ -330,6 +336,7 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
         "semantic_same_family_top5_count": semantic_same_family_top5_count,
         "semantic_top1_primary_tag": semantic_top1_primary_tag,
         "semantic_retrieval_quality": semantic_retrieval_quality,
+        "source_file_mutation": {"mutated": False},
         "warnings": final_result.get("warnings", []),
         "failure_reasons": failure_reasons,
     }
@@ -385,7 +392,7 @@ def _summary(
         "high_risk_primary_accuracy_min": high_risk_min_accuracy,
         "high_confidence_primary_accuracy": (confidence_bucket_metrics.get("high") or {}).get("primary_accuracy"),
         "high_confidence_false_accepts": (confidence_bucket_metrics.get("high") or {}).get("false_accepts"),
-        "source_file_mutations": 0,
+        "source_file_mutations": totals["source_file_mutations"],
     }
     production_status_counts = {
         "accepted": totals["route_candidate"],
@@ -666,6 +673,8 @@ def _update_totals(totals: Counter, row: dict[str, Any], label: GoldenEvalLabel)
             totals["review_true_negative"] += 1
     if row.get("ocr_fallback_used"):
         totals["ocr_fallback_used"] += 1
+    if (row.get("source_file_mutation") or {}).get("mutated"):
+        totals["source_file_mutations"] += 1
     if row.get("llm_structured_output_valid") is not None:
         totals["llm_structured_output_attempted"] += 1
         if row.get("llm_structured_output_valid"):
@@ -909,6 +918,30 @@ def _label_input_path(label: GoldenEvalLabel) -> Path | None:
     return None
 
 
+def _source_file_snapshot(path: Path) -> dict[str, Any]:
+    stat = path.stat()
+    return {
+        "path": str(path),
+        "size_bytes": stat.st_size,
+        "mtime_ns": stat.st_mtime_ns,
+    }
+
+
+def _source_file_mutation(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
+    mutated_fields = [
+        field
+        for field in ("size_bytes", "mtime_ns")
+        if before.get(field) != after.get(field)
+    ]
+    return {
+        "mutated": bool(mutated_fields),
+        "path": before.get("path"),
+        "mutated_fields": mutated_fields,
+        "before": before,
+        "after": after,
+    }
+
+
 def _missing_file_result(label: GoldenEvalLabel) -> dict[str, Any]:
     return {
         "golden_label_id": label.id,
@@ -949,6 +982,7 @@ def _missing_file_result(label: GoldenEvalLabel) -> dict[str, Any]:
         "embedding_status": None,
         "llm_status": None,
         "semantic_example_count": 0,
+        "source_file_mutation": {"mutated": False, "reason": "missing_file"},
         "warnings": ["file_missing"],
         "failure_reasons": ["missing_file", "primary_tag_mismatch"],
     }
@@ -964,6 +998,7 @@ def _failure_row(label: GoldenEvalLabel, row: dict[str, Any], reason: str) -> di
         "predicted_primary_tag": row.get("predicted_primary_tag"),
         "route_status": row.get("route_status"),
         "review_reason": row.get("review_reason"),
+        "source_file_mutation": row.get("source_file_mutation"),
         "warnings": row.get("warnings", []),
     }
 

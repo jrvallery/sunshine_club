@@ -212,6 +212,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     model_usage = [json.loads(line) for line in (output_dir / "eval-model-usage.jsonl").read_text(encoding="utf-8").splitlines()]
 
     assert sorted(row["primary_correct"] for row in results) == [False, True]
+    assert {row["source_file_mutation"]["mutated"] for row in results} == {False}
     assert {row["confidence_bucket"] for row in results} == {"high"}
     assert {row["ocr_fallback_used"] for row in results} == {False}
     assert {row["llm_structured_output_valid"] for row in results} == {True}
