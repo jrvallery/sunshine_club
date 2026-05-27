@@ -1,0 +1,40 @@
+{
+  "name": "sunshine-ui-review",
+  "startCommand": "cd apps/dashboard && npx next dev -H 127.0.0.1 -p 3100",
+  "readyUrl": "http://127.0.0.1:3100",
+  "reuseExistingServer": true,
+  "serverTimeoutMs": 120000,
+  "routes": [
+    {
+      "name": "dashboard",
+      "path": "/"
+    }
+  ],
+  "viewports": [
+    {
+      "name": "desktop",
+      "width": 1440,
+      "height": 1000
+    },
+    {
+      "name": "tablet",
+      "width": 834,
+      "height": 1112
+    },
+    {
+      "name": "mobile",
+      "width": 390,
+      "height": 844
+    }
+  ],
+  "captureFullPage": true,
+  "runAxe": true,
+  "budgets": {
+    "consoleErrors": 0,
+    "failedRequests": 0,
+    "horizontalOverflow": 0,
+    "brokenImages": 0,
+    "clippedText": 25,
+    "axeViolations": 0
+  }
+}

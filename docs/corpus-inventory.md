@@ -129,7 +129,10 @@ The current inventory command is:
 ```bash
 python -m sunshine_connectors.inventory /mnt/sunshine \
   --output /mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/inventory.jsonl \
-  --summary /mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/summary.json
+  --summary /mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/summary.json \
+  --skipped-audit /mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/skipped-files.jsonl \
+  --probe-manifest /mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/probe-manifest.jsonl \
+  --inventory-run-id sunshine-club-inventory-2026-05-25
 ```
 
 The generated JSONL file is the reusable staged-file inventory. Each emitted row
@@ -139,13 +142,35 @@ includes:
 - source collection
 - absolute source path
 - relative source path in `raw_metadata.relative_path`
+- inventory run ID in `raw_metadata.inventory_run_id`
 - filename
 - extension
 - MIME type
 - size
 - source mtime
 - optional checksum status or value
-- initial content class, confidence, and reasons
+- initial content class, confidence, classifier name/version, rule ID, and reasons
+- content-class stage, currently `initial_inventory`
+- extraction probe and review-required flags
+- risk flags such as `low_confidence_content_class`, `needs_extraction_probe`, and `binary_or_unknown`
+
+The skipped-file audit JSONL is the reviewable record of files intentionally
+omitted from the inventory. Each skipped row includes source path, relative path,
+name, extension, MIME type, size, mtime, skip reason, audit disposition, and the
+same inventory run ID. Current skips are restricted to explicit system,
+temporary, cache, lock, and sidecar patterns.
+
+The probe manifest JSONL is the input queue for the next extraction confidence
+pass. It contains emitted files that should not be trusted from path/extension
+alone:
+
+- low-confidence content-class assignments
+- PDFs/images with explicit extraction probe reasons
+- `binary_or_unknown` files
+
+Probe rows include source provenance, initial content class, confidence, reasons,
+risk flags, and a safety policy stating that source mutation is not allowed and
+failed or empty probes require review.
 
 The summary JSON is the quality report. It includes:
 
@@ -159,6 +184,98 @@ The summary JSON is the quality report. It includes:
 - low-confidence assignment count and samples
 - `binary_or_unknown` count and samples
 - files needing extraction probes and samples
+- probe manifest count and samples
+
+### Content-Class Transition Contract
+
+Extraction probes must not overwrite the inventory decision in place. They should
+emit a content-class transition record with:
+
+- inventory run ID
+- source path
+- before class
+- after class
+- transition reason
+- extractor name and version
+- extraction quality
+- warnings
+- review-required flag
+
+This preserves the original heuristic decision and makes every later correction
+auditable.
+
+The extraction probe run should also emit a probe audit summary with:
+
+- inventory run ID and probe run ID
+- total probe candidates
+- unchanged classifications
+- changed classifications
+- failed extractions
+- empty or poor extractions
+- still-unknown files
+- review-required files
+- skipped files by reason
+- transition counts such as `image->scanned_document`
+
+Current probe command:
+
+```bash
+python -m sunshine_extraction.probe \
+  /mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/probe-manifest.jsonl \
+  --results /mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/probe-results.jsonl \
+  --summary /mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/probe-summary.json \
+  --probe-run-id sunshine-club-probe-2026-05-25
+```
+
+The probe pass is read-only against source files. It classifies evidence as a
+transition record and leaves the inventory rows unchanged.
+
+### Current Probe Run
+
+Latest lightweight probe run:
+
+- probe manifest JSONL: `/mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/probe-manifest.jsonl`
+- probe results JSONL: `/mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/probe-results.jsonl`
+- probe summary JSON: `/mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/probe-summary.json`
+- probe run ID: `sunshine-club-probe-2026-05-25`
+- manifest rows: 32,467
+- result rows: 32,467
+- missing results: 0
+- extra results: 0
+
+Probe outcomes:
+
+- probed: 31,512
+- failed extraction probes: 955
+- unchanged content classes: 32,201
+- changed content classes: 266
+- empty or poor extraction probes: 1,086
+- still unknown: 81
+- review required: 146
+
+Content-class transitions:
+
+- `scanned_document->scanned_document`: 25,894
+- `image->image`: 6,072
+- `image->scanned_document`: 93
+- `scanned_document->document`: 131
+- `document->scanned_document`: 41
+- `document->document`: 154
+- `binary_or_unknown->binary_or_unknown`: 81
+- `binary_or_unknown->spreadsheet`: 1
+
+Top review reasons:
+
+- `pdf_too_large_for_lightweight_probe`: 45
+- `publisher_file_review`: 44
+- `extensionless_file_review`: 16
+- `unsupported_binary_review`: 16
+- `pdf_probe_failed`: 15
+- `pdf_sparse_text`: 4
+- `shortcut_review`: 2
+- `archive_review`: 2
+- `video_review`: 1
+- `macro_enabled_spreadsheet_review`: 1
 
 ### Current Run
 
@@ -166,6 +283,8 @@ Latest full no-checksum run:
 
 - inventory JSONL: `/mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/inventory.jsonl`
 - summary JSON: `/mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/summary.json`
+- skipped-file audit JSONL: not generated in the last recorded run
+- probe manifest JSONL: not generated in the last recorded run
 - scanned files: 32,111
 - emitted files: 31,513
 - skipped files: 598

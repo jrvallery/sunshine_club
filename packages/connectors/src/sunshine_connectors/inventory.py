@@ -20,6 +20,8 @@ from sunshine_core.models import FileContentClass, SourceCollection, SourceType,
 SUNSHINE_ROOT = Path("/mnt/sunshine")
 LOW_CONFIDENCE_THRESHOLD = 0.8
 MAX_SUMMARY_SAMPLES = 25
+INVENTORY_CLASSIFIER_NAME = "sunshine-inventory-content-classifier"
+INVENTORY_CLASSIFIER_VERSION = "v1"
 
 SOURCE_COLLECTION_BY_TOP_LEVEL = {
     "Sunshine shared folders": SourceCollection.SUNSHINE_SHARED_FOLDERS,
@@ -160,8 +162,11 @@ class SkipDecision:
 
 @dataclass
 class InventoryRunSummary:
+    inventory_run_id: str
     root: str
     output_path: str | None
+    skipped_audit_path: str | None
+    probe_manifest_path: str | None
     limit: int | None
     checksum_requested: bool
     checksum_max_bytes: int | None
@@ -178,9 +183,11 @@ class InventoryRunSummary:
         self.skipped_by_reason: Counter[str] = Counter()
         self.low_confidence_count = 0
         self.extraction_probe_count = 0
+        self.probe_manifest_count = 0
         self.low_confidence_samples: list[dict[str, object]] = []
         self.binary_or_unknown_samples: list[dict[str, object]] = []
         self.extraction_probe_samples: list[dict[str, object]] = []
+        self.probe_manifest_samples: list[dict[str, object]] = []
 
     def note_skipped(self, path: Path, root: Path, reason: str) -> None:
         self.skipped_files += 1
@@ -205,16 +212,26 @@ class InventoryRunSummary:
         if any(reason in EXTRACTION_PROBE_REASONS for reason in reasons):
             self.extraction_probe_count += 1
             _append_sample(self.extraction_probe_samples, sample)
+        if _record_needs_probe_manifest(record, self.low_confidence_threshold):
+            self.probe_manifest_count += 1
+            _append_sample(self.probe_manifest_samples, sample)
 
     def as_dict(self) -> dict[str, object]:
         return {
+            "inventory_run_id": self.inventory_run_id,
             "generated_at": self.generated_at,
             "root": self.root,
             "output_path": self.output_path,
+            "skipped_audit_path": self.skipped_audit_path,
+            "probe_manifest_path": self.probe_manifest_path,
             "limit": self.limit,
             "checksum_requested": self.checksum_requested,
             "checksum_max_bytes": self.checksum_max_bytes,
             "low_confidence_threshold": self.low_confidence_threshold,
+            "classifier": {
+                "name": INVENTORY_CLASSIFIER_NAME,
+                "version": INVENTORY_CLASSIFIER_VERSION,
+            },
             "scanned_files": self.scanned_files,
             "emitted_files": self.emitted_files,
             "skipped_files": self.skipped_files,
@@ -236,6 +253,11 @@ class InventoryRunSummary:
                 "count": self.extraction_probe_count,
                 "sample_limit": MAX_SUMMARY_SAMPLES,
                 "samples": self.extraction_probe_samples,
+            },
+            "probe_manifest": {
+                "count": self.probe_manifest_count,
+                "sample_limit": MAX_SUMMARY_SAMPLES,
+                "samples": self.probe_manifest_samples,
             },
         }
 
@@ -272,6 +294,9 @@ def write_inventory(
     *,
     output_path: str | Path | None = None,
     summary_path: str | Path | None = None,
+    skipped_audit_path: str | Path | None = None,
+    probe_manifest_path: str | Path | None = None,
+    inventory_run_id: str | None = None,
     limit: int | None = None,
     compute_checksum: bool = False,
     checksum_max_bytes: int | None = None,
@@ -280,26 +305,87 @@ def write_inventory(
     root_path = Path(root)
     resolved_output_path = Path(output_path) if output_path is not None else None
     resolved_summary_path = Path(summary_path) if summary_path is not None else None
-    excluded_paths = _excluded_output_paths(resolved_output_path, resolved_summary_path)
+    resolved_skipped_audit_path = Path(skipped_audit_path) if skipped_audit_path is not None else None
+    resolved_probe_manifest_path = Path(probe_manifest_path) if probe_manifest_path is not None else None
+    generated_at = datetime.now(UTC).isoformat()
+    resolved_inventory_run_id = inventory_run_id or _default_inventory_run_id(generated_at)
+    excluded_paths = _excluded_output_paths(
+        resolved_output_path,
+        resolved_summary_path,
+        resolved_skipped_audit_path,
+        resolved_probe_manifest_path,
+    )
     summary = InventoryRunSummary(
+        inventory_run_id=resolved_inventory_run_id,
         root=str(root_path),
         output_path=str(resolved_output_path) if resolved_output_path else None,
+        skipped_audit_path=str(resolved_skipped_audit_path) if resolved_skipped_audit_path else None,
+        probe_manifest_path=str(resolved_probe_manifest_path) if resolved_probe_manifest_path else None,
         limit=limit,
         checksum_requested=compute_checksum,
         checksum_max_bytes=checksum_max_bytes,
         low_confidence_threshold=low_confidence_threshold,
-        generated_at=datetime.now(UTC).isoformat(),
+        generated_at=generated_at,
     )
 
+    skipped_audit = _open_optional_jsonl_writer(resolved_skipped_audit_path)
+    probe_manifest = _open_optional_jsonl_writer(resolved_probe_manifest_path)
+    try:
+        _write_inventory_to_output(
+            root_path,
+            resolved_output_path,
+            summary,
+            excluded_paths,
+            skipped_audit=skipped_audit,
+            probe_manifest=probe_manifest,
+            inventory_run_id=resolved_inventory_run_id,
+            limit=limit,
+            compute_checksum=compute_checksum,
+            checksum_max_bytes=checksum_max_bytes,
+            low_confidence_threshold=low_confidence_threshold,
+        )
+    finally:
+        if skipped_audit is not None:
+            skipped_audit.close()
+        if probe_manifest is not None:
+            probe_manifest.close()
+
+    if resolved_summary_path is not None:
+        resolved_summary_path.parent.mkdir(parents=True, exist_ok=True)
+        with resolved_summary_path.open("w", encoding="utf-8") as output:
+            json.dump(summary.as_dict(), output, indent=2, sort_keys=True)
+            output.write("\n")
+
+    return summary
+
+
+def _write_inventory_to_output(
+    root_path: Path,
+    resolved_output_path: Path | None,
+    summary: InventoryRunSummary,
+    excluded_paths: set[Path],
+    *,
+    skipped_audit: TextIO | None,
+    probe_manifest: TextIO | None,
+    inventory_run_id: str,
+    limit: int | None,
+    compute_checksum: bool,
+    checksum_max_bytes: int | None,
+    low_confidence_threshold: float,
+) -> None:
     if resolved_output_path is None:
         _write_inventory_records(
             sys.stdout,
             root_path,
             summary,
             excluded_paths,
+            skipped_audit=skipped_audit,
+            probe_manifest=probe_manifest,
+            inventory_run_id=inventory_run_id,
             limit=limit,
             compute_checksum=compute_checksum,
             checksum_max_bytes=checksum_max_bytes,
+            low_confidence_threshold=low_confidence_threshold,
         )
     else:
         resolved_output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -309,18 +395,14 @@ def write_inventory(
                 root_path,
                 summary,
                 excluded_paths,
+                skipped_audit=skipped_audit,
+                probe_manifest=probe_manifest,
+                inventory_run_id=inventory_run_id,
                 limit=limit,
                 compute_checksum=compute_checksum,
                 checksum_max_bytes=checksum_max_bytes,
+                low_confidence_threshold=low_confidence_threshold,
             )
-
-    if resolved_summary_path is not None:
-        resolved_summary_path.parent.mkdir(parents=True, exist_ok=True)
-        with resolved_summary_path.open("w", encoding="utf-8") as output:
-            json.dump(summary.as_dict(), output, indent=2, sort_keys=True)
-            output.write("\n")
-
-    return summary
 
 
 def should_skip_path(path: str | Path, root: str | Path = SUNSHINE_ROOT) -> SkipDecision:
@@ -352,8 +434,10 @@ def inventory_file(
     path: str | Path,
     root: str | Path = SUNSHINE_ROOT,
     *,
+    inventory_run_id: str | None = None,
     compute_checksum: bool = False,
     checksum_max_bytes: int | None = None,
+    low_confidence_threshold: float = LOW_CONFIDENCE_THRESHOLD,
 ) -> StagedFileRecord:
     file_path = Path(path)
     root_path = Path(root)
@@ -363,6 +447,7 @@ def inventory_file(
     source_collection = infer_source_collection(file_path, root_path)
     decision = classify_content(file_path, root_path, source_collection, mime_type)
     checksum, checksum_metadata = _checksum(file_path, stat.st_size, compute_checksum, checksum_max_bytes)
+    risk_flags = _risk_flags(decision, low_confidence_threshold)
 
     return StagedFileRecord(
         source_type=SourceType.NAS,
@@ -376,12 +461,20 @@ def inventory_file(
         content_class=decision.content_class,
         checksum=checksum,
         raw_metadata={
+            "inventory_run_id": inventory_run_id,
             "checksum": checksum_metadata,
+            "content_class_stage": "initial_inventory",
             "initial_content_class": {
                 "content_class": decision.content_class.value,
                 "confidence": decision.confidence,
                 "reasons": list(decision.reasons),
+                "classifier_name": INVENTORY_CLASSIFIER_NAME,
+                "classifier_version": INVENTORY_CLASSIFIER_VERSION,
+                "rule_id": _rule_id(decision),
             },
+            "needs_extraction_probe": _needs_extraction_probe(decision),
+            "review_required": bool(risk_flags),
+            "risk_flags": risk_flags,
             "relative_path": _relative_path(file_path, root_path),
         },
     )
@@ -517,9 +610,13 @@ def _write_inventory_records(
     summary: InventoryRunSummary,
     excluded_paths: set[Path],
     *,
+    skipped_audit: TextIO | None,
+    probe_manifest: TextIO | None,
+    inventory_run_id: str,
     limit: int | None,
     compute_checksum: bool,
     checksum_max_bytes: int | None,
+    low_confidence_threshold: float,
 ) -> None:
     for path in root_path.rglob("*"):
         if not path.is_file():
@@ -531,17 +628,23 @@ def _write_inventory_records(
         skip_decision = should_skip_path(path, root_path)
         if skip_decision.should_skip:
             summary.note_skipped(path, root_path, skip_decision.reason or "skip_unknown")
+            if skipped_audit is not None:
+                _write_jsonl(skipped_audit, _skipped_audit_record(path, root_path, inventory_run_id, skip_decision))
             continue
 
         record = inventory_file(
             path,
             root_path,
+            inventory_run_id=inventory_run_id,
             compute_checksum=compute_checksum,
             checksum_max_bytes=checksum_max_bytes,
+            low_confidence_threshold=low_confidence_threshold,
         )
         output.write(json.dumps(record.model_dump(mode="json"), sort_keys=True))
         output.write("\n")
         summary.note_record(record)
+        if probe_manifest is not None and _record_needs_probe_manifest(record, low_confidence_threshold):
+            _write_jsonl(probe_manifest, _probe_manifest_record(record, low_confidence_threshold))
 
         if limit is not None and summary.emitted_files >= limit:
             return
@@ -562,6 +665,114 @@ def _append_sample(samples: list[dict[str, object]], sample: dict[str, object]) 
         samples.append(sample)
 
 
+def _risk_flags(decision: ContentClassDecision, low_confidence_threshold: float) -> list[str]:
+    flags: list[str] = []
+    if decision.confidence < low_confidence_threshold:
+        flags.append("low_confidence_content_class")
+    if _needs_extraction_probe(decision):
+        flags.append("needs_extraction_probe")
+    if decision.content_class == FileContentClass.BINARY_OR_UNKNOWN:
+        flags.append("binary_or_unknown")
+    return flags
+
+
+def _needs_extraction_probe(decision: ContentClassDecision) -> bool:
+    return any(reason in EXTRACTION_PROBE_REASONS for reason in decision.reasons)
+
+
+def _rule_id(decision: ContentClassDecision) -> str:
+    return next(
+        reason
+        for reason in reversed(decision.reasons)
+        if not reason.startswith("extension=") and not reason.startswith("mime_type=")
+    )
+
+
+def _record_needs_probe_manifest(record: StagedFileRecord, low_confidence_threshold: float) -> bool:
+    initial_class = record.raw_metadata["initial_content_class"]
+    return (
+        float(initial_class["confidence"]) < low_confidence_threshold
+        or bool(record.raw_metadata["needs_extraction_probe"])
+        or record.content_class == FileContentClass.BINARY_OR_UNKNOWN
+    )
+
+
+def _probe_manifest_record(record: StagedFileRecord, low_confidence_threshold: float) -> dict[str, object]:
+    initial_class = record.raw_metadata["initial_content_class"]
+    return {
+        "inventory_run_id": record.raw_metadata["inventory_run_id"],
+        "source_path": record.source_path,
+        "relative_path": record.raw_metadata["relative_path"],
+        "source_collection": record.source_collection.value,
+        "name": record.name,
+        "extension": record.extension,
+        "mime_type": record.mime_type,
+        "size_bytes": record.size_bytes,
+        "source_mtime": record.source_mtime.isoformat() if record.source_mtime else None,
+        "content_class": record.content_class.value,
+        "confidence": initial_class["confidence"],
+        "reasons": initial_class["reasons"],
+        "risk_flags": record.raw_metadata["risk_flags"],
+        "probe_reason": _probe_reason(record, low_confidence_threshold),
+        "safety_policy": {
+            "source_mutation_allowed": False,
+            "failed_probe_disposition": "requires_review",
+            "empty_probe_disposition": "requires_review",
+        },
+    }
+
+
+def _probe_reason(record: StagedFileRecord, low_confidence_threshold: float) -> str:
+    initial_class = record.raw_metadata["initial_content_class"]
+    if record.content_class == FileContentClass.BINARY_OR_UNKNOWN:
+        return "binary_or_unknown_review"
+    if bool(record.raw_metadata["needs_extraction_probe"]):
+        return "content_type_probe_required"
+    if float(initial_class["confidence"]) < low_confidence_threshold:
+        return "low_confidence_review"
+    return "probe_not_required"
+
+
+def _skipped_audit_record(
+    path: Path,
+    root: Path,
+    inventory_run_id: str,
+    skip_decision: SkipDecision,
+) -> dict[str, object]:
+    stat = path.stat()
+    return {
+        "inventory_run_id": inventory_run_id,
+        "source_path": str(path),
+        "relative_path": _relative_path(path, root),
+        "name": path.name,
+        "extension": _extension(path) or None,
+        "mime_type": _mime_type(path),
+        "size_bytes": stat.st_size,
+        "source_mtime": datetime.fromtimestamp(stat.st_mtime, UTC).isoformat(),
+        "skip_reason": skip_decision.reason or "skip_unknown",
+        "audit_disposition": "system_or_temporary_junk",
+        "review_required": False,
+        "source_mutation_allowed": False,
+    }
+
+
+def _write_jsonl(output: TextIO, payload: dict[str, object]) -> None:
+    output.write(json.dumps(payload, sort_keys=True))
+    output.write("\n")
+
+
+def _open_optional_jsonl_writer(path: Path | None) -> TextIO | None:
+    if path is None:
+        return None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path.open("w", encoding="utf-8")
+
+
+def _default_inventory_run_id(generated_at: str) -> str:
+    compact_timestamp = generated_at.replace("-", "").replace(":", "").split(".")[0]
+    return f"inventory-{compact_timestamp}Z"
+
+
 def _excluded_output_paths(*paths: Path | None) -> set[Path]:
     return {_safe_resolve(path) for path in paths if path is not None}
 
@@ -579,6 +790,9 @@ def main() -> None:
     parser.add_argument("--limit", type=int)
     parser.add_argument("--output", type=Path, help="Write inventory JSONL to this file instead of stdout.")
     parser.add_argument("--summary", type=Path, help="Write inventory quality summary JSON to this file.")
+    parser.add_argument("--skipped-audit", type=Path, help="Write skipped-file audit JSONL to this file.")
+    parser.add_argument("--probe-manifest", type=Path, help="Write extraction-probe candidate JSONL to this file.")
+    parser.add_argument("--inventory-run-id", help="Stable run ID to stamp onto all emitted audit artifacts.")
     parser.add_argument("--checksum", action="store_true", help="Compute SHA-256 checksums by reading file bytes.")
     parser.add_argument(
         "--checksum-max-bytes",
@@ -597,6 +811,9 @@ def main() -> None:
         args.root,
         output_path=args.output,
         summary_path=args.summary,
+        skipped_audit_path=args.skipped_audit,
+        probe_manifest_path=args.probe_manifest,
+        inventory_run_id=args.inventory_run_id,
         limit=args.limit,
         compute_checksum=args.checksum,
         checksum_max_bytes=args.checksum_max_bytes,

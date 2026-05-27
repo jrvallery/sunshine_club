@@ -9,5 +9,9 @@
   },
   "scripts": {
     "dev:dashboard": "npm --workspace apps/dashboard run dev"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.11.3",
+    "@playwright/test": "^1.60.0"
   }
 }

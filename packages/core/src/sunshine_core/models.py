@@ -123,6 +123,58 @@ class ExtractionArtifact(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class ContentClassTransition(BaseModel):
+    document_id: UUID | None = None
+    source_path: str
+    inventory_run_id: str
+    before_class: FileContentClass
+    after_class: FileContentClass
+    transition_reason: str
+    extractor_name: str
+    extractor_version: str | None = None
+    extraction_quality: ExtractionQuality
+    warnings: list[str] = Field(default_factory=list)
+    requires_review: bool = True
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ContentClassProbeAuditSummary(BaseModel):
+    inventory_run_id: str
+    probe_run_id: str
+    generated_at: datetime
+    total_probe_candidates: int = Field(ge=0)
+    unchanged_classifications: int = Field(ge=0)
+    changed_classifications: int = Field(ge=0)
+    failed_extractions: int = Field(ge=0)
+    empty_or_poor_extractions: int = Field(ge=0)
+    still_unknown: int = Field(ge=0)
+    review_required: int = Field(ge=0)
+    skipped_files: int = Field(ge=0)
+    skipped_by_reason: dict[str, int] = Field(default_factory=dict)
+    by_transition: dict[str, int] = Field(default_factory=dict)
+    samples: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
+
+
+class ContentClassProbeResult(BaseModel):
+    inventory_run_id: str
+    probe_run_id: str
+    source_path: str
+    relative_path: str
+    status: Literal["probed", "failed"]
+    before_class: FileContentClass
+    after_class: FileContentClass
+    transition_reason: str
+    extractor_name: str
+    extractor_version: str
+    extraction_quality: ExtractionQuality
+    confidence_after: float = Field(ge=0, le=1)
+    requires_review: bool = True
+    review_reasons: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    transition: ContentClassTransition
+
+
 class ControlledTag(BaseModel):
     id: UUID
     name: str

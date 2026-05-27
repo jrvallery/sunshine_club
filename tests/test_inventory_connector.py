@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sunshine_connectors.inventory import (
@@ -12,7 +13,13 @@ from sunshine_connectors.inventory import (
     should_skip_path,
     write_inventory,
 )
-from sunshine_core.models import FileContentClass, SourceCollection
+from sunshine_core.models import (
+    ContentClassProbeAuditSummary,
+    ContentClassTransition,
+    ExtractionQuality,
+    FileContentClass,
+    SourceCollection,
+)
 
 
 GOLDEN_SAMPLES_PATH = Path(__file__).parent / "fixtures" / "inventory_golden_samples.json"
@@ -28,7 +35,7 @@ def _write(root: Path, relative_path: str, content: bytes = b"sample") -> Path:
 def test_inventory_file_captures_provenance_and_initial_content_class(tmp_path: Path) -> None:
     path = _write(tmp_path, "Sunshine shared folders/Minutes-agendas- dental reports and treasurer reports/2025-2026/scan.tif")
 
-    record = inventory_file(path, tmp_path)
+    record = inventory_file(path, tmp_path, inventory_run_id="test-run-1")
 
     assert record.source_collection == SourceCollection.SUNSHINE_SHARED_FOLDERS
     assert record.name == "scan.tif"
@@ -41,6 +48,11 @@ def test_inventory_file_captures_provenance_and_initial_content_class(tmp_path: 
     assert record.raw_metadata["relative_path"] == (
         "Sunshine shared folders/Minutes-agendas- dental reports and treasurer reports/2025-2026/scan.tif"
     )
+    assert record.raw_metadata["inventory_run_id"] == "test-run-1"
+    assert record.raw_metadata["content_class_stage"] == "initial_inventory"
+    assert record.raw_metadata["initial_content_class"]["classifier_name"] == "sunshine-inventory-content-classifier"
+    assert record.raw_metadata["initial_content_class"]["classifier_version"] == "v1"
+    assert record.raw_metadata["initial_content_class"]["rule_id"] == "tiff_scan_default"
     assert record.raw_metadata["initial_content_class"]["reasons"]
 
 
@@ -181,15 +193,49 @@ def test_write_inventory_outputs_jsonl_and_summary(tmp_path: Path) -> None:
     _write(tmp_path, "Sunshine shared folders/Unsorted/member.jpg")
     output_path = tmp_path / "_manifest" / "inventory.jsonl"
     summary_path = tmp_path / "_manifest" / "summary.json"
+    skipped_audit_path = tmp_path / "_manifest" / "skipped-files.jsonl"
+    probe_manifest_path = tmp_path / "_manifest" / "probe-manifest.jsonl"
 
-    summary = write_inventory(tmp_path, output_path=output_path, summary_path=summary_path)
+    summary = write_inventory(
+        tmp_path,
+        output_path=output_path,
+        summary_path=summary_path,
+        skipped_audit_path=skipped_audit_path,
+        probe_manifest_path=probe_manifest_path,
+        inventory_run_id="test-run-1",
+    )
 
     records = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines()]
+    skipped_records = [json.loads(line) for line in skipped_audit_path.read_text(encoding="utf-8").splitlines()]
+    probe_records = [json.loads(line) for line in probe_manifest_path.read_text(encoding="utf-8").splitlines()]
     summary_data = json.loads(summary_path.read_text(encoding="utf-8"))
 
     assert len(records) == 3
+    assert len(skipped_records) == 2
+    assert len(probe_records) == 3
     assert summary.emitted_files == 3
     assert summary.skipped_files == 2
+    assert summary.probe_manifest_count == 3
+    pdf_record = next(record for record in records if record["name"] == "Sunshine Club Digital Resources.pdf")
+    assert pdf_record["raw_metadata"]["inventory_run_id"] == "test-run-1"
+    assert pdf_record["raw_metadata"]["content_class_stage"] == "initial_inventory"
+    assert pdf_record["raw_metadata"]["initial_content_class"]["rule_id"] == "pdf_needs_text_probe"
+    assert pdf_record["raw_metadata"]["needs_extraction_probe"] is True
+    assert pdf_record["raw_metadata"]["review_required"] is True
+    assert "low_confidence_content_class" in pdf_record["raw_metadata"]["risk_flags"]
+    assert skipped_records[0]["inventory_run_id"] == "test-run-1"
+    assert skipped_records[0]["source_mutation_allowed"] is False
+    assert skipped_records[0]["audit_disposition"] == "system_or_temporary_junk"
+    assert probe_records[0]["inventory_run_id"] == "test-run-1"
+    assert probe_records[0]["safety_policy"]["source_mutation_allowed"] is False
+    assert {record["probe_reason"] for record in probe_records} == {
+        "binary_or_unknown_review",
+        "content_type_probe_required",
+    }
+    assert output_path.name not in [record["name"] for record in records]
+    assert skipped_audit_path.name not in [record["name"] for record in records]
+    assert probe_manifest_path.name not in [record["name"] for record in records]
+    assert summary_data["inventory_run_id"] == "test-run-1"
     assert summary_data["emitted_files"] == 3
     assert summary_data["skipped_by_reason"] == {
         "skip_directory:#recycle": 1,
@@ -198,3 +244,44 @@ def test_write_inventory_outputs_jsonl_and_summary(tmp_path: Path) -> None:
     assert summary_data["by_content_class"]["binary_or_unknown"] == 1
     assert summary_data["low_confidence"]["count"] == 3
     assert summary_data["needs_extraction_probe"]["count"] == 2
+    assert summary_data["probe_manifest"]["count"] == 3
+
+
+def test_content_class_transition_contract_preserves_before_after_and_review_policy() -> None:
+    transition = ContentClassTransition(
+        source_path="/mnt/sunshine/Sunshine shared folders/Unsorted/page.jpg",
+        inventory_run_id="test-run-1",
+        before_class=FileContentClass.IMAGE,
+        after_class=FileContentClass.SCANNED_DOCUMENT,
+        transition_reason="ocr_text_detected",
+        extractor_name="probe-stub",
+        extraction_quality=ExtractionQuality.OK,
+        warnings=[],
+        requires_review=False,
+    )
+
+    assert transition.before_class == FileContentClass.IMAGE
+    assert transition.after_class == FileContentClass.SCANNED_DOCUMENT
+    assert transition.inventory_run_id == "test-run-1"
+
+
+def test_content_class_probe_audit_summary_contract_tracks_customer_safety_counts() -> None:
+    summary = ContentClassProbeAuditSummary(
+        inventory_run_id="test-run-1",
+        probe_run_id="probe-run-1",
+        generated_at=datetime.now(UTC),
+        total_probe_candidates=10,
+        unchanged_classifications=4,
+        changed_classifications=2,
+        failed_extractions=1,
+        empty_or_poor_extractions=1,
+        still_unknown=1,
+        review_required=3,
+        skipped_files=1,
+        skipped_by_reason={"skip_file:.ds_store": 1},
+        by_transition={"image->scanned_document": 2},
+    )
+
+    assert summary.total_probe_candidates == 10
+    assert summary.changed_classifications == 2
+    assert summary.review_required == 3

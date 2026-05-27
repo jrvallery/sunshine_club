@@ -13,3 +13,4 @@ build/
 .env
 .env.local
 
+sunshine_club/docs/cortex_implementation.md
