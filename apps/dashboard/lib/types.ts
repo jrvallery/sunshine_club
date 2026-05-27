@@ -323,8 +323,15 @@ export type GoldenLabel = {
   relative_path: string;
   sample_path?: string | null;
   extracted_text_snippet?: string | null;
+  content_class?: string | null;
   correct_primary_tag: string;
   correct_secondary_tags: string[];
+  ocr_quality_label?: string | null;
+  expected_review_required?: boolean | null;
+  sensitive_record?: boolean;
+  correct_destination_path?: string | null;
+  correct_placement_year?: string | null;
+  correct_privacy?: string | null;
   reviewer?: string | null;
   notes?: string | null;
   proposed_tag?: string | null;

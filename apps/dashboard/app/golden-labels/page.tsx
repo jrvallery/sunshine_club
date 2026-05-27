@@ -4,11 +4,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { Button } from "../../components/ui/Button";
-import { CheckboxField, TextArea, TextInput } from "../../components/ui/FormControls";
+import { CheckboxField, SelectInput, TextArea, TextInput } from "../../components/ui/FormControls";
 import { KeyValue } from "../../components/ui/KeyValue";
 import { MultiTagPicker, TagPicker } from "../../components/ui/TagPicker";
 import { deleteJson, fetchJson, patchJson, postJson } from "../../lib/api";
-import { primaryTagOptions, secondaryTagOptions } from "../../lib/taxonomy";
+import { contentClassOptions, ocrQualityOptions, primaryTagOptions, privacyOptions, secondaryTagOptions } from "../../lib/taxonomy";
 import type { GoldenLabel, GoldenLabelSummary, SemanticIndexStatus } from "../../lib/types";
 
 export default function GoldenLabelsPage() {
@@ -117,6 +117,8 @@ export default function GoldenLabelsPage() {
               <tr>
                 <th>File</th>
                 <th>Correct Primary</th>
+                <th>Class</th>
+                <th>OCR</th>
                 <th>Correct Secondary</th>
                 <th>Proposed</th>
                 <th>Reviewer</th>
@@ -133,6 +135,8 @@ export default function GoldenLabelsPage() {
                     </button>
                   </td>
                   <td>{label.correct_primary_tag}</td>
+                  <td>{label.content_class ?? "-"}</td>
+                  <td>{label.ocr_quality_label ?? "-"}</td>
                   <td>{label.correct_secondary_tags.join(", ") || "-"}</td>
                   <td>{label.proposed_tag ?? "-"}</td>
                   <td>{label.reviewer ?? "-"}</td>
@@ -175,6 +179,13 @@ function GoldenLabelDrawer({
 }) {
   const [primary, setPrimary] = useState(label.correct_primary_tag);
   const [secondary, setSecondary] = useState(label.correct_secondary_tags);
+  const [contentClass, setContentClass] = useState(label.content_class ?? "");
+  const [ocrQuality, setOcrQuality] = useState(label.ocr_quality_label ?? "");
+  const [expectedReviewRequired, setExpectedReviewRequired] = useState(Boolean(label.expected_review_required));
+  const [sensitiveRecord, setSensitiveRecord] = useState(Boolean(label.sensitive_record));
+  const [destinationPath, setDestinationPath] = useState(label.correct_destination_path ?? "");
+  const [placementYear, setPlacementYear] = useState(label.correct_placement_year ?? "");
+  const [privacy, setPrivacy] = useState(label.correct_privacy ?? "");
   const [reviewer, setReviewer] = useState(label.reviewer ?? "");
   const [notes, setNotes] = useState(label.notes ?? "");
 
@@ -208,6 +219,38 @@ function GoldenLabelDrawer({
           <KeyValue label="Prediction status" value={label.correct_primary_tag === label.proposed_tag ? "matches" : "changed prediction"} />
         </section>
         <section>
+          <h3>Quality Label</h3>
+          <div className="formGrid">
+            <SelectInput label="Content class" value={contentClass} onChange={(event) => setContentClass(event.target.value)}>
+              <option value="">Unset</option>
+              {contentClassOptions.map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </SelectInput>
+            <SelectInput label="OCR quality" value={ocrQuality} onChange={(event) => setOcrQuality(event.target.value)}>
+              <option value="">Unset</option>
+              {ocrQualityOptions.map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </SelectInput>
+            <CheckboxField label="Expected review required" checked={expectedReviewRequired} onChange={(event) => setExpectedReviewRequired(event.target.checked)} />
+            <CheckboxField label="Sensitive record" checked={sensitiveRecord} onChange={(event) => setSensitiveRecord(event.target.checked)} />
+          </div>
+        </section>
+        <section>
+          <h3>Placement Label</h3>
+          <div className="formGrid">
+            <TextInput label="Correct destination path" value={destinationPath} onChange={(event) => setDestinationPath(event.target.value)} />
+            <TextInput label="Correct year / year-month" value={placementYear} onChange={(event) => setPlacementYear(event.target.value)} />
+            <SelectInput label="Correct privacy" value={privacy} onChange={(event) => setPrivacy(event.target.value)}>
+              <option value="">Unset</option>
+              {privacyOptions.map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </SelectInput>
+          </div>
+        </section>
+        <section>
           <h3>Correct Label</h3>
           <div className="formGrid">
             <TagPicker label="Correct primary tag" options={primaryTagOptions} value={primary} onChange={setPrimary} />
@@ -219,8 +262,15 @@ function GoldenLabelDrawer({
               disabled={saving}
               onClick={() =>
                 onSave({
+                  content_class: contentClass || null,
                   correct_primary_tag: primary,
                   correct_secondary_tags: secondary,
+                  ocr_quality_label: ocrQuality || null,
+                  expected_review_required: expectedReviewRequired,
+                  sensitive_record: sensitiveRecord,
+                  correct_destination_path: destinationPath || null,
+                  correct_placement_year: placementYear || null,
+                  correct_privacy: privacy || null,
                   reviewer,
                   notes
                 })

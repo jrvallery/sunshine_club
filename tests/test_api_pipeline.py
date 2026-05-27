@@ -267,8 +267,15 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     edited_label = client.patch(
         f"/admin/review/golden-labels/{label_id}",
         json={
+            "content_class": "document",
             "correct_primary_tag": "meeting_records",
             "correct_secondary_tags": ["meeting_minutes"],
+            "ocr_quality_label": "ok",
+            "expected_review_required": False,
+            "sensitive_record": True,
+            "correct_destination_path": "01_Governance_Admin/2025",
+            "correct_placement_year": "2025",
+            "correct_privacy": "restricted",
             "reviewer": "auditor",
             "notes": "Corrected from dashboard.",
         },
@@ -444,8 +451,15 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert golden_file.status_code == 200
     assert golden_file.content == b"review pdf bytes"
     assert edited_label.status_code == 200
+    assert edited_label.json()["content_class"] == "document"
     assert edited_label.json()["correct_primary_tag"] == "meeting_records"
     assert edited_label.json()["correct_secondary_tags"] == ["meeting_minutes"]
+    assert edited_label.json()["ocr_quality_label"] == "ok"
+    assert edited_label.json()["expected_review_required"] is False
+    assert edited_label.json()["sensitive_record"] is True
+    assert edited_label.json()["correct_destination_path"] == "01_Governance_Admin/2025"
+    assert edited_label.json()["correct_placement_year"] == "2025"
+    assert edited_label.json()["correct_privacy"] == "restricted"
     assert golden_summary.json()["total_golden_labels"] == 1
     assert semantic_status_before.status_code == 200
     assert semantic_status_before.json()["exists"] is False

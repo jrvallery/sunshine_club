@@ -95,3 +95,19 @@ export const secondaryTagOptions = [
   "public_fact_bank",
   "training_runbook"
 ].filter((tag, index, tags) => tags.indexOf(tag) === index);
+
+export const contentClassOptions = [
+  "document",
+  "scanned_document",
+  "image",
+  "spreadsheet",
+  "video",
+  "audio",
+  "publisher",
+  "technical",
+  "unknown"
+];
+
+export const ocrQualityOptions = ["ok", "poor", "empty", "metadata_only", "deferred", "failed"];
+
+export const privacyOptions = ["public", "club_internal", "restricted"];
