@@ -50,6 +50,7 @@ type Filters = {
   embedding_provider: string;
   llm_tag_provider: string;
   ocr_fallback_provider: string;
+  ocr_fallback_used: string;
   enable_llm_tags: string;
 };
 
@@ -71,6 +72,7 @@ const initialFilters: Filters = {
   embedding_provider: "",
   llm_tag_provider: "",
   ocr_fallback_provider: "",
+  ocr_fallback_used: "",
   enable_llm_tags: ""
 };
 
@@ -80,6 +82,7 @@ const savedReviewQueues: Array<{ label: string; filters: Partial<Filters> }> = [
   { label: "Open review queue", filters: { status: "open" } },
   { label: "All items for current run", filters: { status: "all" } },
   { label: "OCR poor / empty", filters: { status: "all", warning_type: "ocr_quality_below_threshold" } },
+  { label: "OCR fallback used", filters: { status: "all", ocr_fallback_used: "used" } },
   { label: "Fast run OCR failures", filters: { status: "all", ocr_fallback_provider: "disabled", warning_type: "ocr_quality_below_threshold" } },
   { label: "LLM tag disagreements", filters: { status: "all", review_reason: "llm_tag_disagreement" } },
   { label: "Low confidence tags", filters: { status: "all", review_reason: "tag_confidence_below_threshold" } },
@@ -106,6 +109,7 @@ const reviewFacetDefinitions: Array<FacetDefinition<keyof Filters & string>> = [
   { key: "embedding_provider", title: "Embedding", facetKey: "embedding_provider", limit: 8 },
   { key: "llm_tag_provider", title: "LLM Provider", facetKey: "llm_tag_provider", limit: 8 },
   { key: "ocr_fallback_provider", title: "OCR Fallback", facetKey: "ocr_fallback_provider", limit: 8 },
+  { key: "ocr_fallback_used", title: "Fallback Used", facetKey: "ocr_fallback_used", limit: 8 },
   { key: "enable_llm_tags", title: "LLM Tags", facetKey: "llm_tags", valueMap: { enabled: "true", disabled: "false" }, limit: 8 },
   { key: "status", title: "Review Status", facetKey: "review_status", limit: 8 }
 ];

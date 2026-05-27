@@ -300,6 +300,7 @@ class ReviewStore:
         embedding_provider: str | None = None,
         llm_tag_provider: str | None = None,
         ocr_fallback_provider: str | None = None,
+        ocr_fallback_used: str | None = None,
         enable_llm_tags: bool | None = None,
     ) -> list[dict[str, Any]]:
         query = """
@@ -365,6 +366,9 @@ class ReviewStore:
         if ocr_fallback_provider:
             predicates.append("ocr_fallback_provider = ?")
             params.append(ocr_fallback_provider)
+        fallback_used_predicate = _ocr_fallback_used_predicate(ocr_fallback_used, warnings_column="warnings_json")
+        if fallback_used_predicate:
+            predicates.append(fallback_used_predicate)
         if enable_llm_tags is not None:
             predicates.append("enable_llm_tags = ?")
             params.append(1 if enable_llm_tags else 0)
@@ -399,6 +403,7 @@ class ReviewStore:
         embedding_provider: str | None = None,
         llm_tag_provider: str | None = None,
         ocr_fallback_provider: str | None = None,
+        ocr_fallback_used: str | None = None,
         enable_llm_tags: bool | None = None,
     ) -> dict[str, dict[str, int]]:
         where_sql, params = _review_items_where(
@@ -419,6 +424,7 @@ class ReviewStore:
             embedding_provider=embedding_provider,
             llm_tag_provider=llm_tag_provider,
             ocr_fallback_provider=ocr_fallback_provider,
+            ocr_fallback_used=ocr_fallback_used,
             enable_llm_tags=enable_llm_tags,
         )
         source_collection_expression = """
@@ -440,6 +446,7 @@ class ReviewStore:
                 "embedding_provider": "coalesce(embedding_provider, 'unknown')",
                 "llm_tag_provider": "coalesce(llm_tag_provider, 'unknown')",
                 "ocr_fallback_provider": "coalesce(ocr_fallback_provider, 'unknown')",
+                "ocr_fallback_used": _ocr_fallback_used_expression("warnings_json"),
                 "llm_tags": "case when enable_llm_tags = 1 then 'enabled' when enable_llm_tags = 0 then 'disabled' else 'unknown' end",
                 "review_reason": "coalesce(review_reason, 'unknown')",
                 "route_status": "coalesce(route_status, 'unknown')",
@@ -2549,6 +2556,7 @@ def _review_items_where(
     embedding_provider: str | None = None,
     llm_tag_provider: str | None = None,
     ocr_fallback_provider: str | None = None,
+    ocr_fallback_used: str | None = None,
     enable_llm_tags: bool | None = None,
 ) -> tuple[str, list[Any]]:
     predicates: list[str] = []
@@ -2606,6 +2614,9 @@ def _review_items_where(
     if ocr_fallback_provider:
         predicates.append("ocr_fallback_provider = ?")
         params.append(ocr_fallback_provider)
+    fallback_used_predicate = _ocr_fallback_used_predicate(ocr_fallback_used, warnings_column="warnings_json")
+    if fallback_used_predicate:
+        predicates.append(fallback_used_predicate)
     if enable_llm_tags is not None:
         predicates.append("enable_llm_tags = ?")
         params.append(1 if enable_llm_tags else 0)
@@ -2637,6 +2648,26 @@ def _confidence_bucket_predicate(bucket: str | None) -> str | None:
         return "confidence < 0.70"
     if normalized == "missing":
         return "confidence is null"
+    return None
+
+
+def _ocr_fallback_used_expression(warnings_column: str) -> str:
+    return f"""
+        case
+            when {warnings_column} like '%ocr_fallback_used:%' then 'used'
+            else 'not_used'
+        end
+    """
+
+
+def _ocr_fallback_used_predicate(value: str | None, *, warnings_column: str) -> str | None:
+    if not value:
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"used", "true", "yes", "1"}:
+        return f"{warnings_column} like '%ocr_fallback_used:%'"
+    if normalized in {"not_used", "false", "no", "0"}:
+        return f"({warnings_column} is null or {warnings_column} not like '%ocr_fallback_used:%')"
     return None
 
 

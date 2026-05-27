@@ -267,6 +267,7 @@ def review_items(
     embedding_provider: str | None = None,
     llm_tag_provider: str | None = None,
     ocr_fallback_provider: str | None = None,
+    ocr_fallback_used: str | None = None,
     enable_llm_tags: bool | None = None,
 ) -> list[dict[str, Any]]:
     return review_store().list_review_items(
@@ -288,6 +289,7 @@ def review_items(
         embedding_provider=embedding_provider,
         llm_tag_provider=llm_tag_provider,
         ocr_fallback_provider=ocr_fallback_provider,
+        ocr_fallback_used=ocr_fallback_used,
         enable_llm_tags=enable_llm_tags,
     )
 
@@ -311,6 +313,7 @@ def review_facets(
     embedding_provider: str | None = None,
     llm_tag_provider: str | None = None,
     ocr_fallback_provider: str | None = None,
+    ocr_fallback_used: str | None = None,
     enable_llm_tags: bool | None = None,
 ) -> dict[str, dict[str, int]]:
     return review_store().review_facets(
@@ -331,6 +334,7 @@ def review_facets(
         embedding_provider=embedding_provider,
         llm_tag_provider=llm_tag_provider,
         ocr_fallback_provider=ocr_fallback_provider,
+        ocr_fallback_used=ocr_fallback_used,
         enable_llm_tags=enable_llm_tags,
     )
 
