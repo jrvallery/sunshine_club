@@ -64,6 +64,17 @@ export default function PipelineEvalPage() {
       await queryClient.invalidateQueries({ queryKey: ["pipeline-eval-drilldown"] });
     }
   });
+  const importEval = useMutation({
+    mutationFn: () =>
+      postJson<PipelineEvalRunResponse>("/api/admin/pipeline-eval/import", {
+        output_dir: outputDir
+      }),
+    onSuccess: async (payload) => {
+      setSelectedRun(payload.eval_run);
+      await queryClient.invalidateQueries({ queryKey: ["pipeline-eval-runs"] });
+      await queryClient.invalidateQueries({ queryKey: ["pipeline-eval-drilldown"] });
+    }
+  });
   const summary = activeRun?.summary;
   const gate = summary?.acceptance_gate;
   const readiness = summary?.production_readiness;
@@ -116,6 +127,9 @@ export default function PipelineEvalPage() {
           <CheckboxField label="Enable OCR" checked={enableOcr} onChange={(event) => setEnableOcr(event.target.checked)} />
           <Button variant="primary" disabled={runEval.isPending} onClick={() => runEval.mutate()}>
             {runEval.isPending ? "Running..." : "Run Eval"}
+          </Button>
+          <Button disabled={importEval.isPending} onClick={() => importEval.mutate()}>
+            {importEval.isPending ? "Importing..." : "Import Existing Eval"}
           </Button>
         </div>
       </section>

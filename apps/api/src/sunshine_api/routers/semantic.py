@@ -24,6 +24,7 @@ from sunshine_api.schemas import (
     ReviewDecisionRequest,
     ReviewImportRequest,
     RunStartRequest,
+    PipelineEvalImportRequest,
     PipelineEvalRequest,
     SemanticEvalRequest,
     SemanticIndexBuildRequest,
@@ -229,6 +230,26 @@ def pipeline_eval_run(request: PipelineEvalRequest) -> dict[str, Any]:
     )
     eval_run = review_store().record_pipeline_eval(report)
     return {"ok": True, "output_dir": output_dir, "eval_run": eval_run, "report": report}
+
+
+@router.post("/admin/pipeline-eval/import")
+def pipeline_eval_import(request: PipelineEvalImportRequest) -> dict[str, Any]:
+    output_dir = Path(request.output_dir)
+    summary_path = output_dir / "eval-summary.json"
+    if not summary_path.exists():
+        raise HTTPException(status_code=404, detail=f"Missing eval summary: {summary_path}")
+    try:
+        report = json.loads(summary_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise HTTPException(status_code=400, detail=f"Invalid eval summary JSON: {error}") from error
+    if not isinstance(report, dict):
+        raise HTTPException(status_code=400, detail="Eval summary must be a JSON object")
+    report["output_dir"] = str(output_dir)
+    artifacts = report.get("artifacts") if isinstance(report.get("artifacts"), dict) else {}
+    artifacts.setdefault("summary", str(summary_path))
+    report["artifacts"] = artifacts
+    eval_run = review_store().record_pipeline_eval(report)
+    return {"ok": True, "output_dir": str(output_dir), "eval_run": eval_run, "report": report}
 
 
 def _eval_rows_by_source(path: Path) -> dict[str, dict[str, Any]]:

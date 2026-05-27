@@ -126,3 +126,7 @@ class PipelineEvalRequest(BaseModel):
     disable_semantic_index: bool = False
     enable_llm_tags: bool = False
     enable_ocr: bool = False
+
+
+class PipelineEvalImportRequest(BaseModel):
+    output_dir: str

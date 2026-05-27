@@ -309,6 +309,7 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
         json={"output_dir": str(pipeline_eval_output_dir), "disable_semantic_index": True},
     )
     pipeline_eval_latest = client.get("/admin/pipeline-eval/latest", params={"output_dir": str(pipeline_eval_output_dir)})
+    pipeline_eval_import = client.post("/admin/pipeline-eval/import", json={"output_dir": str(pipeline_eval_output_dir)})
     pipeline_eval_runs = client.get("/admin/pipeline-eval/runs")
     pipeline_eval_run_id = pipeline_eval.json()["eval_run"]["id"]
     pipeline_eval_results = client.get(f"/admin/pipeline-eval/runs/{pipeline_eval_run_id}/results")
@@ -525,6 +526,9 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert (pipeline_eval_output_dir / "eval-summary.json").exists()
     assert pipeline_eval_latest.status_code == 200
     assert pipeline_eval_latest.json()["exists"] is True
+    assert pipeline_eval_import.status_code == 200
+    assert pipeline_eval_import.json()["eval_run"]["output_dir"] == str(pipeline_eval_output_dir)
+    assert pipeline_eval_import.json()["report"]["artifacts"]["summary"] == str(pipeline_eval_output_dir / "eval-summary.json")
     assert pipeline_eval_runs.status_code == 200
     assert pipeline_eval_runs.json()[0]["output_dir"] == str(pipeline_eval_output_dir)
     assert pipeline_eval_results.status_code == 200
