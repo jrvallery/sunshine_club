@@ -167,8 +167,11 @@ def run_golden_pipeline_evaluation(
         source_after = _source_file_snapshot(input_path)
         source_mutation = _source_file_mutation(source_before, source_after)
         final_result = graph_result.get("final_result", {})
-        model_usage_rows.extend(_model_usage_with_label(label, graph_result.get("model_usage", [])))
+        label_model_usage_rows = _model_usage_with_label(label, graph_result.get("model_usage", []))
+        model_usage_rows.extend(label_model_usage_rows)
         row = _evaluation_row(label, final_result, graph_output_dir)
+        row["model_usage_summary"] = _per_file_model_usage_summary(label_model_usage_rows)
+        row["failure_reasons"].extend(_model_usage_failure_reasons(row["model_usage_summary"]))
         row["source_file_mutation"] = source_mutation
         if source_mutation["mutated"]:
             row["failure_reasons"].append("source_file_mutated")
@@ -407,6 +410,7 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
         "semantic_top1_primary_tag": semantic_top1_primary_tag,
         "semantic_retrieval_quality": semantic_retrieval_quality,
         "source_file_mutation": {"mutated": False},
+        "model_usage_summary": {},
         "warnings": final_result.get("warnings", []),
         "failure_reasons": failure_reasons,
     }
@@ -1216,6 +1220,7 @@ def _failure_groups(rows: list[dict[str, Any]], *, max_examples: int = 25) -> li
                         "route_status": row.get("route_status"),
                         "review_reason": row.get("review_reason"),
                         "semantic_retrieval_quality": row.get("semantic_retrieval_quality"),
+                        "model_usage_summary": row.get("model_usage_summary"),
                         "warnings": row.get("warnings", []),
                     }
                 )
@@ -1312,6 +1317,7 @@ def _missing_file_result(label: GoldenEvalLabel) -> dict[str, Any]:
         "llm_status": None,
         "semantic_example_count": 0,
         "source_file_mutation": {"mutated": False, "reason": "missing_file"},
+        "model_usage_summary": {},
         "warnings": ["file_missing"],
         "failure_reasons": ["missing_file", "primary_tag_mismatch"],
     }
@@ -1327,6 +1333,7 @@ def _failure_row(label: GoldenEvalLabel, row: dict[str, Any], reason: str) -> di
         "predicted_primary_tag": row.get("predicted_primary_tag"),
         "route_status": row.get("route_status"),
         "review_reason": row.get("review_reason"),
+        "model_usage_summary": row.get("model_usage_summary"),
         "source_file_mutation": row.get("source_file_mutation"),
         "warnings": row.get("warnings", []),
     }
@@ -1344,6 +1351,55 @@ def _model_usage_with_label(label: GoldenEvalLabel, rows: list[dict[str, Any]]) 
             }
         )
     return enriched
+
+
+def _per_file_model_usage_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    missing_required_fields = Counter()
+    unknown_cost_basis_count = 0
+    unknown_external_cost_calls = 0
+    external_call_count = 0
+    local_call_count = 0
+    placeholder_call_count = 0
+    total_runtime_ms = 0
+    total_tokens = 0
+    for row in rows:
+        for field in _missing_model_usage_required_fields(row):
+            missing_required_fields[field] += 1
+        cost_basis = str(row.get("cost_basis") or "unknown").lower()
+        if cost_basis == "external":
+            external_call_count += 1
+            if row.get("estimated_cost_usd") is None:
+                unknown_external_cost_calls += 1
+        elif cost_basis == "local":
+            local_call_count += 1
+        elif cost_basis == "placeholder":
+            placeholder_call_count += 1
+        else:
+            unknown_cost_basis_count += 1
+        total_runtime_ms += int(row.get("runtime_ms") or 0)
+        total_tokens += int(row.get("total_tokens") or 0)
+    return {
+        "total_calls": len(rows),
+        "external_calls": external_call_count,
+        "local_calls": local_call_count,
+        "placeholder_calls": placeholder_call_count,
+        "unknown_cost_basis_count": unknown_cost_basis_count,
+        "unknown_external_cost_calls": unknown_external_cost_calls,
+        "missing_required_field_counts": dict(sorted(missing_required_fields.items())),
+        "total_runtime_ms": total_runtime_ms,
+        "total_tokens": total_tokens,
+    }
+
+
+def _model_usage_failure_reasons(summary: dict[str, Any]) -> list[str]:
+    reasons = []
+    if summary.get("missing_required_field_counts"):
+        reasons.append("model_usage_missing_required_fields")
+    if int(summary.get("unknown_cost_basis_count") or 0) > 0:
+        reasons.append("model_usage_unknown_cost_basis")
+    if int(summary.get("unknown_external_cost_calls") or 0) > 0:
+        reasons.append("model_usage_external_cost_untracked")
+    return reasons
 
 
 def _record_confusion(confusion: dict[str, dict[str, int]], actual: str, predicted: Any) -> None:

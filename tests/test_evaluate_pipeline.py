@@ -7,7 +7,15 @@ from collections import Counter
 from pathlib import Path
 
 from sunshine_extraction.embeddings import PlaceholderEmbeddingProvider
-from sunshine_extraction.evaluate_pipeline import GoldenEvalLabel, _evaluation_row, _parse_args, _update_totals, run_golden_pipeline_evaluation
+from sunshine_extraction.evaluate_pipeline import (
+    GoldenEvalLabel,
+    _evaluation_row,
+    _model_usage_failure_reasons,
+    _parse_args,
+    _per_file_model_usage_summary,
+    _update_totals,
+    run_golden_pipeline_evaluation,
+)
 from sunshine_extraction.sample_pipeline import LLMTagInspector
 
 
@@ -213,6 +221,48 @@ def test_eval_row_groups_ocr_fallback_failures_by_cause(tmp_path: Path) -> None:
     assert "ocr_fallback_failed" in row["failure_reasons"]
     assert "ocr_quality_mismatch" in row["failure_reasons"]
     assert totals["ocr_fallback_failed"] == 1
+
+
+def test_per_file_model_usage_summary_flags_untracked_external_costs() -> None:
+    summary = _per_file_model_usage_summary(
+        [
+            {
+                "purpose": "tag_inspection",
+                "provider": "openai",
+                "model": "gpt-4.1-mini",
+                "status": "ok",
+                "cost_basis": "external",
+                "runtime_ms": 1200,
+                "total_tokens": 250,
+                "estimated_cost_usd": None,
+            },
+            {
+                "purpose": "chunk_embedding",
+                "provider": "unknown",
+                "model": "unknown",
+                "status": "unknown",
+                "cost_basis": "unknown",
+                "runtime_ms": None,
+            },
+        ]
+    )
+
+    assert summary["total_calls"] == 2
+    assert summary["external_calls"] == 1
+    assert summary["unknown_cost_basis_count"] == 1
+    assert summary["unknown_external_cost_calls"] == 1
+    assert summary["missing_required_field_counts"] == {
+        "cost_basis": 1,
+        "model": 1,
+        "provider": 1,
+        "runtime_ms": 1,
+        "status": 1,
+    }
+    assert _model_usage_failure_reasons(summary) == [
+        "model_usage_missing_required_fields",
+        "model_usage_unknown_cost_basis",
+        "model_usage_external_cost_untracked",
+    ]
 
 
 def test_sensitive_false_accept_counts_even_when_primary_tag_is_correct(tmp_path: Path) -> None:
@@ -506,6 +556,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert {row["confidence_bucket"] for row in results} == {"high"}
     assert {row["ocr_fallback_used"] for row in results} == {False}
     assert {row["ocr_fallback_failed"] for row in results} == {False}
+    assert {row["model_usage_summary"]["total_calls"] for row in results} == {3}
     assert {row["llm_structured_output_valid"] for row in results} == {True}
     assert all(row["tag_evidence"] for row in results)
     assert failures[0]["correct_primary_tag"] == "history_archive_general"
