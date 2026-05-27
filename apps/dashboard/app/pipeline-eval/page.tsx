@@ -314,6 +314,7 @@ export default function PipelineEvalPage() {
               <KeyValue label="Medium-conf unexplained" value={String(summary?.medium_confidence_unexplained_count ?? 0)} />
               <KeyValue label="Sensitive med/low accepts" value={String(summary?.sensitive_medium_low_confidence_accepts ?? 0)} />
               <KeyValue label="Invalid primary tags" value={String(summary?.invalid_primary_tag_count ?? 0)} />
+              <KeyValue label="Unsafe placement proposals" value={String(summary?.unsafe_placement_proposal_count ?? 0)} />
             </section>
             <section>
               <h3>LLM Output</h3>

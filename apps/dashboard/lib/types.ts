@@ -454,6 +454,7 @@ export type PipelineEvalSummary = {
   llm_structured_output_validity_rate?: number | null;
   placement_destination_accuracy?: number | null;
   placement_year_accuracy?: number | null;
+  unsafe_placement_proposal_count?: number;
   privacy_accuracy?: number | null;
   sensitive_false_accepts?: number;
   sensitive_medium_low_confidence_accepts?: number;

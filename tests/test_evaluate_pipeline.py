@@ -82,6 +82,45 @@ def test_eval_row_requires_uncertainty_evidence_for_medium_confidence(tmp_path: 
     assert explained["confidence_calibration_factors"] == ["semantic_examples_weak"]
 
 
+def test_eval_row_marks_resolved_placement_unsafe_when_route_requires_review(tmp_path: Path) -> None:
+    label = GoldenEvalLabel(
+        id=1,
+        source_path="/source/history.pdf",
+        relative_path="history.pdf",
+        sample_path=None,
+        correct_primary_tag="history_archive_general",
+        correct_secondary_tags=[],
+        content_class="document",
+        ocr_quality_label="ok",
+        expected_review_required=True,
+        sensitive_record=False,
+        correct_destination_path=None,
+        correct_placement_year=None,
+        correct_privacy=None,
+        reviewer="tester",
+        reviewed_at="2026-05-27T00:00:00Z",
+        notes=None,
+    )
+    row = _evaluation_row(
+        label,
+        {
+            "top_tag_candidate": "history_archive_general",
+            "final_class": "document",
+            "quality": "ok",
+            "route_status": "review_low_confidence_tag",
+            "review_reason": "tag_confidence_below_threshold",
+            "tag_confidence": 0.62,
+            "tag_evidence": ["matched history"],
+            "placement_status": "resolved",
+            "destination_path": "06_History_Archive/1992",
+        },
+        tmp_path,
+    )
+
+    assert row["predicted_review_required"] is True
+    assert row["unsafe_placement_proposal"] is True
+
+
 def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Path) -> None:
     tea = tmp_path / "tea.txt"
     tea.write_text("Annual Sunshine Tea guest list and event notes.", encoding="utf-8")
@@ -177,6 +216,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert summary["sensitive_medium_low_confidence_accepts"] == 0
     assert summary["llm_structured_output_validity_rate"] == 1.0
     assert summary["placement_destination_accuracy"] == 0.5
+    assert summary["unsafe_placement_proposal_count"] == 0
     assert summary["privacy_accuracy"] == 0.5
     assert summary["secondary_precision"] == 0.5
     assert summary["secondary_recall"] == 0.5
@@ -228,6 +268,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "invalid_primary_tag_count")["status"] == "pass"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "tag_evidence_presence_rate")["status"] == "pass"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "placement_year_accuracy")["status"] == "not_evaluated"
+    assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "unsafe_placement_proposal_count")["status"] == "pass"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "low_confidence_false_accepts")["status"] == "pass"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "low_confidence_accepted_count")["status"] == "pass"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "medium_confidence_unexplained_count")["status"] == "pass"

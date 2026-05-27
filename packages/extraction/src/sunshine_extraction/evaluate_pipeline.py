@@ -38,6 +38,7 @@ DEFAULT_ACCEPTANCE_THRESHOLDS = {
     "ocr_acceptable_rate": 0.90,
     "placement_destination_accuracy": 0.90,
     "placement_year_accuracy": 0.90,
+    "unsafe_placement_proposal_count": 0,
     "privacy_accuracy": 1.0,
     "high_confidence_primary_accuracy": 0.95,
     "high_confidence_false_accepts": 0,
@@ -284,6 +285,12 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
     placement_year_correct = None
     if label.correct_placement_year:
         placement_year_correct = str(final_result.get("placement", {}).get("placement_year_label") or "") == label.correct_placement_year
+    unsafe_placement_proposal = (
+        review_required
+        and final_result.get("placement_status") == "resolved"
+        and bool(final_result.get("destination_path"))
+        and not str(final_result.get("destination_path") or "").startswith("90_Intake_Needs_Review")
+    )
     privacy_correct = None
     if label.correct_privacy:
         privacy_correct = final_result.get("default_privacy") == label.correct_privacy
@@ -354,6 +361,8 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
         "expected_placement_year": label.correct_placement_year,
         "predicted_placement_year": final_result.get("placement", {}).get("placement_year_label") if isinstance(final_result.get("placement"), dict) else None,
         "placement_year_correct": placement_year_correct,
+        "placement_status": final_result.get("placement_status"),
+        "unsafe_placement_proposal": unsafe_placement_proposal,
         "expected_privacy": label.correct_privacy,
         "predicted_privacy": final_result.get("default_privacy"),
         "privacy_correct": privacy_correct,
@@ -420,6 +429,7 @@ def _summary(
         "llm_structured_output_validity_rate": _safe_divide(totals["llm_structured_output_valid"], totals["llm_structured_output_attempted"]),
         "placement_destination_accuracy": _safe_divide(totals["placement_destination_correct"], totals["placement_destination_labeled"]),
         "placement_year_accuracy": _safe_divide(totals["placement_year_correct"], totals["placement_year_labeled"]),
+        "unsafe_placement_proposal_count": totals["unsafe_placement_proposal"],
         "privacy_accuracy": _safe_divide(totals["privacy_correct"], totals["privacy_labeled"]),
         "sensitive_false_accepts": totals["sensitive_false_accepts"],
         "sensitive_medium_low_confidence_accepts": totals["sensitive_medium_low_confidence_accepts"],
@@ -581,6 +591,8 @@ def _production_next_actions(
         actions.append("Review placement rules by primary tag and year evidence before proposing folders at scale.")
     if "placement_year_accuracy" in blocking_reasons:
         actions.append("Improve placement year extraction before using by-year folder proposals at scale.")
+    if "unsafe_placement_proposal_count" in blocking_reasons:
+        actions.append("Quarantine placement proposals for files that are still review-required; only accepted route candidates should produce resolved destination proposals.")
     if "semantic_same_family_top5_rate" in blocking_reasons:
         actions.append("Improve the embedding index or retrieved examples so golden files retrieve same-family labels in the top 5.")
     if "llm_structured_output_validity_rate" in blocking_reasons:
@@ -647,6 +659,7 @@ def _acceptance_gate(metrics: dict[str, Any], model_usage: dict[str, Any], golde
         _minimum_check("ocr_acceptable_rate", metrics.get("ocr_acceptable_rate"), DEFAULT_ACCEPTANCE_THRESHOLDS["ocr_acceptable_rate"]),
         _minimum_check("placement_destination_accuracy", metrics.get("placement_destination_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["placement_destination_accuracy"]),
         _minimum_check("placement_year_accuracy", metrics.get("placement_year_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["placement_year_accuracy"]),
+        _maximum_check("unsafe_placement_proposal_count", metrics.get("unsafe_placement_proposal_count"), DEFAULT_ACCEPTANCE_THRESHOLDS["unsafe_placement_proposal_count"]),
         _minimum_check("privacy_accuracy", metrics.get("privacy_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["privacy_accuracy"]),
         _minimum_check("high_confidence_primary_accuracy", metrics.get("high_confidence_primary_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["high_confidence_primary_accuracy"]),
         _maximum_check("high_confidence_false_accepts", metrics.get("high_confidence_false_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["high_confidence_false_accepts"]),
@@ -782,6 +795,8 @@ def _update_totals(totals: Counter, row: dict[str, Any], label: GoldenEvalLabel)
         totals["placement_year_labeled"] += 1
         if row["placement_year_correct"]:
             totals["placement_year_correct"] += 1
+    if row.get("unsafe_placement_proposal"):
+        totals["unsafe_placement_proposal"] += 1
     if row["privacy_correct"] is not None:
         totals["privacy_labeled"] += 1
         if row["privacy_correct"]:
