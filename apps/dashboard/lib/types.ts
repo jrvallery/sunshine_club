@@ -480,7 +480,10 @@ export type PipelineEvalSummary = {
     correct: number;
     accuracy: number | null;
     review_required: number;
+    accepted?: number;
     review_required_rate: number | null;
+    false_accepts?: number;
+    false_reviews?: number;
     secondary_true_positive?: number;
     secondary_false_positive?: number;
     secondary_false_negative?: number;
@@ -492,7 +495,10 @@ export type PipelineEvalSummary = {
     correct: number;
     accuracy: number | null;
     review_required: number;
+    accepted?: number;
     review_required_rate: number | null;
+    false_accepts?: number;
+    false_reviews?: number;
     secondary_precision?: number | null;
     secondary_recall?: number | null;
   }>;

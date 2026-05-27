@@ -369,7 +369,17 @@ export default function PipelineEvalPage() {
                 <KeyValue
                   key={tag}
                   label={tag}
-                  value={`${formatPercent(metric.accuracy)} primary, ${formatPercent(metric.secondary_precision)} secondary precision, ${formatPercent(metric.secondary_recall)} secondary recall (${metric.correct}/${metric.total})`}
+                  value={`${formatPercent(metric.accuracy)} primary, ${formatPercent(metric.review_required_rate)} review, ${metric.false_accepts ?? 0} false accepts, ${metric.false_reviews ?? 0} false reviews (${metric.correct}/${metric.total})`}
+                />
+              ))}
+            </section>
+            <section>
+              <h3>All Categories</h3>
+              {Object.entries(summary?.primary_tag_metrics ?? {}).map(([tag, metric]) => (
+                <KeyValue
+                  key={tag}
+                  label={tag}
+                  value={`${formatPercent(metric.accuracy)} primary, ${formatPercent(metric.review_required_rate)} review, ${metric.accepted ?? 0} accepted, ${metric.false_accepts ?? 0} false accepts, ${metric.false_reviews ?? 0} false reviews (${metric.correct}/${metric.total})`}
                 />
               ))}
             </section>
