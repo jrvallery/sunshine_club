@@ -49,6 +49,7 @@ DEFAULT_ACCEPTANCE_THRESHOLDS = {
     "model_usage_required_fields_tracked": 1.0,
     "external_model_usage_tracked": 1.0,
     "sensitive_false_accepts": 0,
+    "sensitive_medium_low_confidence_accepts": 0,
     "source_file_mutations": 0,
 }
 HIGH_RISK_PRIMARY_TAGS = {
@@ -397,6 +398,7 @@ def _summary(
         "placement_year_accuracy": _safe_divide(totals["placement_year_correct"], totals["placement_year_labeled"]),
         "privacy_accuracy": _safe_divide(totals["privacy_correct"], totals["privacy_labeled"]),
         "sensitive_false_accepts": totals["sensitive_false_accepts"],
+        "sensitive_medium_low_confidence_accepts": totals["sensitive_medium_low_confidence_accepts"],
         "embedding_success_rate": _safe_divide(
             model_usage.get("embedding_successful_calls", 0),
             model_usage.get("embedding_attempted_calls", 0),
@@ -560,6 +562,8 @@ def _production_next_actions(
         actions.append("Complete model usage lineage for every model call: provider, model, purpose, status, runtime, and cost basis.")
     if "privacy_accuracy" in blocking_reasons or "sensitive_false_accepts" in blocking_reasons:
         actions.append("Audit privacy and sensitive-record review routing; sensitive false accepts must be zero.")
+    if "sensitive_medium_low_confidence_accepts" in blocking_reasons:
+        actions.append("Route sensitive records with medium or low confidence to review.")
     if "embedding_placeholder_calls" in blocking_reasons or "embedding_failed_calls" in blocking_reasons:
         actions.append(
             f"Use a real embedding provider and eliminate placeholder/failed embedding calls. Placeholder={model_usage.get('embedding_placeholder_calls', 0)}, failed={model_usage.get('embedding_failed_calls', 0)}."
@@ -626,6 +630,7 @@ def _acceptance_gate(metrics: dict[str, Any], model_usage: dict[str, Any], golde
             DEFAULT_ACCEPTANCE_THRESHOLDS["model_usage_required_fields_tracked"],
         ),
         _maximum_check("sensitive_false_accepts", metrics.get("sensitive_false_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["sensitive_false_accepts"]),
+        _maximum_check("sensitive_medium_low_confidence_accepts", metrics.get("sensitive_medium_low_confidence_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["sensitive_medium_low_confidence_accepts"]),
         _maximum_check("source_file_mutations", metrics.get("source_file_mutations"), DEFAULT_ACCEPTANCE_THRESHOLDS["source_file_mutations"]),
         _maximum_check("embedding_placeholder_calls", model_usage.get("embedding_placeholder_calls", 0), 0),
         _maximum_check("embedding_failed_calls", model_usage.get("embedding_failed_calls", 0), 0),
@@ -756,6 +761,8 @@ def _update_totals(totals: Counter, row: dict[str, Any], label: GoldenEvalLabel)
         totals["semantic_same_family_top5"] += 1
     if label.sensitive_record and not row["predicted_review_required"] and not row["primary_correct"]:
         totals["sensitive_false_accepts"] += 1
+    if label.sensitive_record and not row["predicted_review_required"] and row.get("confidence_bucket") in {"medium", "low"}:
+        totals["sensitive_medium_low_confidence_accepts"] += 1
 
 
 def _primary_tag_metrics(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:

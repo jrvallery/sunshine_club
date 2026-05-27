@@ -126,6 +126,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert summary["review_routing_recall"] == 1.0
     assert summary["review_false_accepts"] == 0
     assert summary["review_false_reviews"] == 1
+    assert summary["sensitive_medium_low_confidence_accepts"] == 0
     assert summary["llm_structured_output_validity_rate"] == 1.0
     assert summary["placement_destination_accuracy"] == 0.5
     assert summary["privacy_accuracy"] == 0.5
@@ -177,6 +178,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "tag_evidence_presence_rate")["status"] == "pass"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "placement_year_accuracy")["status"] == "not_evaluated"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "low_confidence_false_accepts")["status"] == "pass"
+    assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "sensitive_medium_low_confidence_accepts")["status"] == "pass"
     assert summary["production_readiness"]["status"] == "not_ready"
     assert summary["production_readiness"]["larger_batch_allowed"] is False
     assert summary["production_readiness"]["customer_claims_allowed"] is False

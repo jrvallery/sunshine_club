@@ -456,6 +456,7 @@ export type PipelineEvalSummary = {
   placement_year_accuracy?: number | null;
   privacy_accuracy?: number | null;
   sensitive_false_accepts?: number;
+  sensitive_medium_low_confidence_accepts?: number;
   source_file_mutations?: number;
   high_confidence_primary_accuracy?: number | null;
   high_confidence_false_accepts?: number;
