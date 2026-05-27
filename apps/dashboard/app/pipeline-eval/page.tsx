@@ -251,6 +251,7 @@ export default function PipelineEvalPage() {
                   <KeyValue label="Fixed failures" value={String(comparison.data.fixed_failure_count)} />
                   <KeyValue label="Regressed failures" value={String(comparison.data.regressed_failure_count)} />
                   <KeyValue label="Changed tags" value={String(comparison.data.changed_prediction_count)} />
+                  <KeyValue label="Changed secondary" value={String(comparison.data.changed_secondary_tag_count ?? 0)} />
                   <KeyValue label="Changed routes" value={String(comparison.data.changed_review_route_count)} />
                 </section>
                 <section>

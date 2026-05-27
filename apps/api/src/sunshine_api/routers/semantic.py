@@ -142,11 +142,14 @@ def pipeline_eval_run_compare(eval_run_id: int, baseline_eval_run_id: int) -> di
     fixed_failures = []
     regressed_failures = []
     changed_review_routes = []
+    changed_secondary_tags = []
     for source_path in shared_sources:
         current_row = current_results[source_path]
         baseline_row = baseline_results[source_path]
         if current_row.get("predicted_primary_tag") != baseline_row.get("predicted_primary_tag"):
             changed_predictions.append(_comparison_row(source_path, baseline_row, current_row, "primary_tag_changed"))
+        if sorted(current_row.get("predicted_secondary_tags") or []) != sorted(baseline_row.get("predicted_secondary_tags") or []):
+            changed_secondary_tags.append(_comparison_row(source_path, baseline_row, current_row, "secondary_tags_changed"))
         baseline_failed = bool(baseline_row.get("failure_reasons"))
         current_failed = bool(current_row.get("failure_reasons"))
         if baseline_failed and not current_failed:
@@ -184,10 +187,12 @@ def pipeline_eval_run_compare(eval_run_id: int, baseline_eval_run_id: int) -> di
         "current_only_count": len(set(current_results) - set(baseline_results)),
         "metric_deltas": metric_deltas,
         "changed_prediction_count": len(changed_predictions),
+        "changed_secondary_tag_count": len(changed_secondary_tags),
         "fixed_failure_count": len(fixed_failures),
         "regressed_failure_count": len(regressed_failures),
         "changed_review_route_count": len(changed_review_routes),
         "changed_predictions": changed_predictions[:100],
+        "changed_secondary_tags": changed_secondary_tags[:100],
         "fixed_failures": fixed_failures[:100],
         "regressed_failures": regressed_failures[:100],
         "changed_review_routes": changed_review_routes[:100],
@@ -243,6 +248,8 @@ def _comparison_row(source_path: str, baseline: dict[str, Any], current: dict[st
         "correct_primary_tag": current.get("correct_primary_tag") or baseline.get("correct_primary_tag"),
         "baseline_predicted_primary_tag": baseline.get("predicted_primary_tag"),
         "current_predicted_primary_tag": current.get("predicted_primary_tag"),
+        "baseline_predicted_secondary_tags": baseline.get("predicted_secondary_tags") or [],
+        "current_predicted_secondary_tags": current.get("predicted_secondary_tags") or [],
         "baseline_route_status": baseline.get("route_status"),
         "current_route_status": current.get("route_status"),
         "baseline_failure_reasons": baseline.get("failure_reasons") or [],

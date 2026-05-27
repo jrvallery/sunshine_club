@@ -567,10 +567,12 @@ export type PipelineEvalComparison = {
   current_only_count: number;
   metric_deltas: Record<string, { baseline: number | null; current: number | null; delta: number | null }>;
   changed_prediction_count: number;
+  changed_secondary_tag_count?: number;
   fixed_failure_count: number;
   regressed_failure_count: number;
   changed_review_route_count: number;
   changed_predictions: Array<Record<string, unknown>>;
+  changed_secondary_tags?: Array<Record<string, unknown>>;
   fixed_failures: Array<Record<string, unknown>>;
   regressed_failures: Array<Record<string, unknown>>;
   changed_review_routes: Array<Record<string, unknown>>;

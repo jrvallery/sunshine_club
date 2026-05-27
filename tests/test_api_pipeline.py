@@ -537,6 +537,8 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert pipeline_eval_comparison.json()["shared_file_count"] == 1
     assert "primary_accuracy" in pipeline_eval_comparison.json()["metric_deltas"]
     assert pipeline_eval_comparison.json()["changed_prediction_count"] == 0
+    assert pipeline_eval_comparison.json()["changed_secondary_tag_count"] == 0
+    assert pipeline_eval_comparison.json()["changed_secondary_tags"] == []
     assert deleted_label.status_code == 200
     assert deleted_label.json()["deleted"] is True
     assert file_response.status_code == 200
