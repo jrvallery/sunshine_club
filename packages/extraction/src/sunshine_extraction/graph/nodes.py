@@ -437,10 +437,7 @@ def _inspect_tags_with_llm(state: DocumentPipelineState, deps: DocumentPipelineD
         deterministic_candidates=state.get("deterministic_tag_candidates", []),
         semantic_examples=state.get("semantic_examples", []),
     )
-    warning = inspection.get("warning")
-    warnings = [*state.get("warnings", [])]
-    if warning:
-        warnings.append(str(warning))
+    warnings = _unique_strings([*state.get("warnings", []), *_llm_inspection_warnings(inspection)])
     usage_row = _llm_tag_model_usage_row(state, inspection, started=started)
     return {
         "llm_tag_inspection": inspection,
@@ -610,6 +607,7 @@ def _llm_tag_model_usage_row(state: DocumentPipelineState, inspection: dict[str,
     status = str(inspection.get("llm_status") or "unknown")
     if provider == "disabled" and status == "skipped":
         return None
+    warnings = _llm_inspection_warnings(inspection)
     return _model_usage_row(
         state,
         node="inspect_tags_with_llm",
@@ -618,7 +616,7 @@ def _llm_tag_model_usage_row(state: DocumentPipelineState, inspection: dict[str,
         model=str(inspection.get("model") or "unknown"),
         status="ok" if status == "inspected" else status,
         runtime_ms=round((time.monotonic() - started) * 1000),
-        error=str(inspection.get("warning") or "") or None,
+        error=";".join(warnings) or None,
         cost_basis=_cost_basis(provider),
         metadata={"cost_estimate": "unavailable"},
     )
@@ -767,6 +765,18 @@ def _unique_strings(values: list[Any]) -> list[str]:
             seen.add(text)
             unique.append(text)
     return unique
+
+
+def _llm_inspection_warnings(inspection: dict[str, Any]) -> list[str]:
+    warnings: list[Any] = []
+    raw_warnings = inspection.get("warnings")
+    if isinstance(raw_warnings, list):
+        warnings.extend(raw_warnings)
+    elif raw_warnings:
+        warnings.append(raw_warnings)
+    if inspection.get("warning"):
+        warnings.append(inspection["warning"])
+    return _unique_strings(warnings)
 
 
 def _after_load_file_context(state: DocumentPipelineState) -> str:
