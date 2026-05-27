@@ -161,6 +161,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     }
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "source_file_mutations")["status"] == "pass"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "ocr_acceptable_rate")["status"] == "pass"
+    assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "llm_structured_output_validity_rate")["status"] == "pass"
     assert summary["production_readiness"]["status"] == "not_ready"
     assert summary["production_readiness"]["larger_batch_allowed"] is False
     assert summary["production_readiness"]["customer_claims_allowed"] is False
@@ -253,6 +254,7 @@ def test_golden_pipeline_evaluation_records_missing_files(tmp_path: Path) -> Non
     assert summary["acceptance_gate"]["status"] == "fail"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "high_confidence_primary_accuracy")["status"] == "not_evaluated"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "ocr_acceptable_rate")["status"] == "not_evaluated"
+    assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "llm_structured_output_validity_rate")["status"] == "not_evaluated"
     assert summary["production_readiness"]["larger_batch_allowed"] is False
     assert summary["production_status_counts"]["failed"] == 1
     results = [json.loads(line) for line in (output_dir / "eval-results.jsonl").read_text(encoding="utf-8").splitlines()]
