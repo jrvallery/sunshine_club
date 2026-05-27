@@ -181,6 +181,17 @@ export default function PipelineEvalPage() {
               <KeyValue label="OCR" value={String(summary?.run_metadata?.ocr_mode ?? activeRun.run_metadata?.ocr_mode ?? "-")} />
             </section>
             <section>
+              <h3>Golden Set</h3>
+              <KeyValue label="Ready" value={summary?.golden_label_readiness?.ready ? "yes" : "no"} />
+              <KeyValue label="Label count" value={`${summary?.golden_label_readiness?.total_golden_labels ?? 0}/${summary?.golden_label_readiness?.minimum_label_count ?? 75}`} />
+              <KeyValue
+                label="Taxonomy coverage"
+                value={`${summary?.golden_label_readiness?.covered_primary_count ?? 0}/${summary?.golden_label_readiness?.taxonomy_primary_count ?? 0} (${formatPercent(summary?.golden_label_readiness?.primary_coverage_rate)})`}
+              />
+              <KeyValue label="Missing primary tags" value={(summary?.golden_label_readiness?.missing_primary_tags ?? []).slice(0, 8).join(", ") || "-"} />
+              <KeyValue label="High-risk undercovered" value={(summary?.golden_label_readiness?.underrepresented_high_risk_tags ?? []).join(", ") || "-"} />
+            </section>
+            <section>
               <h3>Review Routing</h3>
               <KeyValue label="Accuracy" value={formatPercent(summary?.review_routing_accuracy)} />
               <KeyValue label="Precision" value={formatPercent(summary?.review_routing_precision)} />

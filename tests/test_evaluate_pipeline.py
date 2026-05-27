@@ -127,12 +127,25 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert summary["semantic_same_family_top5_rate"] == 0.0
     assert summary["high_risk_primary_accuracy_min"] is None
     assert summary["source_file_mutations"] == 0
+    assert summary["golden_label_readiness"]["ready"] is False
+    assert summary["golden_label_readiness"]["total_golden_labels"] == 2
+    assert summary["golden_label_readiness"]["minimum_label_count"] == 75
+    assert summary["golden_label_readiness"]["label_count_ready"] is False
+    assert summary["golden_label_readiness"]["primary_label_counts"] == {
+        "annual_spring_tea": 1,
+        "history_archive_general": 1,
+    }
+    assert "meeting_records" in summary["golden_label_readiness"]["missing_primary_tags"]
+    assert "meeting_records" in summary["golden_label_readiness"]["underrepresented_high_risk_tags"]
     assert summary["primary_tag_metrics"]["annual_spring_tea"]["accuracy"] == 1.0
     assert summary["primary_tag_metrics"]["history_archive_general"]["accuracy"] == 0.0
     assert summary["acceptance_gate"]["status"] == "fail"
     assert {check["name"] for check in summary["acceptance_gate"]["blocking_checks"]} == {
         "embedding_placeholder_calls",
+        "golden_label_count",
+        "high_risk_label_min_count",
         "high_risk_primary_accuracy",
+        "primary_taxonomy_coverage",
         "primary_accuracy",
         "placement_destination_accuracy",
         "privacy_accuracy",

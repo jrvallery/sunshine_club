@@ -433,6 +433,20 @@ export type PipelineEvalSummary = {
   route_candidate_count?: number;
   primary_tag_metrics?: Record<string, { total: number; correct: number; accuracy: number | null; review_required: number; review_required_rate: number | null }>;
   high_risk_primary_tag_metrics?: Record<string, { total: number; correct: number; accuracy: number | null; review_required: number; review_required_rate: number | null }>;
+  golden_label_readiness?: {
+    ready: boolean;
+    minimum_label_count: number;
+    total_golden_labels: number;
+    label_count_ready: boolean;
+    taxonomy_primary_count: number;
+    covered_primary_count: number;
+    primary_coverage_rate: number | null;
+    missing_primary_tags: string[];
+    minimum_high_risk_labels_per_category: number;
+    high_risk_label_counts: Record<string, number>;
+    underrepresented_high_risk_tags: string[];
+    primary_label_counts: Record<string, number>;
+  };
   by_failure_reason?: Record<string, number>;
   by_llm_status?: Record<string, number>;
   model_usage?: Record<string, unknown>;

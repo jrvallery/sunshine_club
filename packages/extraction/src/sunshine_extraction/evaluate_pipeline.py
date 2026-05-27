@@ -19,6 +19,7 @@ from sunshine_extraction.sample_pipeline import (
     LLMTagInspector,
     OcrExecutor,
     load_pipeline_env,
+    load_taxonomy_options,
     llm_tag_inspector_from_env,
     ocr_executor_from_env,
 )
@@ -27,6 +28,9 @@ from sunshine_extraction.semantic_index import DEFAULT_INDEX_DB, DEFAULT_LABELS_
 
 DEFAULT_EVAL_OUTPUT_DIR = ".local/pipeline-eval"
 DEFAULT_ACCEPTANCE_THRESHOLDS = {
+    "golden_label_count": 75,
+    "primary_taxonomy_coverage": 1.0,
+    "high_risk_label_min_count": 2,
     "content_class_accuracy": 0.95,
     "primary_accuracy": 0.88,
     "high_risk_primary_accuracy": 0.80,
@@ -341,6 +345,7 @@ def _summary(
     total = len(evaluated)
     model_usage = _model_usage_summary(model_usage_rows)
     primary_tag_metrics = _primary_tag_metrics(evaluated)
+    golden_label_readiness = _golden_label_readiness(labels, run_metadata.get("taxonomy_path") or DEFAULT_TAXONOMY_PATH)
     high_risk_metrics = {
         tag: metric
         for tag, metric in primary_tag_metrics.items()
@@ -384,6 +389,7 @@ def _summary(
         "confusion": confusion,
         "primary_tag_metrics": primary_tag_metrics,
         "high_risk_primary_tag_metrics": high_risk_metrics,
+        "golden_label_readiness": golden_label_readiness,
         "by_route_status": dict(sorted(counters["by_route_status"].items())),
         "by_quality": dict(sorted(counters["by_quality"].items())),
         "by_embedding_status": dict(sorted(counters["by_embedding_status"].items())),
@@ -391,7 +397,7 @@ def _summary(
         "by_failure_reason": dict(sorted(counters["by_failure_reason"].items())),
         "model_usage": model_usage,
         "run_metadata": run_metadata,
-        "acceptance_gate": _acceptance_gate(metrics, model_usage),
+        "acceptance_gate": _acceptance_gate(metrics, model_usage, golden_label_readiness),
         "artifacts": {
             "summary": str(output_dir / "eval-summary.json"),
             "results": str(output_dir / "eval-results.jsonl"),
@@ -402,8 +408,13 @@ def _summary(
     }
 
 
-def _acceptance_gate(metrics: dict[str, Any], model_usage: dict[str, Any]) -> dict[str, Any]:
+def _acceptance_gate(metrics: dict[str, Any], model_usage: dict[str, Any], golden_label_readiness: dict[str, Any]) -> dict[str, Any]:
+    high_risk_counts = golden_label_readiness.get("high_risk_label_counts") or {}
+    high_risk_min_count = min(high_risk_counts.values(), default=None)
     checks = [
+        _minimum_check("golden_label_count", golden_label_readiness.get("total_golden_labels"), DEFAULT_ACCEPTANCE_THRESHOLDS["golden_label_count"]),
+        _minimum_check("primary_taxonomy_coverage", golden_label_readiness.get("primary_coverage_rate"), DEFAULT_ACCEPTANCE_THRESHOLDS["primary_taxonomy_coverage"]),
+        _minimum_check("high_risk_label_min_count", high_risk_min_count, DEFAULT_ACCEPTANCE_THRESHOLDS["high_risk_label_min_count"]),
         _minimum_check("content_class_accuracy", metrics.get("content_class_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["content_class_accuracy"]),
         _minimum_check("primary_accuracy", metrics.get("primary_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["primary_accuracy"]),
         _minimum_check("high_risk_primary_accuracy", metrics.get("high_risk_primary_accuracy_min"), DEFAULT_ACCEPTANCE_THRESHOLDS["high_risk_primary_accuracy"]),
@@ -426,6 +437,40 @@ def _acceptance_gate(metrics: dict[str, Any], model_usage: dict[str, Any]) -> di
         "thresholds": DEFAULT_ACCEPTANCE_THRESHOLDS,
         "checks": checks,
         "blocking_checks": blocking,
+    }
+
+
+def _golden_label_readiness(labels: list[GoldenEvalLabel], taxonomy_path: str | Path) -> dict[str, Any]:
+    taxonomy = load_taxonomy_options(taxonomy_path)
+    primary_counts = Counter(label.correct_primary_tag for label in labels if label.correct_primary_tag)
+    missing_primary_tags = [tag for tag in taxonomy.primary_tags if primary_counts.get(tag, 0) == 0]
+    high_risk_label_counts = {
+        tag: int(primary_counts.get(tag, 0))
+        for tag in sorted(HIGH_RISK_PRIMARY_TAGS)
+    }
+    underrepresented_high_risk_tags = [
+        tag
+        for tag, count in high_risk_label_counts.items()
+        if count < DEFAULT_ACCEPTANCE_THRESHOLDS["high_risk_label_min_count"]
+    ]
+    total_primary_tags = len(taxonomy.primary_tags)
+    covered_primary_count = total_primary_tags - len(missing_primary_tags)
+    label_count_ready = len(labels) >= DEFAULT_ACCEPTANCE_THRESHOLDS["golden_label_count"]
+    primary_coverage_ready = not missing_primary_tags
+    high_risk_ready = not underrepresented_high_risk_tags
+    return {
+        "ready": label_count_ready and primary_coverage_ready and high_risk_ready,
+        "minimum_label_count": DEFAULT_ACCEPTANCE_THRESHOLDS["golden_label_count"],
+        "total_golden_labels": len(labels),
+        "label_count_ready": label_count_ready,
+        "taxonomy_primary_count": total_primary_tags,
+        "covered_primary_count": covered_primary_count,
+        "primary_coverage_rate": _safe_divide(covered_primary_count, total_primary_tags),
+        "missing_primary_tags": missing_primary_tags,
+        "minimum_high_risk_labels_per_category": DEFAULT_ACCEPTANCE_THRESHOLDS["high_risk_label_min_count"],
+        "high_risk_label_counts": high_risk_label_counts,
+        "underrepresented_high_risk_tags": underrepresented_high_risk_tags,
+        "primary_label_counts": dict(sorted(primary_counts.items())),
     }
 
 
