@@ -285,9 +285,15 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert "meeting_records" in summary["golden_label_readiness"]["missing_primary_tags"]
     assert "meeting_records" in summary["golden_label_readiness"]["underrepresented_high_risk_tags"]
     assert summary["primary_tag_metrics"]["annual_spring_tea"]["accuracy"] == 1.0
+    assert summary["primary_tag_metrics"]["annual_spring_tea"]["accepted"] == 0
+    assert summary["primary_tag_metrics"]["annual_spring_tea"]["false_accepts"] == 0
+    assert summary["primary_tag_metrics"]["annual_spring_tea"]["false_reviews"] == 1
     assert summary["primary_tag_metrics"]["annual_spring_tea"]["secondary_precision"] == 1.0
     assert summary["primary_tag_metrics"]["annual_spring_tea"]["secondary_recall"] == 1.0
     assert summary["primary_tag_metrics"]["history_archive_general"]["accuracy"] == 0.0
+    assert summary["primary_tag_metrics"]["history_archive_general"]["accepted"] == 0
+    assert summary["primary_tag_metrics"]["history_archive_general"]["false_accepts"] == 0
+    assert summary["primary_tag_metrics"]["history_archive_general"]["false_reviews"] == 0
     assert summary["primary_tag_metrics"]["history_archive_general"]["secondary_precision"] == 0.0
     assert summary["primary_tag_metrics"]["history_archive_general"]["secondary_recall"] == 0.0
     assert summary["confidence_bucket_metrics"]["high"]["total"] == 2
