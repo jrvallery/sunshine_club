@@ -1020,24 +1020,25 @@ def _model_usage_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     missing_required_fields: Counter[str] = Counter()
     complete_required_field_rows = 0
     for row in rows:
+        call_count = _model_usage_call_count(row)
         row_missing_fields = _missing_model_usage_required_fields(row)
         if row_missing_fields:
             for field in row_missing_fields:
                 missing_required_fields[field] += 1
         else:
             complete_required_field_rows += 1
-        by_provider[str(row.get("provider") or "unknown")] += 1
-        by_purpose[str(row.get("purpose") or "unknown")] += 1
+        by_provider[str(row.get("provider") or "unknown")] += call_count
+        by_purpose[str(row.get("purpose") or "unknown")] += call_count
         cost_basis = str(row.get("cost_basis") or "unknown")
-        by_cost_basis[cost_basis] += 1
+        by_cost_basis[cost_basis] += call_count
         if cost_basis == "local":
-            local_call_count += 1
+            local_call_count += call_count
         elif cost_basis == "external":
-            external_call_count += 1
+            external_call_count += call_count
         elif cost_basis == "placeholder":
-            placeholder_call_count += 1
+            placeholder_call_count += call_count
         else:
-            unknown_cost_basis_count += 1
+            unknown_cost_basis_count += call_count
         runtime_ms += int(row.get("runtime_ms") or 0)
         input_tokens += int(row.get("input_tokens") or 0)
         output_tokens += int(row.get("output_tokens") or 0)
@@ -1045,11 +1046,9 @@ def _model_usage_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         if cost_basis == "external" and row.get("estimated_cost_usd") is not None:
             estimated_external_cost_usd += float(row.get("estimated_cost_usd") or 0)
         if cost_basis == "external" and row.get("estimated_cost_usd") is None:
-            unknown_external_cost_calls += 1
+            unknown_external_cost_calls += call_count
         if str(row.get("purpose") or "").endswith("embedding"):
             metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
-            raw_call_count = metadata.get("call_count")
-            call_count = int(raw_call_count) if raw_call_count is not None else 1
             status = str(row.get("status") or "unknown")
             provider_model = f"{row.get('provider') or 'unknown'}:{row.get('model') or 'unknown'}"
             embedding_provider_models[provider_model] += call_count
@@ -1088,6 +1087,17 @@ def _model_usage_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "estimated_external_cost_usd": round(estimated_external_cost_usd, 6),
         "external_cost_note": "Known external costs are summed from model usage rows; unknown external cost calls are gated separately.",
     }
+
+
+def _model_usage_call_count(row: dict[str, Any]) -> int:
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    raw_call_count = metadata.get("call_count")
+    if raw_call_count is None:
+        return 1
+    try:
+        return max(0, int(raw_call_count))
+    except (TypeError, ValueError):
+        return 1
 
 
 def _missing_model_usage_required_fields(row: dict[str, Any]) -> list[str]:
@@ -1439,23 +1449,25 @@ def _per_file_model_usage_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     total_runtime_ms = 0
     total_tokens = 0
     for row in rows:
+        call_count = _model_usage_call_count(row)
         for field in _missing_model_usage_required_fields(row):
             missing_required_fields[field] += 1
         cost_basis = str(row.get("cost_basis") or "unknown").lower()
         if cost_basis == "external":
-            external_call_count += 1
+            external_call_count += call_count
             if row.get("estimated_cost_usd") is None:
-                unknown_external_cost_calls += 1
+                unknown_external_cost_calls += call_count
         elif cost_basis == "local":
-            local_call_count += 1
+            local_call_count += call_count
         elif cost_basis == "placeholder":
-            placeholder_call_count += 1
+            placeholder_call_count += call_count
         else:
-            unknown_cost_basis_count += 1
+            unknown_cost_basis_count += call_count
         total_runtime_ms += int(row.get("runtime_ms") or 0)
         total_tokens += int(row.get("total_tokens") or 0)
     return {
-        "total_calls": len(rows),
+        "total_calls": sum(_model_usage_call_count(row) for row in rows),
+        "total_model_usage_rows": len(rows),
         "external_calls": external_call_count,
         "local_calls": local_call_count,
         "placeholder_calls": placeholder_call_count,

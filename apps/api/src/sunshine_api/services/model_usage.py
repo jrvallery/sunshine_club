@@ -40,18 +40,23 @@ def _model_usage_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
     placeholder_rows = [row for row in rows if _model_cost_basis(row) == "placeholder"]
     unknown_cost_basis_rows = [row for row in rows if _model_cost_basis(row) == "unknown"]
     summary = {
-        "total_calls": len(rows),
-        "failed_calls": sum(1 for row in rows if str(row.get("status") or "").lower() not in {"ok", "success", "succeeded", "completed"}),
-        "external_calls": len(external_rows),
-        "local_calls": len(local_rows),
-        "placeholder_calls": len(placeholder_rows),
-        "unknown_cost_basis_calls": len(unknown_cost_basis_rows),
-        "cost_basis_completeness_rate": ((len(rows) - len(unknown_cost_basis_rows)) / len(rows)) if rows else None,
+        "total_calls": _sum_call_counts(rows),
+        "total_model_usage_rows": len(rows),
+        "failed_calls": sum(
+            _model_call_count(row)
+            for row in rows
+            if str(row.get("status") or "").lower() not in {"ok", "success", "succeeded", "completed", "skipped"}
+        ),
+        "external_calls": _sum_call_counts(external_rows),
+        "local_calls": _sum_call_counts(local_rows),
+        "placeholder_calls": _sum_call_counts(placeholder_rows),
+        "unknown_cost_basis_calls": _sum_call_counts(unknown_cost_basis_rows),
+        "cost_basis_completeness_rate": ((_sum_call_counts(rows) - _sum_call_counts(unknown_cost_basis_rows)) / _sum_call_counts(rows)) if _sum_call_counts(rows) else None,
         "runtime_ms": _sum_numeric(rows, "runtime_ms"),
         "input_tokens": _sum_numeric(rows, "input_tokens"),
         "output_tokens": _sum_numeric(rows, "output_tokens"),
         "total_tokens": _sum_numeric(rows, "total_tokens"),
-        "unknown_external_cost_calls": sum(1 for row in external_rows if row.get("estimated_cost_usd") is None),
+        "unknown_external_cost_calls": sum(_model_call_count(row) for row in external_rows if row.get("estimated_cost_usd") is None),
         "estimated_external_cost_usd": round(
             sum(float(row.get("estimated_cost_usd") or 0) for row in external_rows),
             6,
@@ -68,6 +73,21 @@ def _model_usage_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _is_external_model_call(row: dict[str, Any]) -> bool:
     return _model_cost_basis(row) == "external"
+
+
+def _sum_call_counts(rows: list[dict[str, Any]]) -> int:
+    return sum(_model_call_count(row) for row in rows)
+
+
+def _model_call_count(row: dict[str, Any]) -> int:
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    raw_call_count = metadata.get("call_count")
+    if raw_call_count is None:
+        return 1
+    try:
+        return max(0, int(raw_call_count))
+    except (TypeError, ValueError):
+        return 1
 
 
 def _model_cost_basis(row: dict[str, Any]) -> str:
@@ -235,9 +255,10 @@ def _model_usage_breakdowns(rows: list[dict[str, Any]], fields: list[str]) -> di
                 "estimated_external_cost_usd": 0.0,
             },
         )
-        bucket["calls"] += 1
-        if str(row.get("status") or "").lower() not in {"ok", "success", "succeeded", "completed"}:
-            bucket["failed_calls"] += 1
+        call_count = _model_call_count(row)
+        bucket["calls"] += call_count
+        if str(row.get("status") or "").lower() not in {"ok", "success", "succeeded", "completed", "skipped"}:
+            bucket["failed_calls"] += call_count
         bucket["runtime_ms"] += int(row.get("runtime_ms") or 0)
         bucket["input_tokens"] += int(row.get("input_tokens") or 0)
         bucket["output_tokens"] += int(row.get("output_tokens") or 0)

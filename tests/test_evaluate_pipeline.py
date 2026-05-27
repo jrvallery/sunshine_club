@@ -602,13 +602,13 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert any(group["reason"] == "primary_tag_mismatch" for group in summary["failure_groups"])
     assert summary["model_usage"]["by_purpose"] == {
         "chunk_embedding": 2,
-        "semantic_retrieval_embedding": 2,
+        "semantic_retrieval_embedding": 0,
         "tag_inspection": 2,
     }
     assert summary["model_usage"]["local_call_count"] == 2
     assert summary["model_usage"]["external_call_count"] == 0
-    assert summary["model_usage"]["placeholder_call_count"] == 4
-    assert summary["model_usage"]["by_cost_basis"] == {"local": 2, "placeholder": 4}
+    assert summary["model_usage"]["placeholder_call_count"] == 2
+    assert summary["model_usage"]["by_cost_basis"] == {"local": 2, "placeholder": 2}
     assert summary["model_usage"]["unknown_cost_basis_count"] == 0
     assert summary["model_usage"]["embedding_attempted_calls"] == 2
     assert summary["model_usage"]["embedding_successful_calls"] == 0
@@ -654,7 +654,8 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert {row["confidence_bucket"] for row in results} == {"high"}
     assert {row["ocr_fallback_used"] for row in results} == {False}
     assert {row["ocr_fallback_failed"] for row in results} == {False}
-    assert {row["model_usage_summary"]["total_calls"] for row in results} == {3}
+    assert {row["model_usage_summary"]["total_calls"] for row in results} == {2}
+    assert {row["model_usage_summary"]["total_model_usage_rows"] for row in results} == {3}
     assert {row["llm_structured_output_valid"] for row in results} == {True}
     assert all(row["tag_evidence"] for row in results)
     assert failures[0]["correct_primary_tag"] == "history_archive_general"
