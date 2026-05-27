@@ -84,6 +84,21 @@ The frontend worktree may need its own dependency install if `node_modules` or
 `.venv` are not available there. Prefer local setup per worktree over sharing
 mutable generated directories.
 
+Current setup status:
+
+- `/home/james/projects/active/sunshine_club_backend/.venv` exists and imports
+  packages from the backend worktree.
+- `/home/james/projects/active/sunshine_club_backend/node_modules` is a real
+  local install, not a symlink.
+- `/home/james/projects/active/sunshine_club_frontend/.venv` exists and imports
+  packages from the frontend worktree.
+- `/home/james/projects/active/sunshine_club_frontend/node_modules` is a real
+  local install, not a symlink.
+
+Do not replace these with symlinks. Turbopack rejects `node_modules` symlinks
+that point outside the project root, and a shared editable Python venv can
+import code from the wrong worktree.
+
 ## Mac Tunnels
 
 Backend agent UI:
@@ -139,4 +154,3 @@ Remove a finished worktree after its branch is merged:
 ```bash
 git worktree remove /home/james/projects/active/sunshine_club_frontend
 ```
-
