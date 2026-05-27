@@ -158,6 +158,7 @@ def pipeline_eval_run_compare(eval_run_id: int, baseline_eval_run_id: int) -> di
         "primary_accuracy",
         "content_class_accuracy",
         "ocr_quality_accuracy",
+        "ocr_acceptable_rate",
         "review_routing_accuracy",
         "placement_destination_accuracy",
         "privacy_accuracy",

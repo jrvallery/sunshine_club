@@ -423,6 +423,7 @@ export type PipelineEvalRun = {
   secondary_precision?: number | null;
   secondary_recall?: number | null;
   ocr_quality_accuracy?: number | null;
+  ocr_acceptable_rate?: number | null;
   review_routing_accuracy?: number | null;
   failure_count?: number | null;
   model_usage: Record<string, unknown>;
@@ -442,6 +443,7 @@ export type PipelineEvalSummary = {
   secondary_precision?: number | null;
   secondary_recall?: number | null;
   ocr_quality_accuracy?: number | null;
+  ocr_acceptable_rate?: number | null;
   review_routing_accuracy?: number | null;
   review_routing_precision?: number | null;
   review_routing_recall?: number | null;

@@ -72,6 +72,7 @@ export default function PipelineEvalPage() {
       ["Primary", summary?.primary_accuracy],
       ["Content class", summary?.content_class_accuracy],
       ["OCR quality", summary?.ocr_quality_accuracy],
+      ["OCR acceptable", summary?.ocr_acceptable_rate],
       ["OCR fallback", summary?.ocr_fallback_rate],
       ["LLM valid", summary?.llm_structured_output_validity_rate],
       ["Embedding success", summary?.embedding_success_rate],

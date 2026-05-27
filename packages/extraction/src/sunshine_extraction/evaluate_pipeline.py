@@ -35,6 +35,7 @@ DEFAULT_ACCEPTANCE_THRESHOLDS = {
     "primary_accuracy": 0.88,
     "high_risk_primary_accuracy": 0.80,
     "ocr_quality_accuracy": 0.90,
+    "ocr_acceptable_rate": 0.90,
     "placement_destination_accuracy": 0.90,
     "privacy_accuracy": 1.0,
     "high_confidence_primary_accuracy": 0.95,
@@ -362,6 +363,7 @@ def _summary(
         "secondary_precision": _safe_divide(totals["secondary_true_positive"], totals["secondary_true_positive"] + totals["secondary_false_positive"]),
         "secondary_recall": _safe_divide(totals["secondary_true_positive"], totals["secondary_true_positive"] + totals["secondary_false_negative"]),
         "ocr_quality_accuracy": _safe_divide(totals["ocr_quality_correct"], totals["ocr_quality_labeled"]),
+        "ocr_acceptable_rate": _safe_divide(totals["ocr_acceptable"], totals["ocr_acceptable_expected"]),
         "review_routing_accuracy": _safe_divide(totals["review_routing_correct"], totals["review_routing_labeled"]),
         "review_routing_precision": _safe_divide(totals["review_true_positive"], totals["review_true_positive"] + totals["review_false_positive"]),
         "review_routing_recall": _safe_divide(totals["review_true_positive"], totals["review_true_positive"] + totals["review_false_negative"]),
@@ -518,6 +520,8 @@ def _production_next_actions(
         actions.append("Fix content-class classifier errors before trusting downstream extraction strategy.")
     if "ocr_quality_accuracy" in blocking_reasons:
         actions.append("Tighten OCR quality validation and fallback routing for poor, empty, or gibberish extraction.")
+    if "ocr_acceptable_rate" in blocking_reasons:
+        actions.append("Improve OCR extraction for labels expected to produce usable text; acceptable OCR must meet the production threshold.")
     if "placement_destination_accuracy" in blocking_reasons:
         actions.append("Review placement rules by primary tag and year evidence before proposing folders at scale.")
     if "privacy_accuracy" in blocking_reasons or "sensitive_false_accepts" in blocking_reasons:
@@ -548,6 +552,7 @@ def _acceptance_gate(metrics: dict[str, Any], model_usage: dict[str, Any], golde
         _minimum_check("primary_accuracy", metrics.get("primary_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["primary_accuracy"]),
         _minimum_check("high_risk_primary_accuracy", metrics.get("high_risk_primary_accuracy_min"), DEFAULT_ACCEPTANCE_THRESHOLDS["high_risk_primary_accuracy"]),
         _minimum_check("ocr_quality_accuracy", metrics.get("ocr_quality_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["ocr_quality_accuracy"]),
+        _minimum_check("ocr_acceptable_rate", metrics.get("ocr_acceptable_rate"), DEFAULT_ACCEPTANCE_THRESHOLDS["ocr_acceptable_rate"]),
         _minimum_check("placement_destination_accuracy", metrics.get("placement_destination_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["placement_destination_accuracy"]),
         _minimum_check("privacy_accuracy", metrics.get("privacy_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["privacy_accuracy"]),
         _minimum_check("high_confidence_primary_accuracy", metrics.get("high_confidence_primary_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["high_confidence_primary_accuracy"]),
@@ -635,6 +640,10 @@ def _update_totals(totals: Counter, row: dict[str, Any], label: GoldenEvalLabel)
         totals["ocr_quality_labeled"] += 1
         if row["ocr_quality_correct"]:
             totals["ocr_quality_correct"] += 1
+    if _ocr_quality_is_expected_acceptable(row.get("expected_ocr_quality")):
+        totals["ocr_acceptable_expected"] += 1
+        if _ocr_quality_is_predicted_acceptable(row.get("predicted_ocr_quality")):
+            totals["ocr_acceptable"] += 1
     if row["review_routing_correct"] is not None:
         totals["review_routing_labeled"] += 1
         if row["review_routing_correct"]:
@@ -695,6 +704,14 @@ def _primary_tag_metrics(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]
         }
         for tag, counts in sorted(by_tag.items())
     }
+
+
+def _ocr_quality_is_expected_acceptable(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"ok", "good", "acceptable"}
+
+
+def _ocr_quality_is_predicted_acceptable(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"ok", "good", "acceptable"}
 
 
 def _confidence_bucket_metrics(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
