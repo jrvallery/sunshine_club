@@ -322,6 +322,8 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
         failure_reasons.append("review_routing_mismatch")
     if label.ocr_quality_label and final_result.get("quality") != label.ocr_quality_label:
         failure_reasons.append("ocr_quality_mismatch")
+    if llm_structured_output_valid is False:
+        failure_reasons.append("llm_structured_output_invalid")
     if placement_destination_correct is False:
         failure_reasons.append("placement_destination_mismatch")
     if placement_year_correct is False:

@@ -125,6 +125,48 @@ def test_eval_row_marks_resolved_placement_unsafe_when_route_requires_review(tmp
     assert row["unsafe_placement_proposal"] is True
 
 
+def test_eval_row_groups_invalid_llm_structured_output_as_failure(tmp_path: Path) -> None:
+    label = GoldenEvalLabel(
+        id=1,
+        source_path="/source/tea.pdf",
+        relative_path="tea.pdf",
+        sample_path=None,
+        correct_primary_tag="annual_spring_tea",
+        correct_secondary_tags=[],
+        content_class="document",
+        ocr_quality_label="ok",
+        expected_review_required=True,
+        sensitive_record=False,
+        correct_destination_path=None,
+        correct_placement_year=None,
+        correct_privacy=None,
+        reviewer="tester",
+        reviewed_at="2026-05-27T00:00:00Z",
+        notes=None,
+    )
+
+    row = _evaluation_row(
+        label,
+        {
+            "top_tag_candidate": "annual_spring_tea",
+            "final_class": "document",
+            "quality": "ok",
+            "route_status": "review_tag_confidence_calibration",
+            "review_reason": "llm_structured_output_invalid",
+            "tag_confidence": 0.79,
+            "tag_evidence": ["matched tea"],
+            "llm_status": "inspected_with_invalid_fields",
+            "warnings": ["llm_invalid_secondary_tags:not_a_real_tag"],
+        },
+        tmp_path,
+    )
+
+    assert row["primary_correct"] is True
+    assert row["llm_structured_output_valid"] is False
+    assert row["review_routing_correct"] is True
+    assert "llm_structured_output_invalid" in row["failure_reasons"]
+
+
 def test_sensitive_false_accept_counts_even_when_primary_tag_is_correct(tmp_path: Path) -> None:
     label = GoldenEvalLabel(
         id=1,
