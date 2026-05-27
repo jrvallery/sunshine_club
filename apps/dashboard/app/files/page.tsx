@@ -195,6 +195,17 @@ function FilesPageContent() {
     updateFilters({}, fileId);
   }
 
+  function fileDetailHref(fileId: number) {
+    const params = new URLSearchParams();
+    for (const key of filterKeys) {
+      const value = filters[key];
+      if (value && value !== defaultFilters[key]) {
+        params.set(key, value);
+      }
+    }
+    return `/files/${fileId}${params.toString() ? `?${params.toString()}` : ""}`;
+  }
+
   const columns = useMemo<ColumnDef<FileSearchItem>[]>(
     () => [
       {
@@ -202,7 +213,7 @@ function FilesPageContent() {
         header: "File",
         size: 360,
         cell: ({ row }) => (
-          <PathCell title={row.original.filename} subtitle={row.original.compact_path} onClick={() => selectFile(row.original.id)} />
+          <PathCell title={row.original.filename} subtitle={row.original.compact_path} onClick={() => router.push(fileDetailHref(row.original.id))} />
         )
       },
       {
@@ -426,6 +437,7 @@ function FileInspector({
         </div>
         <div className="buttonRow">
           <a className="secondaryButton" href={`/api/admin/files/${file.id}/download`} download>Download File</a>
+          <Link className="secondaryButton" href={`/files/${file.id}`}>Full Viewer</Link>
           <button className="secondaryButton" onClick={() => copyText(file.source_path)}>Copy Path</button>
           <button className="secondaryButton" disabled={addingReview} onClick={() => onAddReview(file.id)}>Add To Review</button>
           <button className="secondaryButton" disabled={runningFile} onClick={() => onRunFile(file.id, embeddingProvider, llmProvider, ocrProvider)}>Run File</button>

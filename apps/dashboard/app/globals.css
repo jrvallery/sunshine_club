@@ -763,6 +763,89 @@ td:first-child {
   min-width: 0;
 }
 
+.fileViewerPage {
+  display: grid;
+  gap: 16px;
+  padding: 28px;
+}
+
+.fileViewerHeader {
+  align-items: flex-start;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding-bottom: 16px;
+}
+
+.fileViewerHeader h1 {
+  font-size: clamp(24px, 3vw, 38px);
+  max-width: 920px;
+  overflow-wrap: anywhere;
+}
+
+.fileViewerGrid {
+  align-items: start;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) 380px;
+}
+
+.fileViewerPreview,
+.fileViewerSidebar,
+.fileViewerText {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.fileViewerPreview {
+  min-height: 620px;
+}
+
+.fileViewerPreview .embeddedPreview {
+  height: min(82vh, 980px);
+}
+
+.fileViewerPreview .imagePreview {
+  max-height: min(82vh, 980px);
+}
+
+.fileViewerSidebar {
+  display: grid;
+  gap: 14px;
+  max-height: calc(100vh - 130px);
+  overflow: auto;
+  position: sticky;
+  top: 16px;
+}
+
+.fileViewerSidebar .drawerSection h2 {
+  font-size: 18px;
+  margin: 0 0 12px;
+}
+
+.fileViewerText {
+  display: grid;
+  gap: 12px;
+}
+
+.fileViewerReadableText {
+  font-size: 16px;
+  line-height: 1.75;
+  max-height: none;
+}
+
+.textMetaRow {
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 13px;
+  gap: 12px;
+  margin-top: 6px;
+}
+
 .reviewToolbar {
   align-items: center;
   display: flex;
@@ -1167,6 +1250,19 @@ td:first-child {
 
 .imagePreviewShell .buttonRow {
   justify-self: stretch;
+}
+
+.audioPreviewShell {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+}
+
+.audioPreview {
+  width: 100%;
 }
 
 .unsupportedPreview {
@@ -1606,13 +1702,23 @@ td:first-child {
   .settingsGrid,
   .presetGrid,
   .drawerGrid,
+  .fileViewerGrid,
   .fileExplorerLayout,
   .reviewWorkspace {
     grid-template-columns: 1fr;
   }
 
+  .fileViewerPage {
+    padding: 18px;
+  }
+
+  .fileViewerHeader {
+    flex-direction: column;
+  }
+
   .facetPanel,
   .fileInspector,
+  .fileViewerSidebar,
   .reviewInspector {
     max-height: none;
     position: static;
