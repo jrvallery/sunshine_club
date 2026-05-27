@@ -189,19 +189,19 @@ export default function PipelineEvalPage() {
                     </button>
                   </td>
                   <td>
-                    <StatusBadge value={run.summary?.acceptance_gate?.status ?? run.status} tone={run.summary?.acceptance_gate?.status === "fail" ? "danger" : "default"} />
+                    <StatusBadge value={evalRunGateStatus(run)} tone={evalRunGateStatus(run) === "fail" ? "danger" : "default"} />
                   </td>
                   <td>
                     <StatusBadge
-                      value={run.summary?.production_readiness?.status ?? "-"}
-                      tone={run.summary?.production_readiness?.larger_batch_allowed ? "default" : "danger"}
+                      value={evalRunReadinessStatus(run)}
+                      tone={evalRunReadinessStatus(run) === "ready_for_larger_batch" ? "default" : "danger"}
                     />
                   </td>
                   <td>{run.total_golden_labels ?? "-"}</td>
                   <td>{formatPercent(run.primary_accuracy)}</td>
-                  <td>{formatPercent(run.summary?.embedding_success_rate)}</td>
-                  <td>{formatPercent(run.summary?.semantic_same_family_top5_rate)}</td>
-                  <td>{formatPercent(run.summary?.placement_destination_accuracy)}</td>
+                  <td>{formatPercent(run.embedding_success_rate ?? run.summary?.embedding_success_rate)}</td>
+                  <td>{formatPercent(run.semantic_same_family_top5_rate ?? run.summary?.semantic_same_family_top5_rate)}</td>
+                  <td>{formatPercent(run.placement_destination_accuracy ?? run.summary?.placement_destination_accuracy)}</td>
                   <td>{run.failure_count ?? "-"}</td>
                   <td>{run.updated_at}</td>
                 </tr>
@@ -534,6 +534,14 @@ function formatPercent(value: number | null | undefined) {
     return "-";
   }
   return `${Math.round(value * 100)}%`;
+}
+
+function evalRunGateStatus(run: PipelineEvalRun) {
+  return run.acceptance_gate_status ?? run.summary?.acceptance_gate?.status ?? run.status;
+}
+
+function evalRunReadinessStatus(run: PipelineEvalRun) {
+  return run.production_readiness_status ?? run.summary?.production_readiness?.status ?? "-";
 }
 
 function semanticDetail(row: Record<string, unknown>) {
