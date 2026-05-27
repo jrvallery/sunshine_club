@@ -664,7 +664,8 @@ class ReviewStore:
             golden_row = connection.execute(
                 """
                 select id, review_item_id, source_path, relative_path, sample_path, extracted_text_snippet,
-                       correct_primary_tag, correct_secondary_tags_json, reviewer, notes, proposed_tag,
+                       content_class, correct_primary_tag, correct_secondary_tags_json, ocr_quality_label,
+                       expected_review_required, sensitive_record, reviewer, notes, proposed_tag,
                        proposed_secondary_tags_json, proposed_confidence, created_at, updated_at
                 from golden_labels
                 where source_path = ?
@@ -831,6 +832,9 @@ class ReviewStore:
         correct_class: str | None = None,
         correct_tag: str | None = None,
         correct_secondary_tags: list[str] | None = None,
+        ocr_quality_label: str | None = None,
+        expected_review_required: bool | None = None,
+        sensitive_record: bool | None = None,
         correct_destination_path: str | None = None,
         correct_placement_year: str | None = None,
         correct_privacy: str | None = None,
@@ -843,8 +847,8 @@ class ReviewStore:
         with self._connect() as connection:
             existing = connection.execute(
                 """
-                select id, source_path, relative_path, proposed_class, proposed_tag, secondary_tags_json,
-                       extraction_text_snippet, confidence
+                select id, source_path, relative_path, route_status, proposed_class, proposed_tag,
+                       secondary_tags_json, extraction_text_snippet, confidence, result_json
                 from review_items where id = ?
                 """,
                 (item_id,),
@@ -883,20 +887,33 @@ class ReviewStore:
                 ),
             )
             if save_as_golden and decision in {"accept", "change"} and resolved_tag:
+                result = _json_object(existing["result_json"])
+                resolved_content_class = correct_class or existing["proposed_class"]
+                resolved_ocr_quality = ocr_quality_label or result.get("quality")
+                resolved_expected_review_required = (
+                    expected_review_required
+                    if expected_review_required is not None
+                    else existing["route_status"] != "route_candidate"
+                )
                 connection.execute(
                     """
                     insert into golden_labels (
                         review_item_id, source_path, relative_path, sample_path, extracted_text_snippet,
-                        correct_primary_tag, correct_secondary_tags_json, reviewer, notes, proposed_tag,
+                        content_class, correct_primary_tag, correct_secondary_tags_json, ocr_quality_label,
+                        expected_review_required, sensitive_record, reviewer, notes, proposed_tag,
                         proposed_secondary_tags_json, proposed_confidence, created_at, updated_at
-                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
                     on conflict(source_path) do update set
                         review_item_id=excluded.review_item_id,
                         relative_path=excluded.relative_path,
                         sample_path=excluded.sample_path,
                         extracted_text_snippet=excluded.extracted_text_snippet,
+                        content_class=excluded.content_class,
                         correct_primary_tag=excluded.correct_primary_tag,
                         correct_secondary_tags_json=excluded.correct_secondary_tags_json,
+                        ocr_quality_label=excluded.ocr_quality_label,
+                        expected_review_required=excluded.expected_review_required,
+                        sensitive_record=excluded.sensitive_record,
                         reviewer=excluded.reviewer,
                         notes=excluded.notes,
                         proposed_tag=excluded.proposed_tag,
@@ -910,8 +927,12 @@ class ReviewStore:
                         existing["relative_path"],
                         _sample_path_from_result(connection, existing["source_path"]),
                         existing["extraction_text_snippet"],
+                        resolved_content_class,
                         resolved_tag,
                         json.dumps(resolved_secondary_tags, sort_keys=True),
+                        resolved_ocr_quality,
+                        1 if resolved_expected_review_required else 0,
+                        1 if sensitive_record else 0,
                         reviewer,
                         notes,
                         existing["proposed_tag"],
@@ -991,7 +1012,8 @@ class ReviewStore:
             rows = connection.execute(
                 """
                 select id, review_item_id, source_path, relative_path, sample_path, extracted_text_snippet,
-                       correct_primary_tag, correct_secondary_tags_json, reviewer, notes, proposed_tag,
+                       content_class, correct_primary_tag, correct_secondary_tags_json, ocr_quality_label,
+                       expected_review_required, sensitive_record, reviewer, notes, proposed_tag,
                        proposed_secondary_tags_json, proposed_confidence, created_at, updated_at
                 from golden_labels
                 order by updated_at desc, id desc
@@ -1006,7 +1028,8 @@ class ReviewStore:
             row = connection.execute(
                 """
                 select id, review_item_id, source_path, relative_path, sample_path, extracted_text_snippet,
-                       correct_primary_tag, correct_secondary_tags_json, reviewer, notes, proposed_tag,
+                       content_class, correct_primary_tag, correct_secondary_tags_json, ocr_quality_label,
+                       expected_review_required, sensitive_record, reviewer, notes, proposed_tag,
                        proposed_secondary_tags_json, proposed_confidence, created_at, updated_at
                 from golden_labels
                 where id = ?
@@ -1036,8 +1059,12 @@ class ReviewStore:
         self,
         label_id: int,
         *,
+        content_class: str | None = None,
         correct_primary_tag: str | None = None,
         correct_secondary_tags: list[str] | None = None,
+        ocr_quality_label: str | None = None,
+        expected_review_required: bool | None = None,
+        sensitive_record: bool | None = None,
         reviewer: str | None = None,
         notes: str | None = None,
     ) -> dict[str, Any]:
@@ -1050,16 +1077,28 @@ class ReviewStore:
             connection.execute(
                 """
                 update golden_labels
-                set correct_primary_tag = ?,
+                set content_class = ?,
+                    correct_primary_tag = ?,
                     correct_secondary_tags_json = ?,
+                    ocr_quality_label = ?,
+                    expected_review_required = ?,
+                    sensitive_record = ?,
                     reviewer = ?,
                     notes = ?,
                     updated_at = datetime('now')
                 where id = ?
                 """,
                 (
+                    content_class if content_class is not None else existing["content_class"],
                     resolved_primary,
                     json.dumps(resolved_secondary, sort_keys=True),
+                    ocr_quality_label if ocr_quality_label is not None else existing["ocr_quality_label"],
+                    (
+                        1
+                        if (expected_review_required if expected_review_required is not None else existing["expected_review_required"])
+                        else 0
+                    ),
+                    1 if (sensitive_record if sensitive_record is not None else existing["sensitive_record"]) else 0,
                     reviewer if reviewer is not None else existing["reviewer"],
                     notes if notes is not None else existing["notes"],
                     label_id,
@@ -1582,8 +1621,12 @@ class ReviewStore:
                     relative_path text not null,
                     sample_path text,
                     extracted_text_snippet text,
+                    content_class text,
                     correct_primary_tag text not null,
                     correct_secondary_tags_json text not null default '[]',
+                    ocr_quality_label text,
+                    expected_review_required integer,
+                    sensitive_record integer not null default 0,
                     reviewer text,
                     notes text,
                     proposed_tag text,
@@ -1701,6 +1744,10 @@ class ReviewStore:
             _ensure_column(connection, "review_items", "ocr_fallback_provider", "ocr_fallback_provider text")
             _ensure_column(connection, "review_items", "enable_llm_tags", "enable_llm_tags integer")
             _ensure_column(connection, "pipeline_runs", "embedding_provider", "embedding_provider text")
+            _ensure_column(connection, "golden_labels", "content_class", "content_class text")
+            _ensure_column(connection, "golden_labels", "ocr_quality_label", "ocr_quality_label text")
+            _ensure_column(connection, "golden_labels", "expected_review_required", "expected_review_required integer")
+            _ensure_column(connection, "golden_labels", "sensitive_record", "sensitive_record integer not null default 0")
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.db_path)
@@ -2401,8 +2448,12 @@ def _golden_label_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "relative_path": row["relative_path"],
         "sample_path": row["sample_path"],
         "extracted_text_snippet": row["extracted_text_snippet"],
+        "content_class": row["content_class"],
         "correct_primary_tag": row["correct_primary_tag"],
         "correct_secondary_tags": _json_list(row["correct_secondary_tags_json"]),
+        "ocr_quality_label": row["ocr_quality_label"],
+        "expected_review_required": bool(row["expected_review_required"]) if row["expected_review_required"] is not None else None,
+        "sensitive_record": bool(row["sensitive_record"]),
         "reviewer": row["reviewer"],
         "notes": row["notes"],
         "proposed_tag": row["proposed_tag"],

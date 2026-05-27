@@ -138,8 +138,12 @@ def update_golden_label(label_id: int, request: GoldenLabelUpdateRequest) -> dic
     try:
         return review_store().update_golden_label(
             label_id,
+            content_class=request.content_class,
             correct_primary_tag=request.correct_primary_tag,
             correct_secondary_tags=request.correct_secondary_tags,
+            ocr_quality_label=request.ocr_quality_label,
+            expected_review_required=request.expected_review_required,
+            sensitive_record=request.sensitive_record,
             reviewer=request.reviewer,
             notes=request.notes,
         )
@@ -268,6 +272,9 @@ def record_review_decision(item_id: int, request: ReviewDecisionRequest) -> dict
         correct_class=request.correct_class,
         correct_tag=request.correct_tag,
         correct_secondary_tags=request.correct_secondary_tags,
+        ocr_quality_label=request.ocr_quality_label,
+        expected_review_required=request.expected_review_required,
+        sensitive_record=request.sensitive_record,
         correct_destination_path=request.correct_destination_path,
         correct_placement_year=request.correct_placement_year,
         correct_privacy=request.correct_privacy,
@@ -318,4 +325,3 @@ def review_item_neighbors(item_id: int) -> list[dict[str, Any]]:
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     return list(item.get("result", {}).get("semantic_examples") or [])
-

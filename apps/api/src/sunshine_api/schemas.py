@@ -40,6 +40,9 @@ class ReviewDecisionRequest(BaseModel):
     correct_class: str | None = None
     correct_tag: str | None = None
     correct_secondary_tags: list[str] | None = None
+    ocr_quality_label: str | None = None
+    expected_review_required: bool | None = None
+    sensitive_record: bool | None = None
     correct_destination_path: str | None = None
     correct_placement_year: str | None = None
     correct_privacy: str | None = None
@@ -65,8 +68,12 @@ class FileRunRequest(BaseModel):
 
 
 class GoldenLabelUpdateRequest(BaseModel):
+    content_class: str | None = None
     correct_primary_tag: str | None = None
     correct_secondary_tags: list[str] | None = None
+    ocr_quality_label: str | None = None
+    expected_review_required: bool | None = None
+    sensitive_record: bool | None = None
     reviewer: str | None = None
     notes: str | None = None
 
@@ -99,4 +106,3 @@ class SemanticIndexBuildRequest(BaseModel):
 class SemanticEvalRequest(BaseModel):
     labels_db: str | None = None
     output_dir: str | None = None
-

@@ -106,6 +106,9 @@ def test_review_store_imports_langgraph_results_and_records_decision(tmp_path: P
         correct_destination_path="01_Governance_Admin/1992-1993",
         correct_placement_year="1992-1993",
         correct_privacy="club_internal",
+        ocr_quality_label="ok",
+        expected_review_required=True,
+        sensitive_record=True,
         review_stage="resolved",
         notes="Looks correct.",
         reviewer="james",
@@ -116,6 +119,10 @@ def test_review_store_imports_langgraph_results_and_records_decision(tmp_path: P
         golden_labels[0]["id"],
         correct_primary_tag="governance_bylaws_policy",
         correct_secondary_tags=["policy"],
+        content_class="document",
+        ocr_quality_label="ok",
+        expected_review_required=False,
+        sensitive_record=False,
         reviewer="james",
         notes="Corrected after audit.",
     )
@@ -157,8 +164,15 @@ def test_review_store_imports_langgraph_results_and_records_decision(tmp_path: P
     assert updated["correct_privacy"] == "club_internal"
     assert updated["review_stage"] == "resolved"
     assert len(golden_labels) == 1
+    assert golden_labels[0]["content_class"] == "scanned_document"
+    assert golden_labels[0]["ocr_quality_label"] == "ok"
+    assert golden_labels[0]["expected_review_required"] is True
+    assert golden_labels[0]["sensitive_record"] is True
+    assert edited_label["content_class"] == "document"
     assert edited_label["correct_primary_tag"] == "governance_bylaws_policy"
     assert edited_label["correct_secondary_tags"] == ["policy"]
+    assert edited_label["expected_review_required"] is False
+    assert edited_label["sensitive_record"] is False
     assert edited_label["reviewer"] == "james"
     assert edited_label["notes"] == "Corrected after audit."
     assert deleted_label["deleted"] is True
