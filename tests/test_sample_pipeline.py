@@ -399,6 +399,8 @@ def test_ocr_text_is_passed_into_llm_tag_prompt(tmp_path: Path) -> None:
     prompt = build_llm_tag_prompt(sample, {"final_class": "scanned_document"}, _plan("ocr_page_level"), extraction, taxonomy, [])
 
     assert "OCR text about meeting minutes" in prompt
+    assert "competing_tags" in prompt
+    assert "review_reason" in prompt
 
 
 def test_spreadsheet_metadata_path(tmp_path: Path) -> None:
@@ -510,8 +512,10 @@ def test_llm_tag_schema_payload_is_normalized() -> None:
             "secondary_tags": ["event_material", "not_allowed"],
             "confidence": 1.2,
             "evidence": ["tea"],
+            "competing_tags": ["annual_spring_tea", "not_allowed"],
             "rationale": "Strong evidence",
-            "needs_review": False,
+            "needs_review": True,
+            "review_reason": "",
         },
         taxonomy,
         model="test-model",
@@ -519,7 +523,9 @@ def test_llm_tag_schema_payload_is_normalized() -> None:
 
     assert normalized["llm_status"] == "inspected"
     assert normalized["secondary_tags"] == ["event_material"]
+    assert normalized["competing_tags"] == []
     assert normalized["confidence"] == 1.0
+    assert normalized["review_reason"] == "llm_requested_review"
 
 
 def test_openai_compatible_llm_response_json_is_normalized() -> None:

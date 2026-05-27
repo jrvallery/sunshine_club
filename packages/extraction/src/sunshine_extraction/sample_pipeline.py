@@ -1211,8 +1211,9 @@ def build_llm_tag_prompt(
         "deterministic candidates, and nearest human-labeled examples. Treat human-labeled examples as precedent, "
         "but do not copy them when the current file evidence differs. If evidence is weak or examples conflict, "
         "lower confidence and set needs_review=true.\n\n"
-        "Return only a JSON object with these keys: primary_tag, secondary_tags, confidence, evidence, rationale, "
-        "needs_review. Do not include markdown or any text outside the JSON object.\n\n"
+        "Return only a JSON object with these keys: primary_tag, secondary_tags, confidence, evidence, competing_tags, "
+        "rationale, needs_review, review_reason. competing_tags must be zero to three alternate primary tag keys. "
+        "When needs_review is true, review_reason must briefly explain why. Do not include markdown or any text outside the JSON object.\n\n"
         f"Allowed primary tags:\n{primary_lines}\n\n"
         f"Allowed secondary tags:\n{', '.join(taxonomy.secondary_tags)}\n\n"
         f"File context JSON:\n{json.dumps(context, sort_keys=True)}"
@@ -1231,10 +1232,16 @@ def llm_tag_schema(taxonomy: TaxonomyOptions) -> dict[str, Any]:
             },
             "confidence": {"type": "number", "minimum": 0, "maximum": 1},
             "evidence": {"type": "array", "items": {"type": "string"}, "maxItems": 5},
+            "competing_tags": {
+                "type": "array",
+                "items": {"type": "string", "enum": taxonomy.primary_tags},
+                "maxItems": 3,
+            },
             "rationale": {"type": "string"},
             "needs_review": {"type": "boolean"},
+            "review_reason": {"type": "string"},
         },
-        "required": ["primary_tag", "secondary_tags", "confidence", "evidence", "rationale", "needs_review"],
+        "required": ["primary_tag", "secondary_tags", "confidence", "evidence", "competing_tags", "rationale", "needs_review", "review_reason"],
     }
 
 
@@ -1251,6 +1258,17 @@ def normalize_llm_inspection(payload: dict[str, Any], taxonomy: TaxonomyOptions,
     if not isinstance(confidence, int | float):
         confidence = 0
     evidence = [str(item) for item in payload.get("evidence", [])[:5]]
+    competing_tags = [
+        tag
+        for tag in payload.get("competing_tags", [])
+        if isinstance(tag, str) and tag in taxonomy.primary_tags and tag != primary_tag
+    ][:3]
+    needs_review = bool(payload.get("needs_review", False))
+    review_reason = str(payload.get("review_reason") or "").strip()
+    if primary_tag is None:
+        review_reason = review_reason or "llm_primary_tag_invalid"
+    elif needs_review:
+        review_reason = review_reason or "llm_requested_review"
     return {
         "llm_status": "inspected" if primary_tag else "invalid",
         "model": model,
@@ -1259,8 +1277,10 @@ def normalize_llm_inspection(payload: dict[str, Any], taxonomy: TaxonomyOptions,
         "secondary_tags": secondary_tags,
         "confidence": max(0.0, min(float(confidence), 1.0)),
         "evidence": evidence,
+        "competing_tags": competing_tags,
         "rationale": str(payload.get("rationale", "")),
-        "needs_review": bool(payload.get("needs_review", False)),
+        "needs_review": needs_review,
+        "review_reason": review_reason or None,
         "warning": None if primary_tag else "llm_primary_tag_invalid",
     }
 
@@ -1608,11 +1628,15 @@ def write_pipeline_result(
         "llm_provider": llm_inspection.get("provider"),
         "llm_primary_tag": llm_inspection.get("primary_tag"),
         "llm_confidence": llm_inspection.get("confidence"),
+        "llm_competing_tags": llm_inspection.get("competing_tags", []),
+        "llm_review_reason": llm_inspection.get("review_reason"),
         "confidence_inputs": {
             "top_candidate": top if top else None,
             "candidate_count": len(tag_candidates),
             "llm_confidence": llm_inspection.get("confidence"),
             "llm_needs_review": llm_inspection.get("needs_review"),
+            "llm_competing_tags": llm_inspection.get("competing_tags", []),
+            "llm_review_reason": llm_inspection.get("review_reason"),
         },
         "confidence_calibration": confidence_calibration or {},
         "route_status": route["route_status"],
