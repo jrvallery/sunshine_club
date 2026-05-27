@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { Button } from "../../components/ui/Button";
-import { CheckboxField, TextInput } from "../../components/ui/FormControls";
+import { CheckboxField, SelectInput, TextInput } from "../../components/ui/FormControls";
 import { KeyValue } from "../../components/ui/KeyValue";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { deleteJson, fetchJson, postJson } from "../../lib/api";
@@ -270,6 +270,7 @@ function RunStartDialog({
 }) {
   const [inputRoot, setInputRoot] = useState(preset.input_root);
   const [outputDir, setOutputDir] = useState(preset.output_dir);
+  const [runRole, setRunRole] = useState("test");
   const [embeddingProvider, setEmbeddingProvider] = useState(preset.embedding_provider || "cortex");
   const [enableLlmTags, setEnableLlmTags] = useState(preset.enable_llm_tags);
   const [llmTagProvider, setLlmTagProvider] = useState(normalizeRunProvider(preset.llm_tag_provider));
@@ -291,6 +292,11 @@ function RunStartDialog({
       <div className="formGrid runStartForm">
         <TextInput label="Input root" value={inputRoot} onChange={(event) => setInputRoot(event.target.value)} />
         <TextInput label="Output dir" value={outputDir} onChange={(event) => setOutputDir(event.target.value)} />
+        <SelectInput label="Run role" value={runRole} onChange={(event) => setRunRole(event.target.value)}>
+          <option value="test">Test</option>
+          <option value="baseline">Baseline</option>
+          <option value="evaluation">Evaluation</option>
+        </SelectInput>
         <ProviderSelect label="Embedding path" value={embeddingProvider} onChange={setEmbeddingProvider} />
         <ProviderSelect label="LLM tag path" value={llmTagProvider} onChange={setLlmTagProvider} />
         <ProviderSelect label="OCR fallback path" value={ocrFallbackProvider} onChange={setOcrFallbackProvider} />
@@ -308,6 +314,7 @@ function RunStartDialog({
           onClick={() =>
             onStart({
               preset_key: preset.preset_key,
+              run_role: runRole,
               input_root: inputRoot,
               output_dir: outputDir,
               embedding_provider: embeddingProvider,

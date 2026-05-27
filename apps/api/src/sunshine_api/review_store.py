@@ -1388,6 +1388,7 @@ class ReviewStore:
         self,
         *,
         preset_key: str,
+        run_role: str | None = None,
         input_root: str,
         output_dir: str,
         command: list[str],
@@ -1401,6 +1402,7 @@ class ReviewStore:
         run_metadata = _run_metadata(
             input_root=input_root,
             output_dir=output_dir,
+            run_role=run_role,
             embedding_provider=embedding_provider,
             enable_llm_tags=enable_llm_tags,
             llm_tag_provider=llm_tag_provider,
@@ -2066,16 +2068,17 @@ def _run_metadata(
     *,
     input_root: str,
     output_dir: str,
+    run_role: str | None,
     embedding_provider: str | None,
     enable_llm_tags: bool,
     llm_tag_provider: str | None,
     ocr_fallback_provider: str | None,
     semantic_index_path: str | None,
 ) -> dict[str, Any]:
-    run_role = _run_role_for_preset(Path(output_dir), input_root=input_root)
+    resolved_run_role = run_role or _run_role_for_preset(Path(output_dir), input_root=input_root)
     return {
         "run_kind": "pipeline_batch",
-        "run_role": run_role,
+        "run_role": resolved_run_role,
         "input_root": input_root,
         "output_dir": output_dir,
         "taxonomy_path": str(DEFAULT_TAXONOMY_PATH),

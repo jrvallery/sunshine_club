@@ -346,6 +346,7 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
         "/admin/runs",
         json={
             "preset_key": "qa_samples_fast",
+            "run_role": "evaluation",
             "input_root": str(tmp_path / "input"),
             "output_dir": str(tmp_path / "run-output"),
             "embedding_provider": "openai",
@@ -355,6 +356,8 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
             "start": False,
         },
     )
+    assert run.json()["run_role"] == "evaluation"
+    assert run.json()["run_metadata"]["run_role"] == "evaluation"
     failed_empty_run = client.post(
         "/admin/runs",
         json={

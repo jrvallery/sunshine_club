@@ -110,6 +110,7 @@ def test_review_store_imports_langgraph_results_and_records_decision(tmp_path: P
     store = ReviewStore(tmp_path / "review.sqlite")
     lineage_run = store.create_pipeline_run(
         preset_key="qa_samples_fast",
+        run_role="evaluation",
         input_root="/tmp/input",
         output_dir=str(output_dir),
         command=["python", "-m", "sunshine_extraction.langgraph_pipeline"],
@@ -118,6 +119,8 @@ def test_review_store_imports_langgraph_results_and_records_decision(tmp_path: P
         llm_tag_provider="cortex",
         ocr_fallback_provider="openai",
     )
+    assert lineage_run["run_role"] == "evaluation"
+    assert lineage_run["run_metadata"]["run_role"] == "evaluation"
     baseline_run = store.create_pipeline_run(
         preset_key="qa_samples_full",
         input_root="/tmp/qa samples",
@@ -201,7 +204,7 @@ def test_review_store_imports_langgraph_results_and_records_decision(tmp_path: P
     assert facets["review_reason"]["ocr_quality_not_trusted"] == 1
     assert review_item["run_id"] == lineage_run["id"]
     assert review_item["run_key"] == lineage_run["run_key"]
-    assert lineage_run["run_role"] == "test"
+    assert lineage_run["run_role"] == "evaluation"
     assert baseline_run["run_role"] == "baseline"
     assert baseline_run["run_metadata"]["run_role"] == "baseline"
     assert review_item["run_preset_key"] == "qa_samples_fast"

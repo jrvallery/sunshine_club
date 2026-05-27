@@ -76,6 +76,7 @@ def start_run(request: RunStartRequest) -> dict[str, Any]:
     )
     run = store.create_pipeline_run(
         preset_key=request.preset_key,
+        run_role=request.run_role,
         input_root=input_root,
         output_dir=output_dir,
         command=command,
@@ -435,6 +436,7 @@ def rerun_failed(run_id: int) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="Run has no command to rerun")
     rerun = store.create_pipeline_run(
         preset_key=f"{run['preset_key']}_rerun_failed",
+        run_role=run.get("run_role") or "test",
         input_root=str(run.get("input_root") or ""),
         output_dir=str(run.get("output_dir") or ""),
         command=command,
