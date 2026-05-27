@@ -292,6 +292,38 @@ def test_ocr_escalates_poor_local_result_to_fallback(tmp_path: Path) -> None:
     assert "Annual tea meeting minutes" in result["ocr_evidence"]["fallback_text_snippet"]
 
 
+def test_write_pipeline_result_quarantines_placement_when_route_requires_review(tmp_path: Path) -> None:
+    source = tmp_path / "1992 minutes.txt"
+    source.write_text("1992 Sunshine Club meeting minutes.", encoding="utf-8")
+    extraction = ExtractionResult(
+        sample=_sample(source, relative_path="Minutes/1992 minutes.txt"),
+        plan=_plan("text_extraction"),
+        extraction_status="extracted",
+        text="1992 Sunshine Club meeting minutes.",
+        metadata={},
+        page_count=None,
+        warnings=[],
+    )
+    result = write_pipeline_result(
+        _sample(source, relative_path="Minutes/1992 minutes.txt"),
+        {"final_class": "document"},
+        _plan("text_extraction"),
+        extraction,
+        {"quality": "ok"},
+        chunks=[],
+        embeddings=[],
+        tag_candidates=[{"tag": "meeting_records", "confidence": 0.61, "evidence": ["minutes"], "secondary_tags": []}],
+        route={"route_status": "review_low_confidence_tag", "review_reason": "tag_confidence_below_threshold"},
+        llm_inspection={"llm_status": "skipped"},
+    )
+
+    assert result["placement_status"] == "needs_review"
+    assert result["destination_path"] == "90_Intake_Needs_Review/01_Governance_Admin"
+    assert result["placement"]["blocked_destination_path"] == "01_Governance_Admin/1992"
+    assert result["placement"]["placement_blocked_by_route"] is True
+    assert result["placement"]["review_reason"] == "tag_confidence_below_threshold"
+
+
 def test_ocr_does_not_escalate_good_local_result(tmp_path: Path) -> None:
     image = tmp_path / "scan.jpg"
     Image.new("RGB", (320, 240), color="white").save(image)

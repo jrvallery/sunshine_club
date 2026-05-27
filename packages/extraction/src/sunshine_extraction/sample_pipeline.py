@@ -1602,6 +1602,7 @@ def write_pipeline_result(
         text=extraction.text,
         metadata=extraction.metadata,
     )
+    placement = quarantine_placement_for_review_route(placement, route)
     return {
         "sample_path": str(sample.sample_path),
         "source_path": sample.source_path,
@@ -1648,6 +1649,26 @@ def write_pipeline_result(
         "route_status": route["route_status"],
         "review_reason": route.get("review_reason"),
         "warnings": extraction.warnings,
+    }
+
+
+def quarantine_placement_for_review_route(placement: dict[str, Any], route: dict[str, Any]) -> dict[str, Any]:
+    if route.get("route_status") == "route_candidate":
+        return placement
+    if placement.get("placement_status") != "resolved":
+        return placement
+    destination_path = str(placement.get("destination_path") or "")
+    if not destination_path or destination_path.startswith("90_Intake_Needs_Review"):
+        return placement
+    drive_folder = str(placement.get("drive_folder") or "").strip("/")
+    review_destination = f"90_Intake_Needs_Review/{drive_folder}" if drive_folder else "90_Intake_Needs_Review"
+    return {
+        **placement,
+        "placement_status": "needs_review",
+        "destination_path": review_destination,
+        "blocked_destination_path": destination_path,
+        "placement_blocked_by_route": True,
+        "review_reason": route.get("review_reason") or "placement_requires_accepted_route",
     }
 
 
