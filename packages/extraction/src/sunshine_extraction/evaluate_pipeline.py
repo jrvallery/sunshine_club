@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import sqlite3
 import subprocess
@@ -491,6 +492,7 @@ def _summary(
             "failures": str(output_dir / "eval-failures.jsonl"),
             "failure_groups": str(output_dir / "eval-failure-groups.json"),
             "model_usage": str(output_dir / "eval-model-usage.jsonl"),
+            "artifact_manifest": str(output_dir / "eval-artifacts-manifest.json"),
         },
     }
 
@@ -1086,12 +1088,49 @@ def _write_eval_artifacts(
         for actual, predicted_counts in sorted(confusion.items()):
             for predicted, count in sorted(predicted_counts.items()):
                 writer.writerow({"correct_primary_tag": actual, "predicted_primary_tag": predicted, "count": count})
+    _write_artifact_manifest(output_dir, summary)
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     with path.open("w", encoding="utf-8") as output_file:
         for row in rows:
             output_file.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def _write_artifact_manifest(output_dir: Path, summary: dict[str, Any]) -> None:
+    artifact_paths = {
+        key: Path(value)
+        for key, value in (summary.get("artifacts") or {}).items()
+        if key != "artifact_manifest" and value
+    }
+    manifest_rows = []
+    for key, path in sorted(artifact_paths.items()):
+        manifest_rows.append(_artifact_manifest_row(key, path))
+    manifest = {
+        "output_dir": str(output_dir),
+        "artifact_count": len(manifest_rows),
+        "artifacts": manifest_rows,
+    }
+    (output_dir / "eval-artifacts-manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _artifact_manifest_row(name: str, path: Path) -> dict[str, Any]:
+    exists = path.exists()
+    return {
+        "name": name,
+        "path": str(path),
+        "exists": exists,
+        "size_bytes": path.stat().st_size if exists else None,
+        "sha256": _sha256(path) if exists else None,
+    }
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as input_file:
+        for chunk in iter(lambda: input_file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _failure_groups(rows: list[dict[str, Any]], *, max_examples: int = 25) -> list[dict[str, Any]]:

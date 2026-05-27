@@ -291,6 +291,12 @@ export default function PipelineEvalPage() {
               <KeyValue label="OCR" value={String(summary?.run_metadata?.ocr_mode ?? activeRun.run_metadata?.ocr_mode ?? "-")} />
             </section>
             <section>
+              <h3>Artifacts</h3>
+              {Object.entries(summary?.artifacts ?? {}).map(([name, path]) => (
+                <KeyValue key={name} label={name} value={path} />
+              ))}
+            </section>
+            <section>
               <h3>Golden Set</h3>
               <KeyValue label="Ready" value={summary?.golden_label_readiness?.ready ? "yes" : "no"} />
               <KeyValue label="Label count" value={`${summary?.golden_label_readiness?.total_golden_labels ?? 0}/${summary?.golden_label_readiness?.minimum_label_count ?? 75}`} />

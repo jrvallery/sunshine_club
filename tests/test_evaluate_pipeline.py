@@ -335,12 +335,21 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert (output_dir / "eval-failures.jsonl").exists()
     assert (output_dir / "eval-failure-groups.json").exists()
     assert (output_dir / "eval-model-usage.jsonl").exists()
+    assert (output_dir / "eval-artifacts-manifest.json").exists()
+    assert summary["artifacts"]["artifact_manifest"] == str(output_dir / "eval-artifacts-manifest.json")
 
     results = [json.loads(line) for line in (output_dir / "eval-results.jsonl").read_text(encoding="utf-8").splitlines()]
     failures = [json.loads(line) for line in (output_dir / "eval-failures.jsonl").read_text(encoding="utf-8").splitlines()]
     failure_groups = json.loads((output_dir / "eval-failure-groups.json").read_text(encoding="utf-8"))
+    artifact_manifest = json.loads((output_dir / "eval-artifacts-manifest.json").read_text(encoding="utf-8"))
     model_usage = [json.loads(line) for line in (output_dir / "eval-model-usage.jsonl").read_text(encoding="utf-8").splitlines()]
 
+    manifest_by_name = {row["name"]: row for row in artifact_manifest["artifacts"]}
+    assert artifact_manifest["artifact_count"] == 6
+    assert manifest_by_name["summary"]["exists"] is True
+    assert manifest_by_name["summary"]["size_bytes"] > 0
+    assert len(manifest_by_name["summary"]["sha256"]) == 64
+    assert manifest_by_name["failure_groups"]["exists"] is True
     assert sorted(row["primary_correct"] for row in results) == [False, True]
     assert {row["source_file_mutation"]["mutated"] for row in results} == {False}
     assert {row["confidence_bucket"] for row in results} == {"high"}
