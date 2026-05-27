@@ -347,6 +347,9 @@ def _embed_chunks_node(state: DocumentPipelineState, deps: DocumentPipelineDeps)
 def _retrieve_labeled_examples_node(state: DocumentPipelineState, deps: DocumentPipelineDeps) -> dict[str, Any]:
     index_path = deps.get("semantic_index_path")
     if not index_path or not Path(index_path).exists():
+        warnings = [*state.get("warnings", [])]
+        if index_path:
+            warnings.append("semantic_index_missing")
         usage_row = _model_usage_row(
             state,
             node="retrieve_labeled_examples",
@@ -363,7 +366,11 @@ def _retrieve_labeled_examples_node(state: DocumentPipelineState, deps: Document
                 "cost_estimate": "unavailable",
             },
         )
-        return {"semantic_examples": [], "model_usage": [*state.get("model_usage", []), usage_row]}
+        return {
+            "semantic_examples": [],
+            "warnings": warnings,
+            "model_usage": [*state.get("model_usage", []), usage_row],
+        }
     extraction = state.get("extraction_result") or _empty_extraction(state)
     query_text = "\n".join(
         [

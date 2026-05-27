@@ -140,6 +140,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert final_result["top_tag_candidate"] == "annual_spring_tea"
     assert final_result["tag_assignment_source"] == "deterministic+llm"
     assert final_result["confidence_calibration"]["status"] == "calibrated"
+    assert "semantic_index_missing" in final_result["warnings"]
     assert graph_result["final_result"]["top_tag_candidate"] == "annual_spring_tea"
     assert pipeline_rows == [final_result]
     assert review_rows == []
