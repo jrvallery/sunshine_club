@@ -138,6 +138,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert summary["high_confidence_primary_accuracy"] == 0.5
     assert summary["high_confidence_false_accepts"] == 0
     assert summary["invalid_primary_tag_count"] == 0
+    assert summary["tag_evidence_presence_rate"] == 1.0
     assert summary["source_file_mutations"] == 0
     assert summary["golden_label_readiness"]["ready"] is False
     assert summary["golden_label_readiness"]["total_golden_labels"] == 2
@@ -172,6 +173,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "ocr_acceptable_rate")["status"] == "pass"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "llm_structured_output_validity_rate")["status"] == "pass"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "invalid_primary_tag_count")["status"] == "pass"
+    assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "tag_evidence_presence_rate")["status"] == "pass"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "placement_year_accuracy")["status"] == "not_evaluated"
     assert summary["production_readiness"]["status"] == "not_ready"
     assert summary["production_readiness"]["larger_batch_allowed"] is False
@@ -232,6 +234,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert {row["confidence_bucket"] for row in results} == {"high"}
     assert {row["ocr_fallback_used"] for row in results} == {False}
     assert {row["llm_structured_output_valid"] for row in results} == {True}
+    assert all(row["tag_evidence"] for row in results)
     assert failures[0]["correct_primary_tag"] == "history_archive_general"
     assert {row["golden_label_id"] for row in model_usage} == {1, 2}
     assert (output_dir / "graph-runs" / "00001" / "graph-result.json").exists()

@@ -79,6 +79,7 @@ export default function PipelineEvalPage() {
       ["Semantic top 5", summary?.semantic_same_family_top5_rate],
       ["High-risk min", summary?.high_risk_primary_accuracy_min],
       ["High-conf accuracy", summary?.high_confidence_primary_accuracy],
+      ["Evidence coverage", summary?.tag_evidence_presence_rate],
       ["Placement", summary?.placement_destination_accuracy],
       ["Privacy", summary?.privacy_accuracy],
       ["Review route", summary?.review_routing_accuracy]

@@ -44,6 +44,7 @@ DEFAULT_ACCEPTANCE_THRESHOLDS = {
     "semantic_same_family_top5_rate": 0.80,
     "llm_structured_output_validity_rate": 1.0,
     "invalid_primary_tag_count": 0,
+    "tag_evidence_presence_rate": 1.0,
     "model_usage_required_fields_tracked": 1.0,
     "external_model_usage_tracked": 1.0,
     "sensitive_false_accepts": 0,
@@ -337,6 +338,7 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
         "route_status": route_status,
         "review_reason": final_result.get("review_reason"),
         "tag_confidence": final_result.get("tag_confidence"),
+        "tag_evidence": _string_list(final_result.get("tag_evidence", [])),
         "confidence_bucket": _confidence_bucket(final_result.get("tag_confidence")),
         "embedding_status": final_result.get("embedding_status"),
         "llm_status": llm_status,
@@ -403,6 +405,7 @@ def _summary(
         "high_confidence_primary_accuracy": (confidence_bucket_metrics.get("high") or {}).get("primary_accuracy"),
         "high_confidence_false_accepts": (confidence_bucket_metrics.get("high") or {}).get("false_accepts"),
         "invalid_primary_tag_count": _invalid_primary_tag_count(evaluated, taxonomy_path),
+        "tag_evidence_presence_rate": _safe_divide(totals["tag_evidence_present"], totals["tag_evidence_expected"]),
         "source_file_mutations": totals["source_file_mutations"],
     }
     production_status_counts = _production_status_counts(evaluated)
@@ -547,6 +550,8 @@ def _production_next_actions(
         actions.append("Fix structured LLM tag output validation; invalid model responses must not produce accepted tags.")
     if "invalid_primary_tag_count" in blocking_reasons:
         actions.append("Fix tag validation so no result persists a primary tag outside the active taxonomy.")
+    if "tag_evidence_presence_rate" in blocking_reasons:
+        actions.append("Ensure every persisted tag decision includes human-readable evidence.")
     if "model_usage_required_fields_tracked" in blocking_reasons:
         actions.append("Complete model usage lineage for every model call: provider, model, purpose, status, runtime, and cost basis.")
     if "privacy_accuracy" in blocking_reasons or "sensitive_false_accepts" in blocking_reasons:
@@ -609,6 +614,7 @@ def _acceptance_gate(metrics: dict[str, Any], model_usage: dict[str, Any], golde
         _minimum_check("semantic_same_family_top5_rate", metrics.get("semantic_same_family_top5_rate"), DEFAULT_ACCEPTANCE_THRESHOLDS["semantic_same_family_top5_rate"]),
         _minimum_check("llm_structured_output_validity_rate", metrics.get("llm_structured_output_validity_rate"), DEFAULT_ACCEPTANCE_THRESHOLDS["llm_structured_output_validity_rate"]),
         _maximum_check("invalid_primary_tag_count", metrics.get("invalid_primary_tag_count"), DEFAULT_ACCEPTANCE_THRESHOLDS["invalid_primary_tag_count"]),
+        _minimum_check("tag_evidence_presence_rate", metrics.get("tag_evidence_presence_rate"), DEFAULT_ACCEPTANCE_THRESHOLDS["tag_evidence_presence_rate"]),
         _minimum_check(
             "model_usage_required_fields_tracked",
             model_usage.get("required_field_completeness_rate"),
@@ -686,6 +692,10 @@ def _maximum_check(name: str, value: Any, threshold: float) -> dict[str, Any]:
 def _update_totals(totals: Counter, row: dict[str, Any], label: GoldenEvalLabel) -> None:
     if row["primary_correct"]:
         totals["primary_correct"] += 1
+    if row.get("predicted_primary_tag"):
+        totals["tag_evidence_expected"] += 1
+        if row.get("tag_evidence"):
+            totals["tag_evidence_present"] += 1
     totals["secondary_true_positive"] += int(row["secondary_true_positive"])
     totals["secondary_false_positive"] += int(row["secondary_false_positive"])
     totals["secondary_false_negative"] += int(row["secondary_false_negative"])
