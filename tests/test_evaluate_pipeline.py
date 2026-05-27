@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import sys
 from pathlib import Path
 
 from sunshine_extraction.embeddings import PlaceholderEmbeddingProvider
-from sunshine_extraction.evaluate_pipeline import run_golden_pipeline_evaluation
+from sunshine_extraction.evaluate_pipeline import _parse_args, run_golden_pipeline_evaluation
 from sunshine_extraction.sample_pipeline import LLMTagInspector
 
 
@@ -25,6 +26,12 @@ class _TeaLLMTagInspector(LLMTagInspector):
             "needs_review": False,
             "warning": None,
         }
+
+
+def test_pipeline_eval_cli_accepts_documented_golden_labels_alias(monkeypatch) -> None:
+    monkeypatch.setattr(sys, "argv", ["evaluate_pipeline", "--golden-labels", "/tmp/labels.sqlite"])
+    args = _parse_args()
+    assert args.labels_db == "/tmp/labels.sqlite"
 
 
 def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Path) -> None:

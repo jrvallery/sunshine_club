@@ -1194,7 +1194,7 @@ def _safe_divide(numerator: int, denominator: int) -> float | None:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the Sunshine graph against golden labels and emit eval artifacts.")
-    parser.add_argument("--labels", "--labels-db", dest="labels_db", default=DEFAULT_LABELS_DB)
+    parser.add_argument("--labels", "--labels-db", "--golden-labels", dest="labels_db", default=DEFAULT_LABELS_DB)
     parser.add_argument("--output-dir", default=DEFAULT_EVAL_OUTPUT_DIR)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--taxonomy-path", default=DEFAULT_TAXONOMY_PATH)
