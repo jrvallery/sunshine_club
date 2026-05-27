@@ -27,6 +27,7 @@ export type ReviewItem = {
   warnings: string[];
   display_warnings?: string[];
   ocr_evidence?: OcrEvidence;
+  ocr_quality_label?: string | null;
   run_id?: number | null;
   run_key?: string | null;
   run_preset_key?: string | null;

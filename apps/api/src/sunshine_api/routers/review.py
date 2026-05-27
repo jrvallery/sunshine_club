@@ -23,6 +23,7 @@ from sunshine_api.schemas import (
     ReviewAssignRequest,
     ReviewDecisionRequest,
     ReviewImportRequest,
+    ReviewOcrQualityRequest,
     RunStartRequest,
     SemanticEvalRequest,
     SemanticIndexBuildRequest,
@@ -366,6 +367,19 @@ def record_review_decision(item_id: int, request: ReviewDecisionRequest) -> dict
         reviewer=request.reviewer,
         save_as_golden=request.save_as_golden,
     )
+
+
+@router.post("/admin/review/items/{item_id}/ocr-quality")
+def mark_review_ocr_quality(item_id: int, request: ReviewOcrQualityRequest) -> dict[str, Any]:
+    try:
+        return review_store().mark_ocr_quality(
+            item_id,
+            ocr_quality_label=request.ocr_quality_label,
+            review_stage=request.review_stage,
+            notes=request.notes,
+        )
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @router.post("/admin/review/items/{item_id}/assign")

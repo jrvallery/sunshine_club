@@ -136,9 +136,9 @@ class ReviewStore:
                         """
                         insert into review_items (
                             source_path, relative_path, route_status, review_reason, status,
-                            proposed_class, proposed_tag, secondary_tags_json, extraction_text_snippet, confidence, warnings_json, result_json
+                            proposed_class, proposed_tag, secondary_tags_json, extraction_text_snippet, confidence, warnings_json, result_json, ocr_quality_label
                             , run_id, run_key, run_preset_key, embedding_provider, llm_tag_provider, ocr_fallback_provider, enable_llm_tags
-                        ) values (?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) values (?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         on conflict(source_path) do update set
                             relative_path=excluded.relative_path,
                             route_status=excluded.route_status,
@@ -150,6 +150,7 @@ class ReviewStore:
                             confidence=excluded.confidence,
                             warnings_json=excluded.warnings_json,
                             result_json=excluded.result_json,
+                            ocr_quality_label=coalesce(review_items.ocr_quality_label, excluded.ocr_quality_label),
                             run_id=excluded.run_id,
                             run_key=excluded.run_key,
                             run_preset_key=excluded.run_preset_key,
@@ -171,6 +172,7 @@ class ReviewStore:
                             result.get("tag_confidence"),
                             json.dumps(result.get("warnings", []), sort_keys=True),
                             json.dumps(result, sort_keys=True),
+                            result.get("quality"),
                             run_snapshot.get("run_id"),
                             run_snapshot.get("run_key"),
                             run_snapshot.get("run_preset_key"),
@@ -249,7 +251,7 @@ class ReviewStore:
                 select id, source_path, relative_path, route_status, review_reason, status,
                        proposed_class, proposed_tag, secondary_tags_json, extraction_text_snippet, confidence, warnings_json, result_json,
                        run_id, run_key, run_preset_key, embedding_provider, llm_tag_provider, ocr_fallback_provider, enable_llm_tags,
-                       decision, correct_class, correct_tag, correct_secondary_tags_json, correct_destination_path,
+                       ocr_quality_label, decision, correct_class, correct_tag, correct_secondary_tags_json, correct_destination_path,
                        correct_placement_year, correct_privacy, review_stage, priority, assigned_reviewer, notes, created_at, updated_at
                 from review_items
                 where coalesce(json_extract(result_json, '$.placement_status'), '') in ('missing_date', 'needs_review', 'unresolved')
@@ -307,7 +309,7 @@ class ReviewStore:
             select id, source_path, relative_path, route_status, review_reason, status,
                    proposed_class, proposed_tag, secondary_tags_json, extraction_text_snippet, confidence, warnings_json, result_json,
                    run_id, run_key, run_preset_key, embedding_provider, llm_tag_provider, ocr_fallback_provider, enable_llm_tags,
-                   decision, correct_class, correct_tag, correct_secondary_tags_json, correct_destination_path,
+                   ocr_quality_label, decision, correct_class, correct_tag, correct_secondary_tags_json, correct_destination_path,
                    correct_placement_year, correct_privacy, review_stage, priority, assigned_reviewer, notes, created_at, updated_at
             from review_items
         """
@@ -678,7 +680,7 @@ class ReviewStore:
                 select id, source_path, relative_path, route_status, review_reason, status,
                        proposed_class, proposed_tag, secondary_tags_json, extraction_text_snippet, confidence, warnings_json, result_json,
                        run_id, run_key, run_preset_key, embedding_provider, llm_tag_provider, ocr_fallback_provider, enable_llm_tags,
-                       decision, correct_class, correct_tag, correct_secondary_tags_json, correct_destination_path,
+                       ocr_quality_label, decision, correct_class, correct_tag, correct_secondary_tags_json, correct_destination_path,
                        correct_placement_year, correct_privacy, review_stage, priority, assigned_reviewer, notes, created_at, updated_at
                 from review_items
                 where source_path = ?
@@ -876,7 +878,7 @@ class ReviewStore:
             existing = connection.execute(
                 """
                 select id, source_path, relative_path, route_status, proposed_class, proposed_tag,
-                       secondary_tags_json, extraction_text_snippet, confidence, result_json
+                       secondary_tags_json, extraction_text_snippet, confidence, ocr_quality_label, result_json
                 from review_items where id = ?
                 """,
                 (item_id,),
@@ -896,6 +898,7 @@ class ReviewStore:
                 """
                 update review_items
                 set decision = ?, correct_class = ?, correct_tag = ?, correct_secondary_tags_json = ?,
+                    ocr_quality_label = coalesce(?, ocr_quality_label),
                     correct_destination_path = ?, correct_placement_year = ?, correct_privacy = ?,
                     review_stage = ?, notes = ?, status = ?, updated_at = datetime('now')
                 where id = ?
@@ -905,6 +908,7 @@ class ReviewStore:
                     correct_class,
                     resolved_tag,
                     json.dumps(resolved_secondary_tags, sort_keys=True),
+                    ocr_quality_label,
                     correct_destination_path,
                     correct_placement_year,
                     correct_privacy,
@@ -917,7 +921,7 @@ class ReviewStore:
             if save_as_golden and decision in {"accept", "change"} and resolved_tag:
                 result = _json_object(existing["result_json"])
                 resolved_content_class = correct_class or existing["proposed_class"]
-                resolved_ocr_quality = ocr_quality_label or result.get("quality")
+                resolved_ocr_quality = ocr_quality_label or existing["ocr_quality_label"] or result.get("quality")
                 resolved_expected_review_required = (
                     expected_review_required
                     if expected_review_required is not None
@@ -980,7 +984,47 @@ class ReviewStore:
                 select id, source_path, relative_path, route_status, review_reason, status,
                        proposed_class, proposed_tag, secondary_tags_json, extraction_text_snippet, confidence, warnings_json, result_json,
                        run_id, run_key, run_preset_key, embedding_provider, llm_tag_provider, ocr_fallback_provider, enable_llm_tags,
-                       decision, correct_class, correct_tag, correct_secondary_tags_json, correct_destination_path,
+                       ocr_quality_label, decision, correct_class, correct_tag, correct_secondary_tags_json, correct_destination_path,
+                       correct_placement_year, correct_privacy, review_stage, priority, assigned_reviewer, notes, created_at, updated_at
+                from review_items where id = ?
+                """,
+                (item_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"review item {item_id} not found")
+            return _review_item_from_row(row, model_usage_summary=_review_item_model_usage_summary(connection, row))
+
+    def mark_ocr_quality(
+        self,
+        item_id: int,
+        *,
+        ocr_quality_label: str,
+        review_stage: str | None = "needs_ocr_review",
+        notes: str | None = None,
+    ) -> dict[str, Any]:
+        with self._connect() as connection:
+            existing = connection.execute("select id, notes from review_items where id = ?", (item_id,)).fetchone()
+            if existing is None:
+                raise KeyError(f"review item {item_id} not found")
+            merged_notes = _append_review_note(existing["notes"], notes)
+            connection.execute(
+                """
+                update review_items
+                set ocr_quality_label = ?,
+                    review_stage = coalesce(?, review_stage),
+                    notes = ?,
+                    status = 'open',
+                    updated_at = datetime('now')
+                where id = ?
+                """,
+                (ocr_quality_label, review_stage, merged_notes, item_id),
+            )
+            row = connection.execute(
+                """
+                select id, source_path, relative_path, route_status, review_reason, status,
+                       proposed_class, proposed_tag, secondary_tags_json, extraction_text_snippet, confidence, warnings_json, result_json,
+                       run_id, run_key, run_preset_key, embedding_provider, llm_tag_provider, ocr_fallback_provider, enable_llm_tags,
+                       ocr_quality_label, decision, correct_class, correct_tag, correct_secondary_tags_json, correct_destination_path,
                        correct_placement_year, correct_privacy, review_stage, priority, assigned_reviewer, notes, created_at, updated_at
                 from review_items where id = ?
                 """,
@@ -997,7 +1041,7 @@ class ReviewStore:
                 select id, source_path, relative_path, route_status, review_reason, status,
                        proposed_class, proposed_tag, secondary_tags_json, extraction_text_snippet, confidence, warnings_json, result_json,
                        run_id, run_key, run_preset_key, embedding_provider, llm_tag_provider, ocr_fallback_provider, enable_llm_tags,
-                       decision, correct_class, correct_tag, correct_secondary_tags_json, correct_destination_path,
+                       ocr_quality_label, decision, correct_class, correct_tag, correct_secondary_tags_json, correct_destination_path,
                        correct_placement_year, correct_privacy, review_stage, priority, assigned_reviewer, notes, created_at, updated_at
                 from review_items where id = ?
                 """,
@@ -1742,6 +1786,7 @@ class ReviewStore:
                     confidence real,
                     warnings_json text not null,
                     result_json text not null,
+                    ocr_quality_label text,
                     decision text,
                     correct_class text,
                     correct_tag text,
@@ -1907,6 +1952,7 @@ class ReviewStore:
             _ensure_column(connection, "pipeline_results", "extraction_text_snippet", "extraction_text_snippet text")
             _ensure_column(connection, "review_items", "secondary_tags_json", "secondary_tags_json text not null default '[]'")
             _ensure_column(connection, "review_items", "extraction_text_snippet", "extraction_text_snippet text")
+            _ensure_column(connection, "review_items", "ocr_quality_label", "ocr_quality_label text")
             _ensure_column(connection, "review_items", "correct_secondary_tags_json", "correct_secondary_tags_json text not null default '[]'")
             _ensure_column(connection, "review_items", "correct_destination_path", "correct_destination_path text")
             _ensure_column(connection, "review_items", "correct_placement_year", "correct_placement_year text")
@@ -2058,6 +2104,15 @@ def _safe_divide(numerator: int, denominator: int) -> float | None:
     if denominator <= 0:
         return None
     return round(numerator / denominator, 4)
+
+
+def _append_review_note(existing: str | None, note: str | None) -> str | None:
+    clean_note = (note or "").strip()
+    if not clean_note:
+        return existing
+    if not existing:
+        return clean_note
+    return f"{existing.rstrip()}\n{clean_note}"
 
 
 def _extraction_text_snippet(extraction_row: dict[str, Any] | None, *, max_chars: int = 360) -> str | None:
@@ -2224,6 +2279,7 @@ def _review_item_from_row(row: sqlite3.Row, *, model_usage_summary: dict[str, An
         "warnings": _json_list(row["warnings_json"]),
         "display_warnings": _display_warnings(_json_list(row["warnings_json"])),
         "ocr_evidence": _ocr_evidence_from_result(result, row["extraction_text_snippet"]),
+        "ocr_quality_label": _row_value(row, "ocr_quality_label"),
         "run_id": _row_value(row, "run_id"),
         "run_key": _row_value(row, "run_key"),
         "run_preset_key": _row_value(row, "run_preset_key"),

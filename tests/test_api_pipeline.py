@@ -247,6 +247,10 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     low_confidence_items = client.get("/admin/review/items", params={"status": "all", "confidence_bucket": "low"})
     item_id = items.json()[0]["id"]
     item_detail = client.get(f"/admin/review/items/{item_id}")
+    ocr_poor = client.post(
+        f"/admin/review/items/{item_id}/ocr-quality",
+        json={"ocr_quality_label": "poor", "review_stage": "needs_ocr_review", "notes": "OCR is unreadable."},
+    )
     review_facets = client.get("/admin/review/facets", params={"status": "all"})
     assigned_item = client.post(
         f"/admin/review/items/{item_id}/assign",
@@ -444,6 +448,10 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert low_confidence_items.json()[0]["confidence"] == 0.52
     assert item_detail.status_code == 200
     assert item_detail.json()["id"] == item_id
+    assert ocr_poor.status_code == 200
+    assert ocr_poor.json()["ocr_quality_label"] == "poor"
+    assert ocr_poor.json()["review_stage"] == "needs_ocr_review"
+    assert "OCR is unreadable." in ocr_poor.json()["notes"]
     assert review_facets.status_code == 200
     assert review_facets.json()["review_reason"]["tag_confidence_below_threshold"] == 1
     assert review_facets.json()["confidence_bucket"]["low"] == 1
@@ -462,6 +470,7 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert golden_labels.status_code == 200
     assert golden_labels.json()[0]["correct_primary_tag"] == "annual_spring_tea"
     assert golden_labels.json()[0]["correct_secondary_tags"] == ["event_material"]
+    assert golden_labels.json()[0]["ocr_quality_label"] == "poor"
     assert golden_export_csv.status_code == 200
     assert "correct_primary_tag" in golden_export_csv.text
     assert "annual_spring_tea" in golden_export_csv.text

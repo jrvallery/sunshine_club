@@ -87,6 +87,12 @@ class ReviewAssignRequest(BaseModel):
     priority: str | None = None
 
 
+class ReviewOcrQualityRequest(BaseModel):
+    ocr_quality_label: str = "poor"
+    review_stage: str | None = "needs_ocr_review"
+    notes: str | None = None
+
+
 class RunStartRequest(BaseModel):
     preset_key: str
     input_root: str | None = None

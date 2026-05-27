@@ -182,6 +182,17 @@ export default function ReviewPage() {
       await queryClient.invalidateQueries({ queryKey: ["review-items"] });
     }
   });
+  const ocrQualityMutation = useMutation({
+    mutationFn: (payload: { id: number; body: Record<string, unknown> }) =>
+      postJson<ReviewItem>(`/api/admin/review/items/${payload.id}/ocr-quality`, payload.body),
+    onSuccess: async (item) => {
+      setSelected(item);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["review-items"] }),
+        queryClient.invalidateQueries({ queryKey: ["review-facets"] })
+      ]);
+    }
+  });
   const columns = useMemo<ColumnDef<ReviewItem>[]>(
     () => [
       {
@@ -320,10 +331,11 @@ export default function ReviewPage() {
         <ReviewDrawer
           item={selected}
           saving={decision.isPending}
-          assigning={assignment.isPending}
+          assigning={assignment.isPending || ocrQualityMutation.isPending}
           onClose={() => setSelected(null)}
           onSubmit={(body) => decision.mutate({ id: selected.id, body })}
           onAssign={(body) => assignment.mutate({ id: selected.id, body })}
+          onMarkOcrPoor={(body) => ocrQualityMutation.mutate({ id: selected.id, body })}
         />
       ) : null}
     </main>
@@ -336,7 +348,8 @@ function ReviewDrawer({
   assigning,
   onClose,
   onSubmit,
-  onAssign
+  onAssign,
+  onMarkOcrPoor
 }: {
   item: ReviewItem;
   saving: boolean;
@@ -344,6 +357,7 @@ function ReviewDrawer({
   onClose: () => void;
   onSubmit: (body: Record<string, unknown>) => void;
   onAssign: (body: Record<string, unknown>) => void;
+  onMarkOcrPoor: (body: Record<string, unknown>) => void;
 }) {
   const [decision, setDecision] = useState("accept");
   const [correctClass, setCorrectClass] = useState(item.correct_class ?? item.proposed_class ?? "");
@@ -399,11 +413,29 @@ function ReviewDrawer({
         </section>
         <section>
           <h3>OCR / Text</h3>
+          <KeyValue label="Reviewer OCR label" value={item.ocr_quality_label ?? "-"} />
           <OcrEvidencePanel
             evidence={item.ocr_evidence ?? item.result.ocr_evidence}
             fallbackText={item.extraction_text_snippet}
             finalText={item.extraction_text_snippet}
           />
+          <div className="buttonRow">
+            <Button
+              disabled={assigning}
+              onClick={() => {
+                setOcrQuality("poor");
+                setExpectedReviewRequired(true);
+                setReviewStage("needs_ocr_review");
+                onMarkOcrPoor({
+                  ocr_quality_label: "poor",
+                  review_stage: "needs_ocr_review",
+                  notes: "Marked OCR poor from review dashboard."
+                });
+              }}
+            >
+              Mark OCR Poor
+            </Button>
+          </div>
         </section>
         <section>
           <h3>Tagging</h3>
