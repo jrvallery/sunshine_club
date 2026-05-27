@@ -301,21 +301,17 @@ export default function ReviewPage() {
         <ResultTableShell>
           <DataTable table={table} loading={items.isLoading} emptyText="No review items match these filters." />
         </ResultTableShell>
-        {selected ? (
-          <ReviewDrawer
-            item={selected}
-            saving={decision.isPending}
-            assigning={assignment.isPending}
-            onClose={() => setSelected(null)}
-            onSubmit={(body) => decision.mutate({ id: selected.id, body })}
-            onAssign={(body) => assignment.mutate({ id: selected.id, body })}
-          />
-        ) : (
-          <div className="reviewInspector">
-            <div className="empty">Select a review item to inspect it.</div>
-          </div>
-        )}
       </section>
+      {selected ? (
+        <ReviewDrawer
+          item={selected}
+          saving={decision.isPending}
+          assigning={assignment.isPending}
+          onClose={() => setSelected(null)}
+          onSubmit={(body) => decision.mutate({ id: selected.id, body })}
+          onAssign={(body) => assignment.mutate({ id: selected.id, body })}
+        />
+      ) : null}
     </main>
   );
 }

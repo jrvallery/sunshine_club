@@ -649,9 +649,8 @@ td:first-child {
 
 .pathCell strong,
 .pathCell span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .cellStack {
@@ -786,7 +785,7 @@ td:first-child {
   align-items: start;
   display: grid;
   gap: 14px;
-  grid-template-columns: 260px minmax(0, 1fr) minmax(300px, 430px);
+  grid-template-columns: 260px minmax(0, 1fr);
   margin-top: 14px;
 }
 
