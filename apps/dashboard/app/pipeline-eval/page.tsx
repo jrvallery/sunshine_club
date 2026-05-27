@@ -311,6 +311,7 @@ export default function PipelineEvalPage() {
               <KeyValue label="High-conf false accepts" value={String(summary?.high_confidence_false_accepts ?? 0)} />
               <KeyValue label="Low-conf false accepts" value={String(summary?.low_confidence_false_accepts ?? 0)} />
               <KeyValue label="Low-conf accepted" value={String(summary?.low_confidence_accepted_count ?? 0)} />
+              <KeyValue label="Medium-conf unexplained" value={String(summary?.medium_confidence_unexplained_count ?? 0)} />
               <KeyValue label="Sensitive med/low accepts" value={String(summary?.sensitive_medium_low_confidence_accepts ?? 0)} />
               <KeyValue label="Invalid primary tags" value={String(summary?.invalid_primary_tag_count ?? 0)} />
             </section>

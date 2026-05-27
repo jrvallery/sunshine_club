@@ -43,6 +43,7 @@ DEFAULT_ACCEPTANCE_THRESHOLDS = {
     "high_confidence_false_accepts": 0,
     "low_confidence_false_accepts": 0,
     "low_confidence_accepted_count": 0,
+    "medium_confidence_unexplained_count": 0,
     "semantic_same_family_top5_rate": 0.80,
     "llm_structured_output_validity_rate": 1.0,
     "invalid_primary_tag_count": 0,
@@ -286,6 +287,22 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
     privacy_correct = None
     if label.correct_privacy:
         privacy_correct = final_result.get("default_privacy") == label.correct_privacy
+    confidence_calibration = final_result.get("confidence_calibration") if isinstance(final_result.get("confidence_calibration"), dict) else {}
+    confidence_calibration_factors = _string_list(
+        confidence_calibration.get("factors")
+        or final_result.get("confidence_calibration_factors")
+        or []
+    )
+    uncertainty_explanation = (
+        confidence_calibration.get("review_reason")
+        or confidence_calibration.get("calibrated_review_reason")
+        or final_result.get("calibrated_review_reason")
+        or final_result.get("review_reason")
+    )
+    confidence_bucket = _confidence_bucket(final_result.get("tag_confidence"))
+    medium_confidence_uncertainty_explained = None
+    if confidence_bucket == "medium":
+        medium_confidence_uncertainty_explained = bool(confidence_calibration_factors or str(uncertainty_explanation or "").strip())
 
     failure_reasons = []
     if not primary_correct:
@@ -345,7 +362,10 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
         "review_reason": final_result.get("review_reason"),
         "tag_confidence": final_result.get("tag_confidence"),
         "tag_evidence": _string_list(final_result.get("tag_evidence", [])),
-        "confidence_bucket": _confidence_bucket(final_result.get("tag_confidence")),
+        "confidence_bucket": confidence_bucket,
+        "confidence_calibration_factors": confidence_calibration_factors,
+        "confidence_uncertainty_explanation": uncertainty_explanation,
+        "medium_confidence_uncertainty_explained": medium_confidence_uncertainty_explained,
         "embedding_status": final_result.get("embedding_status"),
         "llm_status": llm_status,
         "llm_structured_output_valid": llm_structured_output_valid,
@@ -413,6 +433,7 @@ def _summary(
         "high_confidence_false_accepts": (confidence_bucket_metrics.get("high") or {}).get("false_accepts"),
         "low_confidence_false_accepts": (confidence_bucket_metrics.get("low") or {}).get("false_accepts", 0),
         "low_confidence_accepted_count": (confidence_bucket_metrics.get("low") or {}).get("accepted", 0),
+        "medium_confidence_unexplained_count": totals["medium_confidence_unexplained"],
         "invalid_primary_tag_count": _invalid_primary_tag_count(evaluated, taxonomy_path),
         "tag_evidence_presence_rate": _safe_divide(totals["tag_evidence_present"], totals["tag_evidence_expected"]),
         "source_file_mutations": totals["source_file_mutations"],
@@ -548,6 +569,8 @@ def _production_next_actions(
         actions.append("Route low-confidence predictions to review; low-confidence accepted items are not production-safe.")
     if "low_confidence_accepted_count" in blocking_reasons:
         actions.append("Route all low-confidence predictions to review before production use.")
+    if "medium_confidence_unexplained_count" in blocking_reasons:
+        actions.append("Add confidence calibration factors or review reasons for every medium-confidence prediction.")
     if "content_class_accuracy" in blocking_reasons:
         actions.append("Fix content-class classifier errors before trusting downstream extraction strategy.")
     if "ocr_quality_accuracy" in blocking_reasons:
@@ -629,6 +652,7 @@ def _acceptance_gate(metrics: dict[str, Any], model_usage: dict[str, Any], golde
         _maximum_check("high_confidence_false_accepts", metrics.get("high_confidence_false_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["high_confidence_false_accepts"]),
         _maximum_check("low_confidence_false_accepts", metrics.get("low_confidence_false_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["low_confidence_false_accepts"]),
         _maximum_check("low_confidence_accepted_count", metrics.get("low_confidence_accepted_count"), DEFAULT_ACCEPTANCE_THRESHOLDS["low_confidence_accepted_count"]),
+        _maximum_check("medium_confidence_unexplained_count", metrics.get("medium_confidence_unexplained_count"), DEFAULT_ACCEPTANCE_THRESHOLDS["medium_confidence_unexplained_count"]),
         _minimum_check("semantic_same_family_top5_rate", metrics.get("semantic_same_family_top5_rate"), DEFAULT_ACCEPTANCE_THRESHOLDS["semantic_same_family_top5_rate"]),
         _minimum_check("llm_structured_output_validity_rate", metrics.get("llm_structured_output_validity_rate"), DEFAULT_ACCEPTANCE_THRESHOLDS["llm_structured_output_validity_rate"]),
         _maximum_check("invalid_primary_tag_count", metrics.get("invalid_primary_tag_count"), DEFAULT_ACCEPTANCE_THRESHOLDS["invalid_primary_tag_count"]),
@@ -772,6 +796,8 @@ def _update_totals(totals: Counter, row: dict[str, Any], label: GoldenEvalLabel)
         totals["sensitive_false_accepts"] += 1
     if label.sensitive_record and not row["predicted_review_required"] and row.get("confidence_bucket") in {"medium", "low"}:
         totals["sensitive_medium_low_confidence_accepts"] += 1
+    if row.get("confidence_bucket") == "medium" and row.get("medium_confidence_uncertainty_explained") is False:
+        totals["medium_confidence_unexplained"] += 1
 
 
 def _primary_tag_metrics(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:

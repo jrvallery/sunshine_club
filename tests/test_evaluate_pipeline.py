@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from sunshine_extraction.embeddings import PlaceholderEmbeddingProvider
-from sunshine_extraction.evaluate_pipeline import _parse_args, run_golden_pipeline_evaluation
+from sunshine_extraction.evaluate_pipeline import GoldenEvalLabel, _evaluation_row, _parse_args, run_golden_pipeline_evaluation
 from sunshine_extraction.sample_pipeline import LLMTagInspector
 
 
@@ -32,6 +32,54 @@ def test_pipeline_eval_cli_accepts_documented_golden_labels_alias(monkeypatch) -
     monkeypatch.setattr(sys, "argv", ["evaluate_pipeline", "--golden-labels", "/tmp/labels.sqlite"])
     args = _parse_args()
     assert args.labels_db == "/tmp/labels.sqlite"
+
+
+def test_eval_row_requires_uncertainty_evidence_for_medium_confidence(tmp_path: Path) -> None:
+    label = GoldenEvalLabel(
+        id=1,
+        source_path="/source/history.pdf",
+        relative_path="history.pdf",
+        sample_path=None,
+        correct_primary_tag="history_archive_general",
+        correct_secondary_tags=[],
+        content_class="document",
+        ocr_quality_label="ok",
+        expected_review_required=False,
+        sensitive_record=False,
+        correct_destination_path=None,
+        correct_placement_year=None,
+        correct_privacy=None,
+        reviewer="tester",
+        reviewed_at="2026-05-27T00:00:00Z",
+        notes=None,
+    )
+    base_result = {
+        "top_tag_candidate": "history_archive_general",
+        "secondary_tags": [],
+        "final_class": "document",
+        "quality": "ok",
+        "route_status": "route_candidate",
+        "tag_confidence": 0.72,
+        "tag_evidence": ["matched history"],
+    }
+
+    unexplained = _evaluation_row(label, base_result, tmp_path)
+    explained = _evaluation_row(
+        label,
+        {
+            **base_result,
+            "confidence_calibration": {
+                "factors": ["semantic_examples_weak"],
+                "review_reason": "medium confidence because retrieved examples were weak",
+            },
+        },
+        tmp_path,
+    )
+
+    assert unexplained["confidence_bucket"] == "medium"
+    assert unexplained["medium_confidence_uncertainty_explained"] is False
+    assert explained["medium_confidence_uncertainty_explained"] is True
+    assert explained["confidence_calibration_factors"] == ["semantic_examples_weak"]
 
 
 def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Path) -> None:
@@ -140,6 +188,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert summary["high_confidence_false_accepts"] == 0
     assert summary["low_confidence_false_accepts"] == 0
     assert summary["low_confidence_accepted_count"] == 0
+    assert summary["medium_confidence_unexplained_count"] == 0
     assert summary["invalid_primary_tag_count"] == 0
     assert summary["tag_evidence_presence_rate"] == 1.0
     assert summary["source_file_mutations"] == 0
@@ -181,6 +230,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "placement_year_accuracy")["status"] == "not_evaluated"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "low_confidence_false_accepts")["status"] == "pass"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "low_confidence_accepted_count")["status"] == "pass"
+    assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "medium_confidence_unexplained_count")["status"] == "pass"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "sensitive_medium_low_confidence_accepts")["status"] == "pass"
     assert summary["production_readiness"]["status"] == "not_ready"
     assert summary["production_readiness"]["larger_batch_allowed"] is False

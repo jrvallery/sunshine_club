@@ -462,6 +462,7 @@ export type PipelineEvalSummary = {
   high_confidence_false_accepts?: number;
   low_confidence_false_accepts?: number;
   low_confidence_accepted_count?: number;
+  medium_confidence_unexplained_count?: number;
   invalid_primary_tag_count?: number;
   tag_evidence_presence_rate?: number | null;
   embedding_success_rate?: number | null;
