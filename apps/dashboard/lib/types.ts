@@ -285,6 +285,7 @@ export type RunArtifact = {
   size_bytes?: number | null;
   modified_at?: string | null;
   row_count?: number | null;
+  sha256?: string | null;
 };
 
 export type RunModelUsageCall = {

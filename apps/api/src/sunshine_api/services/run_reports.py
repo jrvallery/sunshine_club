@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
 import json
 import os
 import re
@@ -157,9 +158,18 @@ def _run_artifacts(output_dir: Path) -> list[dict[str, Any]]:
                 "size_bytes": stat.st_size if stat else None,
                 "modified_at": datetime.fromtimestamp(stat.st_mtime, UTC).isoformat() if stat else None,
                 "row_count": row_count,
+                "sha256": _sha256(path) if exists else None,
             }
         )
     return artifacts
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as input_file:
+        for chunk in iter(lambda: input_file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _training_cycle_metrics(
@@ -249,4 +259,3 @@ def _result_file_rows(results: list[dict[str, Any]], *, limit: int) -> list[dict
             }
         )
     return rows
-

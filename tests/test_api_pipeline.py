@@ -588,6 +588,8 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert "top_tag_candidate" in run_comparison.json()["changed"][0]["changed_fields"]
     assert run_artifacts.status_code == 200
     assert any(artifact["name"] == "sample-pipeline-results.jsonl" and artifact["exists"] for artifact in run_artifacts.json()["artifacts"])
+    result_artifact = next(artifact for artifact in run_artifacts.json()["artifacts"] if artifact["name"] == "sample-pipeline-results.jsonl")
+    assert len(result_artifact["sha256"]) == 64
     assert run_model_usage.status_code == 200
     assert run_model_usage.json()["summary"]["total_calls"] == 2
     assert run_model_usage.json()["summary"]["failed_calls"] == 1
