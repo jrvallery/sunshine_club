@@ -338,6 +338,8 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
         failure_reasons.append("sensitive_medium_low_confidence_accept")
     if medium_confidence_uncertainty_explained is False:
         failure_reasons.append("medium_confidence_unexplained")
+    if _row_is_deferred(route_status, final_result.get("review_reason"), final_result.get("quality"), final_result.get("extraction_status")):
+        failure_reasons.append("extraction_deferred")
     if label.ocr_quality_label and final_result.get("quality") != label.ocr_quality_label:
         failure_reasons.append("ocr_quality_mismatch")
     if ocr_fallback_failed:
@@ -670,11 +672,21 @@ def _production_status(row: dict[str, Any]) -> str:
     failure_reasons = set(_string_list(row.get("failure_reasons")))
     if "missing_file" in failure_reasons or "failed" in route_status:
         return "failed"
-    if "defer" in route_status or "defer" in review_reason:
+    if "extraction_deferred" in failure_reasons or _row_is_deferred(route_status, review_reason, row.get("predicted_ocr_quality"), None):
         return "deferred"
     if route_status == "route_candidate" or row.get("predicted_review_required") is False:
         return "accepted"
     return "review_required"
+
+
+def _row_is_deferred(route_status: Any, review_reason: Any, quality: Any, extraction_status: Any) -> bool:
+    values = [
+        str(route_status or "").lower(),
+        str(review_reason or "").lower(),
+        str(quality or "").lower(),
+        str(extraction_status or "").lower(),
+    ]
+    return any("defer" in value or value == "deferred" for value in values)
 
 
 def _acceptance_gate(metrics: dict[str, Any], model_usage: dict[str, Any], golden_label_readiness: dict[str, Any]) -> dict[str, Any]:

@@ -136,6 +136,46 @@ def test_eval_row_marks_resolved_placement_unsafe_when_route_requires_review(tmp
     assert "unsafe_placement_proposal" in row["failure_reasons"]
 
 
+def test_eval_row_groups_deferred_extraction_as_failure(tmp_path: Path) -> None:
+    label = GoldenEvalLabel(
+        id=1,
+        source_path="/source/publisher.pub",
+        relative_path="publisher.pub",
+        sample_path=None,
+        correct_primary_tag="communications_templates",
+        correct_secondary_tags=[],
+        content_class="deferred_technical",
+        ocr_quality_label="deferred",
+        expected_review_required=True,
+        sensitive_record=False,
+        correct_destination_path=None,
+        correct_placement_year=None,
+        correct_privacy=None,
+        reviewer="tester",
+        reviewed_at="2026-05-27T00:00:00Z",
+        notes=None,
+    )
+
+    row = _evaluation_row(
+        label,
+        {
+            "top_tag_candidate": "communications_templates",
+            "final_class": "deferred_technical",
+            "quality": "deferred",
+            "extraction_status": "deferred_technical",
+            "route_status": "review_or_extraction_deferred",
+            "review_reason": "extractor_deferred",
+            "tag_confidence": 0.3,
+            "tag_evidence": ["deferred technical file"],
+        },
+        tmp_path,
+    )
+
+    assert row["primary_correct"] is True
+    assert row["predicted_review_required"] is True
+    assert "extraction_deferred" in row["failure_reasons"]
+
+
 def test_eval_row_groups_invalid_llm_structured_output_as_failure(tmp_path: Path) -> None:
     label = GoldenEvalLabel(
         id=1,
