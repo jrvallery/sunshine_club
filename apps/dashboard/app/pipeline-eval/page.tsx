@@ -57,6 +57,8 @@ export default function PipelineEvalPage() {
       ["Primary", summary?.primary_accuracy],
       ["Content class", summary?.content_class_accuracy],
       ["OCR quality", summary?.ocr_quality_accuracy],
+      ["Embedding success", summary?.embedding_success_rate],
+      ["Semantic top 5", summary?.semantic_same_family_top5_rate],
       ["Placement", summary?.placement_destination_accuracy],
       ["Privacy", summary?.privacy_accuracy],
       ["Review route", summary?.review_routing_accuracy]
@@ -117,6 +119,8 @@ export default function PipelineEvalPage() {
                 <th>Gate</th>
                 <th>Labels</th>
                 <th>Primary</th>
+                <th>Embeddings</th>
+                <th>Semantic</th>
                 <th>Placement</th>
                 <th>Failures</th>
                 <th>Updated</th>
@@ -136,6 +140,8 @@ export default function PipelineEvalPage() {
                   </td>
                   <td>{run.total_golden_labels ?? "-"}</td>
                   <td>{formatPercent(run.primary_accuracy)}</td>
+                  <td>{formatPercent(run.summary?.embedding_success_rate)}</td>
+                  <td>{formatPercent(run.summary?.semantic_same_family_top5_rate)}</td>
                   <td>{formatPercent(run.summary?.placement_destination_accuracy)}</td>
                   <td>{run.failure_count ?? "-"}</td>
                   <td>{run.updated_at}</td>
@@ -172,7 +178,16 @@ export default function PipelineEvalPage() {
               <h3>Model Usage</h3>
               <KeyValue label="Rows" value={String((summary?.model_usage?.total_model_usage_rows as number | undefined) ?? 0)} />
               <KeyValue label="External calls" value={String((summary?.model_usage?.external_call_count as number | undefined) ?? 0)} />
+              <KeyValue label="Embedding attempted" value={String((summary?.model_usage?.embedding_attempted_calls as number | undefined) ?? 0)} />
+              <KeyValue label="Embedding successful" value={String((summary?.model_usage?.embedding_successful_calls as number | undefined) ?? 0)} />
+              <KeyValue label="Placeholder embeddings" value={String((summary?.model_usage?.embedding_placeholder_calls as number | undefined) ?? 0)} />
+              <KeyValue label="Failed embeddings" value={String((summary?.model_usage?.embedding_failed_calls as number | undefined) ?? 0)} />
               <KeyValue label="Runtime ms" value={String((summary?.model_usage?.total_runtime_ms as number | undefined) ?? 0)} />
+            </section>
+            <section>
+              <h3>Retrieval</h3>
+              <KeyValue label="Same-family top 5" value={formatPercent(summary?.semantic_same_family_top5_rate)} />
+              <KeyValue label="Embedding success" value={formatPercent(summary?.embedding_success_rate)} />
             </section>
           </div>
           <div className="buttonRow">
@@ -204,6 +219,7 @@ function EvalRows({ rows }: { rows: Array<Record<string, unknown>> }) {
             <th>Predicted</th>
             <th>Reason</th>
             <th>Route</th>
+            <th>Semantic</th>
           </tr>
         </thead>
         <tbody>
@@ -214,6 +230,12 @@ function EvalRows({ rows }: { rows: Array<Record<string, unknown>> }) {
               <td>{String(row.predicted_primary_tag ?? row.predicted_destination_path ?? row.model ?? "-")}</td>
               <td>{Array.isArray(row.failure_reasons) ? row.failure_reasons.join(", ") : String(row.reason ?? row.purpose ?? "-")}</td>
               <td>{String(row.route_status ?? row.status ?? "-")}</td>
+              <td>
+                <div className="cellStack">
+                  <strong>{String(row.semantic_retrieval_quality ?? "-")}</strong>
+                  <span>{semanticDetail(row)}</span>
+                </div>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -236,4 +258,13 @@ function formatPercent(value: number | null | undefined) {
     return "-";
   }
   return `${Math.round(value * 100)}%`;
+}
+
+function semanticDetail(row: Record<string, unknown>) {
+  const count = row.semantic_same_family_top5_count;
+  const top = row.semantic_top1_primary_tag;
+  if (count === undefined && top === undefined) {
+    return "-";
+  }
+  return `same-family top5: ${String(count ?? 0)}; top1: ${String(top ?? "-")}`;
 }
