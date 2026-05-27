@@ -25,6 +25,13 @@ from sunshine_extraction.semantic_index import DEFAULT_INDEX_DB, DEFAULT_LABELS_
 
 
 DEFAULT_EVAL_OUTPUT_DIR = ".local/pipeline-eval"
+DEFAULT_ACCEPTANCE_THRESHOLDS = {
+    "content_class_accuracy": 0.95,
+    "primary_accuracy": 0.88,
+    "ocr_quality_accuracy": 0.90,
+    "external_model_usage_tracked": 1.0,
+    "sensitive_false_accepts": 0,
+}
 
 
 @dataclass(frozen=True)
@@ -252,13 +259,7 @@ def _summary(
 ) -> dict[str, Any]:
     total = len(evaluated)
     model_usage = _model_usage_summary(model_usage_rows)
-    return {
-        "labels_db": str(labels_db),
-        "output_dir": str(output_dir),
-        "total_golden_labels": len(labels),
-        "evaluated_predictions": total,
-        "missing_files": counters["by_failure_reason"].get("missing_file", 0),
-        "failure_count": len(failures),
+    metrics = {
         "primary_accuracy": _safe_divide(totals["primary_correct"], total),
         "content_class_accuracy": _safe_divide(totals["content_class_correct"], totals["content_class_labeled"]),
         "secondary_precision": _safe_divide(totals["secondary_true_positive"], totals["secondary_true_positive"] + totals["secondary_false_positive"]),
@@ -266,6 +267,15 @@ def _summary(
         "ocr_quality_accuracy": _safe_divide(totals["ocr_quality_correct"], totals["ocr_quality_labeled"]),
         "review_routing_accuracy": _safe_divide(totals["review_routing_correct"], totals["review_routing_labeled"]),
         "sensitive_false_accepts": totals["sensitive_false_accepts"],
+    }
+    return {
+        "labels_db": str(labels_db),
+        "output_dir": str(output_dir),
+        "total_golden_labels": len(labels),
+        "evaluated_predictions": total,
+        "missing_files": counters["by_failure_reason"].get("missing_file", 0),
+        "failure_count": len(failures),
+        **metrics,
         "review_required_count": totals["review_required"],
         "route_candidate_count": totals["route_candidate"],
         "confusion": confusion,
@@ -275,6 +285,7 @@ def _summary(
         "by_llm_status": dict(sorted(counters["by_llm_status"].items())),
         "by_failure_reason": dict(sorted(counters["by_failure_reason"].items())),
         "model_usage": model_usage,
+        "acceptance_gate": _acceptance_gate(metrics, model_usage),
         "artifacts": {
             "summary": str(output_dir / "eval-summary.json"),
             "results": str(output_dir / "eval-results.jsonl"),
@@ -283,6 +294,43 @@ def _summary(
             "model_usage": str(output_dir / "eval-model-usage.jsonl"),
         },
     }
+
+
+def _acceptance_gate(metrics: dict[str, Any], model_usage: dict[str, Any]) -> dict[str, Any]:
+    checks = [
+        _minimum_check("content_class_accuracy", metrics.get("content_class_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["content_class_accuracy"]),
+        _minimum_check("primary_accuracy", metrics.get("primary_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["primary_accuracy"]),
+        _minimum_check("ocr_quality_accuracy", metrics.get("ocr_quality_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["ocr_quality_accuracy"]),
+        _maximum_check("sensitive_false_accepts", metrics.get("sensitive_false_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["sensitive_false_accepts"]),
+        _minimum_check(
+            "external_model_usage_tracked",
+            1.0 if model_usage.get("unknown_external_cost_calls", 0) == 0 else 0.0,
+            DEFAULT_ACCEPTANCE_THRESHOLDS["external_model_usage_tracked"],
+        ),
+    ]
+    blocking = [check for check in checks if check["status"] != "pass"]
+    return {
+        "status": "pass" if not blocking else "fail",
+        "thresholds": DEFAULT_ACCEPTANCE_THRESHOLDS,
+        "checks": checks,
+        "blocking_checks": blocking,
+    }
+
+
+def _minimum_check(name: str, value: Any, threshold: float) -> dict[str, Any]:
+    if value is None:
+        status = "not_evaluated"
+    else:
+        status = "pass" if float(value) >= threshold else "fail"
+    return {"name": name, "operator": ">=", "value": value, "threshold": threshold, "status": status}
+
+
+def _maximum_check(name: str, value: Any, threshold: float) -> dict[str, Any]:
+    if value is None:
+        status = "not_evaluated"
+    else:
+        status = "pass" if float(value) <= threshold else "fail"
+    return {"name": name, "operator": "<=", "value": value, "threshold": threshold, "status": status}
 
 
 def _update_totals(totals: Counter, row: dict[str, Any], label: GoldenEvalLabel) -> None:
@@ -330,17 +378,22 @@ def _model_usage_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     by_purpose: Counter[str] = Counter()
     by_cost_basis: Counter[str] = Counter()
     runtime_ms = 0
+    unknown_external_cost_calls = 0
     for row in rows:
         by_provider[str(row.get("provider") or "unknown")] += 1
         by_purpose[str(row.get("purpose") or "unknown")] += 1
-        by_cost_basis[str(row.get("cost_basis") or "unknown")] += 1
+        cost_basis = str(row.get("cost_basis") or "unknown")
+        by_cost_basis[cost_basis] += 1
         runtime_ms += int(row.get("runtime_ms") or 0)
+        if cost_basis == "external" and row.get("estimated_cost_usd") is None:
+            unknown_external_cost_calls += 1
     return {
         "total_model_usage_rows": len(rows),
         "by_provider": dict(sorted(by_provider.items())),
         "by_purpose": dict(sorted(by_purpose.items())),
         "by_cost_basis": dict(sorted(by_cost_basis.items())),
         "external_call_count": sum(count for basis, count in by_cost_basis.items() if basis == "external"),
+        "unknown_external_cost_calls": unknown_external_cost_calls,
         "total_runtime_ms": runtime_ms,
         "external_cost": None,
         "external_cost_note": "Cost is unavailable unless provider token/cost metadata is present.",

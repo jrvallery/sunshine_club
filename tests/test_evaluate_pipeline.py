@@ -106,6 +106,11 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert summary["secondary_precision"] == 0.5
     assert summary["secondary_recall"] == 0.5
     assert summary["failure_count"] == 1
+    assert summary["acceptance_gate"]["status"] == "fail"
+    assert {check["name"] for check in summary["acceptance_gate"]["blocking_checks"]} == {
+        "primary_accuracy",
+        "sensitive_false_accepts",
+    }
     assert summary["by_failure_reason"] == {
         "primary_tag_mismatch": 1,
         "review_routing_mismatch": 1,
@@ -163,6 +168,7 @@ def test_golden_pipeline_evaluation_records_missing_files(tmp_path: Path) -> Non
     assert summary["missing_files"] == 1
     assert summary["failure_count"] == 1
     assert summary["primary_accuracy"] == 0.0
+    assert summary["acceptance_gate"]["status"] == "fail"
     results = [json.loads(line) for line in (output_dir / "eval-results.jsonl").read_text(encoding="utf-8").splitlines()]
     assert results[0]["review_reason"] == "file_missing"
     assert results[0]["failure_reasons"] == ["missing_file", "primary_tag_mismatch"]
