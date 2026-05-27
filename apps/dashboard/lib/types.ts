@@ -346,6 +346,9 @@ export type GoldenLabelSummary = {
   total_golden_labels: number;
   golden_by_primary_tag: Record<string, number>;
   golden_by_secondary_tag: Record<string, number>;
+  taxonomy_primary_tags?: string[];
+  missing_primary_tags?: string[];
+  primary_coverage_rate?: number | null;
 };
 
 export type SemanticIndexStatus = {

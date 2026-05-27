@@ -19,6 +19,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from sunshine_extraction.sample_pipeline import DEFAULT_TAXONOMY_PATH, load_taxonomy_options
+
 
 DEFAULT_REVIEW_DB_PATH = ".local/sunshine-review.sqlite"
 
@@ -1142,11 +1144,16 @@ class ReviewStore:
                 "select correct_primary_tag, count(*) from golden_labels group by correct_primary_tag",
             )
             by_secondary_tag = _golden_secondary_tag_counts(connection)
+        taxonomy_primary_tags = _taxonomy_primary_tags()
+        missing_primary_tags = [tag for tag in taxonomy_primary_tags if tag not in by_primary_tag]
         return {
             "db_path": str(self.db_path),
             "total_golden_labels": total,
             "golden_by_primary_tag": by_primary_tag,
             "golden_by_secondary_tag": by_secondary_tag,
+            "taxonomy_primary_tags": taxonomy_primary_tags,
+            "missing_primary_tags": missing_primary_tags,
+            "primary_coverage_rate": _safe_divide(len(taxonomy_primary_tags) - len(missing_primary_tags), len(taxonomy_primary_tags)),
         }
 
     def record_pipeline_eval(self, summary: dict[str, Any]) -> dict[str, Any]:
@@ -1954,6 +1961,19 @@ def _golden_secondary_tag_counts(connection: sqlite3.Connection) -> dict[str, in
         for tag in _json_list(row["correct_secondary_tags_json"]):
             counts[str(tag)] = counts.get(str(tag), 0) + 1
     return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
+
+
+def _taxonomy_primary_tags() -> list[str]:
+    try:
+        return load_taxonomy_options(DEFAULT_TAXONOMY_PATH).primary_tags
+    except Exception:  # noqa: BLE001 - coverage summary should not break review CRUD.
+        return []
+
+
+def _safe_divide(numerator: int, denominator: int) -> float | None:
+    if denominator <= 0:
+        return None
+    return round(numerator / denominator, 4)
 
 
 def _extraction_text_snippet(extraction_row: dict[str, Any] | None, *, max_chars: int = 360) -> str | None:

@@ -988,6 +988,12 @@ td:first-child {
   margin-top: 12px;
 }
 
+.chipList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .filterChip {
   background: var(--accent-soft);
   border: 1px solid var(--accent);

@@ -199,6 +199,9 @@ def test_review_store_imports_langgraph_results_and_records_decision(tmp_path: P
     assert store.list_golden_labels() == []
     assert golden_summary["total_golden_labels"] == 1
     assert golden_summary["golden_by_primary_tag"]["meeting_records"] == 1
+    assert "meeting_records" in golden_summary["taxonomy_primary_tags"]
+    assert "meeting_records" not in golden_summary["missing_primary_tags"]
+    assert golden_summary["primary_coverage_rate"] is not None
     assert eval_record["evaluated_predictions"] == 1
     assert eval_record["primary_accuracy"] == 1.0
     assert eval_record["model_usage"]["total_model_usage_rows"] == 3

@@ -72,6 +72,7 @@ export default function GoldenLabelsPage() {
         </div>
         <div className="metricStrip">
           <Metric label="Total labels" value={summary.data?.total_golden_labels ?? 0} />
+          <Metric label="Primary coverage" value={formatPercent(summary.data?.primary_coverage_rate)} />
           <Metric label="Indexed" value={indexStatus.data?.indexed ?? 0} />
           <Metric label="Mismatches" value={mismatchCount} />
         </div>
@@ -100,6 +101,21 @@ export default function GoldenLabelsPage() {
             <div className="metricValue">{count}</div>
           </div>
         ))}
+      </section>
+
+      <section className="panel">
+        <div className="sectionHeader">
+          <h2>Coverage Gaps</h2>
+          <span>{summary.data?.missing_primary_tags?.length ?? 0} primary tags missing</span>
+        </div>
+        <div className="chipList">
+          {(summary.data?.missing_primary_tags ?? []).map((tag) => (
+            <button className="filterChip" key={tag} onClick={() => setPrimaryFilter(tag)}>
+              {tag}
+            </button>
+          ))}
+          {summary.data?.missing_primary_tags?.length === 0 ? <span className="muted">All primary taxonomy families have labels.</span> : null}
+        </div>
       </section>
 
       <section className="panel">
@@ -288,11 +304,18 @@ function GoldenLabelDrawer({
   );
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
+function Metric({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="miniMetric">
       <strong>{value}</strong>
       <span>{label}</span>
     </div>
   );
+}
+
+function formatPercent(value: number | null | undefined) {
+  if (value === null || value === undefined) {
+    return "-";
+  }
+  return `${Math.round(value * 100)}%`;
 }
