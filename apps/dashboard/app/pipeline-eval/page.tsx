@@ -437,6 +437,7 @@ function EvalRows({ rows }: { rows: Array<Record<string, unknown>> }) {
             <th>Reason</th>
             <th>Route</th>
             <th>Semantic</th>
+            <th>Models</th>
           </tr>
         </thead>
         <tbody>
@@ -453,6 +454,7 @@ function EvalRows({ rows }: { rows: Array<Record<string, unknown>> }) {
                   <span>{semanticDetail(row)}</span>
                 </div>
               </td>
+              <td>{modelUsageDetail(row)}</td>
             </tr>
           ))}
         </tbody>
@@ -505,6 +507,36 @@ function semanticDetail(row: Record<string, unknown>) {
     return "-";
   }
   return `same-family top5: ${String(count ?? 0)}; top1: ${String(top ?? "-")}`;
+}
+
+function modelUsageDetail(row: Record<string, unknown>) {
+  const summary = row.model_usage_summary;
+  if (summary && typeof summary === "object" && !Array.isArray(summary)) {
+    const usage = summary as Record<string, unknown>;
+    const total = Number(usage.total_calls ?? 0);
+    const local = Number(usage.local_calls ?? 0);
+    const external = Number(usage.external_calls ?? 0);
+    const placeholder = Number(usage.placeholder_calls ?? 0);
+    const tokens = Number(usage.total_tokens ?? 0);
+    const unknownCost = Number(usage.unknown_external_cost_calls ?? 0);
+    const missingFields = usage.missing_required_field_counts;
+    const missingCount = missingFields && typeof missingFields === "object" && !Array.isArray(missingFields)
+      ? Object.values(missingFields).reduce((sum, value) => sum + Number(value ?? 0), 0)
+      : 0;
+    return [
+      `${total} calls`,
+      `${local} local`,
+      `${external} external`,
+      placeholder ? `${placeholder} placeholder` : null,
+      tokens ? `${tokens} tokens` : null,
+      unknownCost ? `${unknownCost} cost unknown` : null,
+      missingCount ? `${missingCount} fields missing` : null
+    ].filter(Boolean).join("; ");
+  }
+  if (row.provider || row.model || row.purpose) {
+    return [row.purpose, row.provider, row.model].filter(Boolean).join(" / ");
+  }
+  return "-";
 }
 
 function formatMap(value: unknown) {
