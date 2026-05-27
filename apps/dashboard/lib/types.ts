@@ -371,6 +371,69 @@ export type SemanticEvalReport = {
   files_requiring_manual_review: Array<Record<string, unknown>>;
 };
 
+export type PipelineEvalRun = {
+  id: number;
+  eval_key: string;
+  labels_db?: string | null;
+  output_dir: string;
+  status: string;
+  total_golden_labels?: number | null;
+  evaluated_predictions?: number | null;
+  primary_accuracy?: number | null;
+  content_class_accuracy?: number | null;
+  secondary_precision?: number | null;
+  secondary_recall?: number | null;
+  ocr_quality_accuracy?: number | null;
+  review_routing_accuracy?: number | null;
+  failure_count?: number | null;
+  model_usage: Record<string, unknown>;
+  summary: PipelineEvalSummary;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PipelineEvalSummary = {
+  labels_db?: string;
+  output_dir?: string;
+  total_golden_labels?: number;
+  evaluated_predictions?: number;
+  primary_accuracy?: number | null;
+  content_class_accuracy?: number | null;
+  secondary_precision?: number | null;
+  secondary_recall?: number | null;
+  ocr_quality_accuracy?: number | null;
+  review_routing_accuracy?: number | null;
+  placement_destination_accuracy?: number | null;
+  placement_year_accuracy?: number | null;
+  privacy_accuracy?: number | null;
+  sensitive_false_accepts?: number;
+  failure_count?: number;
+  review_required_count?: number;
+  route_candidate_count?: number;
+  by_failure_reason?: Record<string, number>;
+  model_usage?: Record<string, unknown>;
+  acceptance_gate?: {
+    status: string;
+    checks: Array<{ name: string; value: number | null; threshold: number; status: string; operator: string }>;
+    blocking_checks: Array<{ name: string; value: number | null; threshold: number; status: string; operator: string }>;
+  };
+};
+
+export type PipelineEvalRunResponse = {
+  ok: boolean;
+  output_dir: string;
+  eval_run: PipelineEvalRun;
+  report: PipelineEvalSummary;
+};
+
+export type PipelineEvalDrilldown = {
+  eval_run: PipelineEvalRun;
+  result_type: string;
+  path: string;
+  count: number;
+  items: Array<Record<string, unknown>>;
+};
+
 export type PlacementReport = {
   db_path: string;
   total_results: number;

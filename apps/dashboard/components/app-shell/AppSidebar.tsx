@@ -8,6 +8,7 @@ const navItems = [
   { href: "/files", label: "Files" },
   { href: "/runs", label: "Runs" },
   { href: "/golden-labels", label: "Golden Labels" },
+  { href: "/pipeline-eval", label: "Pipeline Eval" },
   { href: "/settings", label: "Settings" }
 ];
 
