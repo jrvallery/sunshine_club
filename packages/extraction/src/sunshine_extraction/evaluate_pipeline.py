@@ -37,6 +37,7 @@ DEFAULT_ACCEPTANCE_THRESHOLDS = {
     "ocr_quality_accuracy": 0.90,
     "ocr_acceptable_rate": 0.90,
     "placement_destination_accuracy": 0.90,
+    "placement_year_accuracy": 0.90,
     "privacy_accuracy": 1.0,
     "high_confidence_primary_accuracy": 0.95,
     "high_confidence_false_accepts": 0,
@@ -537,6 +538,8 @@ def _production_next_actions(
         actions.append("Improve OCR extraction for labels expected to produce usable text; acceptable OCR must meet the production threshold.")
     if "placement_destination_accuracy" in blocking_reasons:
         actions.append("Review placement rules by primary tag and year evidence before proposing folders at scale.")
+    if "placement_year_accuracy" in blocking_reasons:
+        actions.append("Improve placement year extraction before using by-year folder proposals at scale.")
     if "semantic_same_family_top5_rate" in blocking_reasons:
         actions.append("Improve the embedding index or retrieved examples so golden files retrieve same-family labels in the top 5.")
     if "llm_structured_output_validity_rate" in blocking_reasons:
@@ -575,6 +578,7 @@ def _acceptance_gate(metrics: dict[str, Any], model_usage: dict[str, Any], golde
         _minimum_check("ocr_quality_accuracy", metrics.get("ocr_quality_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["ocr_quality_accuracy"]),
         _minimum_check("ocr_acceptable_rate", metrics.get("ocr_acceptable_rate"), DEFAULT_ACCEPTANCE_THRESHOLDS["ocr_acceptable_rate"]),
         _minimum_check("placement_destination_accuracy", metrics.get("placement_destination_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["placement_destination_accuracy"]),
+        _minimum_check("placement_year_accuracy", metrics.get("placement_year_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["placement_year_accuracy"]),
         _minimum_check("privacy_accuracy", metrics.get("privacy_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["privacy_accuracy"]),
         _minimum_check("high_confidence_primary_accuracy", metrics.get("high_confidence_primary_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["high_confidence_primary_accuracy"]),
         _maximum_check("high_confidence_false_accepts", metrics.get("high_confidence_false_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["high_confidence_false_accepts"]),

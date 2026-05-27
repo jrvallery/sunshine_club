@@ -157,6 +157,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
         "primary_taxonomy_coverage",
         "primary_accuracy",
         "placement_destination_accuracy",
+        "placement_year_accuracy",
         "privacy_accuracy",
         "semantic_same_family_top5_rate",
     }
@@ -164,6 +165,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "ocr_acceptable_rate")["status"] == "pass"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "llm_structured_output_validity_rate")["status"] == "pass"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "invalid_primary_tag_count")["status"] == "pass"
+    assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "placement_year_accuracy")["status"] == "not_evaluated"
     assert summary["production_readiness"]["status"] == "not_ready"
     assert summary["production_readiness"]["larger_batch_allowed"] is False
     assert summary["production_readiness"]["customer_claims_allowed"] is False
