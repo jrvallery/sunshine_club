@@ -101,6 +101,31 @@ def pipeline_eval_run_detail(eval_run_id: int) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
 
+@router.get("/admin/pipeline-eval/runs/{eval_run_id}/results")
+def pipeline_eval_run_results(eval_run_id: int, result_type: str = "results", limit: int = 200) -> dict[str, Any]:
+    try:
+        eval_run = review_store().get_pipeline_eval_run(eval_run_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    output_dir = Path(str(eval_run.get("output_dir") or ""))
+    filenames = {
+        "results": "eval-results.jsonl",
+        "failures": "eval-failures.jsonl",
+        "model_usage": "eval-model-usage.jsonl",
+    }
+    filename = filenames.get(result_type)
+    if filename is None:
+        raise HTTPException(status_code=400, detail="result_type must be results, failures, or model_usage")
+    rows = _read_eval_jsonl(output_dir / filename, limit=max(1, min(limit, 1000)))
+    return {
+        "eval_run": eval_run,
+        "result_type": result_type,
+        "path": str(output_dir / filename),
+        "count": len(rows),
+        "items": rows,
+    }
+
+
 @router.post("/admin/pipeline-eval/run")
 def pipeline_eval_run(request: PipelineEvalRequest) -> dict[str, Any]:
     load_pipeline_env()
@@ -116,3 +141,22 @@ def pipeline_eval_run(request: PipelineEvalRequest) -> dict[str, Any]:
     )
     eval_run = review_store().record_pipeline_eval(report)
     return {"ok": True, "output_dir": output_dir, "eval_run": eval_run, "report": report}
+
+
+def _read_eval_jsonl(path: Path, *, limit: int) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as input_file:
+        for line in input_file:
+            if len(rows) >= limit:
+                break
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(row, dict):
+                rows.append(row)
+    return rows

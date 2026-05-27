@@ -289,6 +289,10 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     )
     pipeline_eval_latest = client.get("/admin/pipeline-eval/latest", params={"output_dir": str(pipeline_eval_output_dir)})
     pipeline_eval_runs = client.get("/admin/pipeline-eval/runs")
+    pipeline_eval_run_id = pipeline_eval.json()["eval_run"]["id"]
+    pipeline_eval_results = client.get(f"/admin/pipeline-eval/runs/{pipeline_eval_run_id}/results")
+    pipeline_eval_failures = client.get(f"/admin/pipeline-eval/runs/{pipeline_eval_run_id}/results", params={"result_type": "failures"})
+    pipeline_eval_model_usage = client.get(f"/admin/pipeline-eval/runs/{pipeline_eval_run_id}/results", params={"result_type": "model_usage"})
     deleted_label = client.delete(f"/admin/review/golden-labels/{label_id}")
     file_response = client.get(f"/admin/review/items/{item_id}/file")
     files = client.get("/admin/files", params={"q": "meeting minutes"})
@@ -461,6 +465,13 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert pipeline_eval_latest.json()["exists"] is True
     assert pipeline_eval_runs.status_code == 200
     assert pipeline_eval_runs.json()[0]["output_dir"] == str(pipeline_eval_output_dir)
+    assert pipeline_eval_results.status_code == 200
+    assert pipeline_eval_results.json()["result_type"] == "results"
+    assert pipeline_eval_results.json()["count"] == 1
+    assert pipeline_eval_failures.status_code == 200
+    assert pipeline_eval_failures.json()["result_type"] == "failures"
+    assert pipeline_eval_model_usage.status_code == 200
+    assert pipeline_eval_model_usage.json()["result_type"] == "model_usage"
     assert deleted_label.status_code == 200
     assert deleted_label.json()["deleted"] is True
     assert file_response.status_code == 200
