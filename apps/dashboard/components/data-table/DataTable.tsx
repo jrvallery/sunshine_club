@@ -2,7 +2,17 @@
 
 import { flexRender, Table } from "@tanstack/react-table";
 
-export function DataTable<T>({ table, loading, emptyText = "No rows found." }: { table: Table<T>; loading?: boolean; emptyText?: string }) {
+export function DataTable<T>({
+  table,
+  loading,
+  emptyText = "No rows found.",
+  className = ""
+}: {
+  table: Table<T>;
+  loading?: boolean;
+  emptyText?: string;
+  className?: string;
+}) {
   if (loading) {
     return <div className="empty">Loading...</div>;
   }
@@ -10,7 +20,7 @@ export function DataTable<T>({ table, loading, emptyText = "No rows found." }: {
     return <div className="empty">{emptyText}</div>;
   }
   return (
-    <div className="tableWrap" tabIndex={0} aria-label="Review results table">
+    <div className={`tableWrap ${className}`.trim()} tabIndex={0} aria-label="Results table">
       <table>
         <thead>
           {table.getHeaderGroups().map((group) => (

@@ -299,7 +299,18 @@ def review_item_file(item_id: int) -> FileResponse:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except FileNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
-    return FileResponse(path, filename=path.name)
+    return FileResponse(path, filename=path.name, content_disposition_type="inline")
+
+
+@router.get("/admin/review/items/{item_id}/download")
+def review_item_download(item_id: int) -> FileResponse:
+    try:
+        path = review_store().file_path_for_review_item(item_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    return FileResponse(path, filename=path.name, content_disposition_type="attachment")
 
 
 @router.get("/admin/review/items/{item_id}/text")
@@ -318,4 +329,3 @@ def review_item_neighbors(item_id: int) -> list[dict[str, Any]]:
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     return list(item.get("result", {}).get("semantic_examples") or [])
-

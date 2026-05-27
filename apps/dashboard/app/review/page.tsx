@@ -7,8 +7,9 @@ import {
   SortingState,
   useReactTable
 } from "@tanstack/react-table";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { DataTable } from "../../components/data-table/DataTable";
@@ -27,7 +28,7 @@ import { SelectInput, TextArea, TextInput } from "../../components/ui/FormContro
 import { KeyValue } from "../../components/ui/KeyValue";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { MultiTagPicker, TagPicker } from "../../components/ui/TagPicker";
-import { fetchJson, postJson, queryString } from "../../lib/api";
+import { fetchJson, queryString } from "../../lib/api";
 import { primaryTagOptions, secondaryTagOptions } from "../../lib/taxonomy";
 import type { ReviewFacets, ReviewItem, ReviewSummary } from "../../lib/types";
 
@@ -106,9 +107,8 @@ const reviewFacetDefinitions: Array<FacetDefinition<keyof Filters & string>> = [
 ];
 
 export default function ReviewPage() {
-  const queryClient = useQueryClient();
+  const router = useRouter();
   const [filters, setFilters] = useState<Filters>(initialFilters);
-  const [selected, setSelected] = useState<ReviewItem | null>(null);
   const [sorting, setSorting] = useState<SortingState>([]);
 
   useEffect(() => {
@@ -139,6 +139,17 @@ export default function ReviewPage() {
     updateFilters(initialFilters);
   }
 
+  function reviewDetailHref(itemId: number) {
+    const params = new URLSearchParams();
+    for (const key of filterKeys) {
+      const value = filters[key];
+      if (value && value !== initialFilters[key]) {
+        params.set(key, value);
+      }
+    }
+    return `/review/${itemId}${params.toString() ? `?${params.toString()}` : ""}`;
+  }
+
   const reviewPath = `/api/admin/review/items${queryString({ ...filters, limit: 200 })}`;
   const facetsPath = `/api/admin/review/facets${queryString(filters)}`;
   const summary = useQuery({
@@ -154,32 +165,13 @@ export default function ReviewPage() {
     queryFn: () => fetchJson<ReviewFacets>(facetsPath),
     placeholderData: (previousData) => previousData ?? {}
   });
-  const decision = useMutation({
-    mutationFn: (payload: { id: number; body: Record<string, unknown> }) =>
-      postJson<ReviewItem>(`/api/admin/review/items/${payload.id}/decision`, payload.body),
-    onSuccess: async () => {
-      setSelected(null);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["review-items"] }),
-        queryClient.invalidateQueries({ queryKey: ["review-summary"] })
-      ]);
-    }
-  });
-  const assignment = useMutation({
-    mutationFn: (payload: { id: number; body: Record<string, unknown> }) =>
-      postJson<ReviewItem>(`/api/admin/review/items/${payload.id}/assign`, payload.body),
-    onSuccess: async (item) => {
-      setSelected(item);
-      await queryClient.invalidateQueries({ queryKey: ["review-items"] });
-    }
-  });
   const columns = useMemo<ColumnDef<ReviewItem>[]>(
     () => [
       {
         accessorKey: "relative_path",
         header: "File",
         cell: ({ row }) => (
-          <PathCell title={row.original.relative_path} subtitle={row.original.source_path} onClick={() => setSelected(row.original)} />
+          <PathCell title={row.original.relative_path} subtitle={row.original.source_path} onClick={() => router.push(reviewDetailHref(row.original.id))} />
         )
       },
       {
@@ -230,7 +222,7 @@ export default function ReviewPage() {
       { accessorKey: "status", header: "Review Status" },
       { accessorKey: "updated_at", header: "Updated" }
     ],
-    []
+    [filters] // eslint-disable-line react-hooks/exhaustive-deps
   );
   const table = useReactTable({
     data: items.data ?? [],
@@ -302,16 +294,6 @@ export default function ReviewPage() {
           <DataTable table={table} loading={items.isLoading} emptyText="No review items match these filters." />
         </ResultTableShell>
       </section>
-      {selected ? (
-        <ReviewDrawer
-          item={selected}
-          saving={decision.isPending}
-          assigning={assignment.isPending}
-          onClose={() => setSelected(null)}
-          onSubmit={(body) => decision.mutate({ id: selected.id, body })}
-          onAssign={(body) => assignment.mutate({ id: selected.id, body })}
-        />
-      ) : null}
     </main>
   );
 }

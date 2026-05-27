@@ -1,23 +1,20 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ColumnDef, getCoreRowModel, useReactTable } from "@tanstack/react-table";
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 
+import { DataTable } from "../../components/data-table/DataTable";
 import { ActiveFilterChips } from "../../components/dashboard/ActiveFilterChips";
 import { DashboardSearchToolbar } from "../../components/dashboard/DashboardSearchToolbar";
 import { FacetPanel, type FacetDefinition } from "../../components/dashboard/FacetPanel";
-import { InspectorPanel } from "../../components/dashboard/InspectorPanel";
-import { ProviderConfigBadge } from "../../components/dashboard/ProviderConfigBadge";
-import { QualityBadge } from "../../components/dashboard/QualityBadge";
+import { PathCell } from "../../components/dashboard/PathCell";
 import { ResultTableShell } from "../../components/dashboard/ResultTableShell";
-import { RunContextBadge } from "../../components/dashboard/RunContextBadge";
-import { EmbeddedPreview } from "../../components/file-preview/EmbeddedPreview";
-import { KeyValue } from "../../components/ui/KeyValue";
-import { fetchJson, postJson, queryString } from "../../lib/api";
+import { fetchJson, queryString } from "../../lib/api";
 import { useDebouncedValue } from "../../lib/hooks";
-import type { FileFacets, FileInspection, FileSearchItem, FileSearchResponse, PipelineRun, ReviewItem } from "../../lib/types";
+import type { FileFacets, FileSearchItem, FileSearchResponse } from "../../lib/types";
 
 type FileFilters = {
   q: string;
@@ -102,13 +99,18 @@ function FilesPageContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const queryClient = useQueryClient();
   const filters = useMemo(() => filtersFromParams(searchParams), [searchParams]);
+  const selectedId = numberParam(searchParams.get("file_id"));
   const [queryText, setQueryText] = useState(filters.q);
   const [customSavedSearches, setCustomSavedSearches] = useState<Array<{ label: string; filters: Partial<FileFilters> }>>([]);
   const debouncedQuery = useDebouncedValue(queryText, 300);
-  const selectedId = numberParam(searchParams.get("file_id"));
   const allSavedSearches = useMemo(() => [...savedSearches, ...customSavedSearches], [customSavedSearches]);
+
+  useEffect(() => {
+    if (selectedId) {
+      router.replace(fileDetailHref(selectedId), { scroll: false });
+    }
+  }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setQueryText(filters.q);
@@ -141,38 +143,8 @@ function FilesPageContent() {
     queryFn: () => fetchJson<FileFacets>(`/api/admin/files/facets${queryString(apiParams(filters))}`),
     placeholderData: (previousData) => previousData ?? {}
   });
-  const inspection = useQuery({
-    queryKey: ["file-inspection", selectedId],
-    enabled: Boolean(selectedId),
-    queryFn: () => fetchJson<FileInspection>(`/api/admin/files/${selectedId}/inspection`)
-  });
-  const addReview = useMutation({
-    mutationFn: (fileId: number) => postJson<ReviewItem>(`/api/admin/files/${fileId}/review`, { review_reason: "manual_file_review" }),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["file-search"] }),
-        queryClient.invalidateQueries({ queryKey: ["file-facets"] }),
-        queryClient.invalidateQueries({ queryKey: ["file-inspection", selectedId] }),
-        queryClient.invalidateQueries({ queryKey: ["review-items"] })
-      ]);
-    }
-  });
-  const runFile = useMutation({
-    mutationFn: ({ fileId, embeddingProvider, llmProvider, ocrProvider }: { fileId: number; embeddingProvider: string; llmProvider: string; ocrProvider: string }) =>
-      postJson<PipelineRun>(`/api/admin/files/${fileId}/run`, {
-        start: true,
-        embedding_provider: embeddingProvider,
-        enable_llm_tags: true,
-        llm_tag_provider: llmProvider,
-        ocr_fallback_provider: ocrProvider
-      }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["runs"] });
-      await queryClient.invalidateQueries({ queryKey: ["file-inspection", selectedId] });
-    }
-  });
 
-  function updateFilters(patch: Partial<FileFilters>, nextSelectedId: number | null | undefined = undefined) {
+  function updateFilters(patch: Partial<FileFilters>) {
     const next = { ...filters, ...patch };
     const params = new URLSearchParams();
     for (const key of filterKeys) {
@@ -181,16 +153,49 @@ function FilesPageContent() {
         params.set(key, value);
       }
     }
-    const targetFileId = nextSelectedId === undefined ? selectedId : nextSelectedId;
-    if (targetFileId) {
-      params.set("file_id", String(targetFileId));
-    }
     router.replace(`${pathname}${params.toString() ? `?${params.toString()}` : ""}`, { scroll: false });
   }
 
-  function selectFile(fileId: number | null) {
-    updateFilters({}, fileId);
+  function fileDetailHref(fileId: number) {
+    const params = new URLSearchParams();
+    for (const key of filterKeys) {
+      const value = filters[key];
+      if (value && value !== defaultFilters[key]) {
+        params.set(key, value);
+      }
+    }
+    return `/files/${fileId}${params.toString() ? `?${params.toString()}` : ""}`;
   }
+
+  const columns = useMemo<ColumnDef<FileSearchItem>[]>(
+    () => [
+      {
+        accessorKey: "filename",
+        header: "File",
+        cell: ({ row }) => (
+          <PathCell title={row.original.filename} subtitle={row.original.compact_path} onClick={() => router.push(fileDetailHref(row.original.id))} />
+        )
+      },
+      {
+        id: "classification",
+        header: "Classification",
+        cell: ({ row }) => <ClassificationSummary file={row.original} />
+      },
+      {
+        id: "processing",
+        header: "Processing",
+        cell: ({ row }) => <ProcessingSummary file={row.original} />
+      },
+      {
+        accessorKey: "updated_at",
+        header: "Updated",
+        size: 160,
+        cell: ({ row }) => row.original.updated_at ?? "-"
+      }
+    ],
+    [filters] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const table = useReactTable({ data: search.data?.items ?? [], columns, getCoreRowModel: getCoreRowModel() });
 
   return (
     <main className="pageShell">
@@ -201,12 +206,12 @@ function FilesPageContent() {
           <p className="muted">Search, narrow, inspect, review, and run individual files.</p>
         </div>
         <div className="buttonRow">
-          <button className="secondaryButton" onClick={() => updateFilters(defaultFilters, null)}>Clear Filters</button>
+          <button className="secondaryButton" onClick={() => updateFilters(defaultFilters)}>Clear Filters</button>
         </div>
       </header>
 
       <DashboardSearchToolbar searchPlaceholder="Search filename, path, OCR text" searchValue={queryText} onSearchChange={setQueryText}>
-        <select aria-label="Saved file searches" onChange={(event) => applySavedSearch(event.target.value)} value="">
+        <select aria-label="Saved searches" onChange={(event) => applySavedSearch(event.target.value)} value="">
           <option value="">Saved searches</option>
           {allSavedSearches.map((searchPreset) => (
             <option key={searchPreset.label} value={searchPreset.label}>{searchPreset.label}</option>
@@ -233,22 +238,8 @@ function FilesPageContent() {
           onToggle={(key, value) => updateFilters({ [key]: filters[key] === value ? "" : value })}
         />
         <ResultTableShell error={search.isError ? `File search failed: ${search.error.message}` : null}>
-          <FileResultsList
-            items={search.data?.items ?? []}
-            loading={search.isLoading && !search.data}
-            selectedId={selectedId}
-            onSelect={selectFile}
-          />
+          <DataTable table={table} loading={search.isLoading && !search.data} emptyText="No files match these filters." className="fileBrowserTable" />
         </ResultTableShell>
-        <FileInspector
-          inspection={inspection.data}
-          loading={inspection.isLoading}
-          onClose={() => selectFile(null)}
-          onAddReview={(fileId) => addReview.mutate(fileId)}
-          addingReview={addReview.isPending}
-          onRunFile={(fileId, embeddingProvider, llmProvider, ocrProvider) => runFile.mutate({ fileId, embeddingProvider, llmProvider, ocrProvider })}
-          runningFile={runFile.isPending}
-        />
       </section>
     </main>
   );
@@ -256,7 +247,7 @@ function FilesPageContent() {
   function applySavedSearch(label: string) {
     const preset = allSavedSearches.find((item) => item.label === label);
     if (preset) {
-      updateFilters({ ...defaultFilters, ...preset.filters }, null);
+      updateFilters({ ...defaultFilters, ...preset.filters });
       setQueryText(preset.filters.q ?? "");
     }
   }
@@ -277,229 +268,60 @@ function FilesPageContent() {
   }
 }
 
-function FileResultsList({
-  items,
-  loading,
-  selectedId,
-  onSelect
-}: {
-  items: FileSearchItem[];
-  loading?: boolean;
-  selectedId: number | null;
-  onSelect: (fileId: number) => void;
-}) {
-  if (loading) {
-    return <div className="empty">Loading files...</div>;
-  }
-  if (!items.length) {
-    return <div className="empty">No files match these filters.</div>;
-  }
+function ClassificationSummary({ file }: { file: FileSearchItem }) {
   return (
-    <div className="fileResultsList" aria-label="File search results">
-      {items.map((file) => (
-        <button
-          aria-current={selectedId === file.id ? "true" : undefined}
-          className={selectedId === file.id ? "fileResultCard selected" : "fileResultCard"}
-          key={file.id}
-          onClick={() => onSelect(file.id)}
-        >
-          <div className="fileResultIdentity">
-            <strong title={file.filename}>{file.filename}</strong>
-            <span title={file.compact_path}>{file.compact_path}</span>
-          </div>
-          <div className="fileResultMeta">
-            <MetaBlock label="Type" value={file.extension ?? "-"} detail={file.content_class ?? "-"} />
-            <div className="fileResultBlock">
-              <span>Current result</span>
-              <ResultSummary file={file} />
-            </div>
-            <div className="fileResultBlock">
-              <span>Run</span>
-              <RunContextBadge runId={file.latest_run_id} runKey={file.latest_run_key} preset={file.latest_run_preset_key} />
-            </div>
-            <div className="fileResultBlock">
-              <span>Text</span>
-              <TextIndicator text={file.text_snippet} />
-            </div>
-            <MetaBlock label="Review" value={file.review_status ?? "-"} detail={file.updated_at ?? "-"} />
-          </div>
-        </button>
-      ))}
+    <div className="fileMetaStack">
+      <strong className="fileMetaLine primary">{formatValue(file.primary_tag)}</strong>
+      <span className="fileMetaLine">{formatFileType(file.extension, file.content_class)}</span>
+      <span className="fileMetaLine">Quality: {formatStatus(file.quality)}</span>
+      <span className="fileMetaLine">Action: {formatStatus(file.route_status)}</span>
     </div>
   );
 }
 
-function MetaBlock({ label, value, detail }: { label: string; value: string; detail?: string | null }) {
+function ProcessingSummary({ file }: { file: FileSearchItem }) {
   return (
-    <div className="fileResultBlock">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      {detail ? <em>{detail}</em> : null}
-    </div>
-  );
-}
-
-function ResultSummary({ file }: { file: FileSearchItem }) {
-  return (
-    <div className="cellStack">
-      <strong>{file.primary_tag ?? "-"}</strong>
-      <span>{file.route_status ?? "-"}</span>
-      <QualityBadge value={file.quality} />
-      {file.secondary_tags.length ? <span>{file.secondary_tags.slice(0, 3).join(", ")}</span> : null}
+    <div className="fileMetaStack">
+      <RunSummary file={file} />
+      <span className="fileMetaLine">Review: {formatStatus(file.review_status ?? "No review")}</span>
+      <span className="fileMetaLine spacer" aria-hidden="true" />
+      <TextIndicator text={file.text_snippet} />
     </div>
   );
 }
 
 function TextIndicator({ text }: { text?: string | null }) {
   if (!text) {
-    return <span className="muted">No text</span>;
+    return <span className="fileMetaLine">Text: none</span>;
+  }
+  return <span className="fileMetaLine" title={text}>Text: available</span>;
+}
+
+function RunSummary({ file }: { file: FileSearchItem }) {
+  if (!file.latest_run_id) {
+    return <span className="fileMetaLine">Run: Manual / legacy</span>;
   }
   return (
-    <span className="statusPill" title={text}>
-      Has text
+    <span className="fileMetaLine">
+      Run:{" "}
+      <Link className="viewLink" href={`/runs/${file.latest_run_id}/report`}>
+        {file.latest_run_key || `#${file.latest_run_id}`}
+      </Link>
+      {file.latest_run_preset_key ? <span className="muted"> / {file.latest_run_preset_key}</span> : null}
     </span>
   );
 }
 
-function FileInspector({
-  inspection,
-  loading,
-  onClose,
-  onAddReview,
-  addingReview,
-  onRunFile,
-  runningFile
-}: {
-  inspection?: FileInspection;
-  loading: boolean;
-  onClose: () => void;
-  onAddReview: (fileId: number) => void;
-  addingReview: boolean;
-  onRunFile: (fileId: number, embeddingProvider: string, llmProvider: string, ocrProvider: string) => void;
-  runningFile: boolean;
-}) {
-  const [embeddingProvider, setEmbeddingProvider] = useState("cortex");
-  const [llmProvider, setLlmProvider] = useState("cortex");
-  const [ocrProvider, setOcrProvider] = useState("cortex");
-  if (loading) {
-    return <div className="fileInspector"><div className="empty">Loading inspection...</div></div>;
-  }
-  if (!inspection) {
-    return <div className="fileInspector"><div className="empty">Select a file to inspect it.</div></div>;
-  }
-  const file = inspection.file;
-  const result = inspection.latest_result ?? {};
-  return (
-    <InspectorPanel eyebrow="File Inspector" title={file.filename} onClose={onClose}>
-      <section className="drawerSection">
-        <h3>Identity</h3>
-        <KeyValue label="Relative path" value={file.relative_path} />
-        <KeyValue label="Source path" value={file.source_path} />
-        <KeyValue label="Collection" value={file.source_collection ?? "-"} />
-        <KeyValue label="Type" value={`${file.extension ?? "-"} / ${file.content_class ?? "-"}`} />
-        <KeyValue label="Size" value={file.size_bytes == null ? "-" : `${file.size_bytes} bytes`} />
-        <KeyValue label="Latest run" value={<RunContextBadge runId={file.latest_run_id} runKey={file.latest_run_key} preset={file.latest_run_preset_key} />} />
-        <KeyValue
-          label="Latest providers"
-          value={
-            <ProviderConfigBadge
-              embeddingProvider={file.latest_embedding_provider}
-              llmEnabled={file.latest_enable_llm_tags}
-              llmProvider={file.latest_llm_tag_provider}
-              ocrProvider={file.latest_ocr_fallback_provider}
-            />
-          }
-        />
-      </section>
-
-      <section className="drawerSection">
-        <h3>Actions</h3>
-        <div className="providerPickerGrid">
-          <ProviderSelect label="Embedding path" value={embeddingProvider} onChange={setEmbeddingProvider} />
-          <ProviderSelect label="LLM tag path" value={llmProvider} onChange={setLlmProvider} />
-          <ProviderSelect label="OCR fallback path" value={ocrProvider} onChange={setOcrProvider} />
-        </div>
-        <div className="buttonRow">
-          <a className="primaryButton" href={`/api/admin/files/${file.id}/preview`} target="_blank">Open Preview</a>
-          <button className="secondaryButton" onClick={() => copyText(file.source_path)}>Copy Path</button>
-          <button className="secondaryButton" disabled={addingReview} onClick={() => onAddReview(file.id)}>Add To Review</button>
-          <button className="secondaryButton" disabled={runningFile} onClick={() => onRunFile(file.id, embeddingProvider, llmProvider, ocrProvider)}>Run File</button>
-          {inspection.actions.latest_run_report_url ? <Link className="secondaryButton" href={inspection.actions.latest_run_report_url}>Run Report</Link> : null}
-        </div>
-      </section>
-
-      <details className="lazyDrawerSection">
-        <summary>Preview</summary>
-        <div className="lazyDrawerSectionBody">
-          <EmbeddedPreview previewUrl={`/api/admin/files/${file.id}/preview`} filename={file.filename} mimeType={file.mime_type ?? undefined} extension={file.extension ?? undefined} />
-        </div>
-      </details>
-
-      <section className="drawerSection">
-        <h3>Extracted Text</h3>
-        <KeyValue label="Length" value={String(inspection.text.length)} />
-        <KeyValue label="OCR quality" value={String(inspection.ocr.quality ?? "-")} />
-        <KeyValue label="OCR confidence" value={String(inspection.ocr.mean_confidence ?? "-")} />
-        <KeyValue label="Fallback" value={String(inspection.ocr.fallback_provider ?? "-")} />
-        <div className="textPreview">{inspection.text.text || inspection.text.snippet || "No text available."}</div>
-      </section>
-
-      <section className="drawerSection">
-        <h3>Latest Pipeline Result</h3>
-        <KeyValue label="Class" value={result.final_class ?? file.content_class ?? "-"} />
-        <KeyValue label="Extraction" value={result.extraction_strategy ?? "-"} />
-        <KeyValue label="Status" value={result.extraction_status ?? "-"} />
-        <KeyValue label="Primary tag" value={result.top_tag_candidate ?? "-"} />
-        <KeyValue label="Secondary tags" value={(result.secondary_tags ?? []).join(", ") || "-"} />
-        <KeyValue label="Confidence" value={result.tag_confidence == null ? "-" : String(result.tag_confidence)} />
-        <KeyValue label="Destination" value={result.destination_path ?? "-"} />
-        <KeyValue label="Placement" value={result.placement_status ?? "-"} />
-        <WarningList warnings={result.warnings ?? []} />
-      </section>
-
-      <section className="drawerSection">
-        <h3>Review State</h3>
-        <KeyValue label="Review status" value={inspection.review_item?.status ?? "-"} />
-        <KeyValue label="Review reason" value={inspection.review_item?.review_reason ?? "-"} />
-        <KeyValue label="Decision" value={inspection.review_item?.decision ?? "-"} />
-        <KeyValue label="Correct tag" value={inspection.review_item?.correct_tag ?? "-"} />
-        <KeyValue label="Golden label" value={inspection.golden_label?.correct_primary_tag ?? "-"} />
-      </section>
-
-      <details className="lazyDrawerSection">
-        <summary>Raw Data</summary>
-        <pre className="jsonPreview">{JSON.stringify(inspection.raw, null, 2)}</pre>
-      </details>
-    </InspectorPanel>
-  );
+function formatFileType(extension?: string | null, contentClass?: string | null) {
+  return [extension, contentClass].filter(Boolean).join(" ") || "-";
 }
 
-function ProviderSelect({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return (
-    <label>
-      <span>{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="cortex">Cortex</option>
-        <option value="openai">OpenAI</option>
-      </select>
-    </label>
-  );
+function formatStatus(value?: string | null) {
+  return formatValue(value).replace(/_/g, " ");
 }
 
-function copyText(value: string) {
-  void navigator.clipboard?.writeText(value);
-}
-
-function WarningList({ warnings }: { warnings: string[] }) {
-  if (!warnings.length) {
-    return <KeyValue label="Warnings" value="-" />;
-  }
-  return (
-    <div className="keyValue">
-      <span>Warnings</span>
-      <strong>{warnings.slice(0, 5).join("; ")}</strong>
-    </div>
-  );
+function formatValue(value?: string | null) {
+  return value?.trim() || "-";
 }
 
 function filtersFromParams(params: URLSearchParams): FileFilters {
