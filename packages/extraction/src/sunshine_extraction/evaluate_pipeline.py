@@ -460,6 +460,8 @@ def _model_usage_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     embedding_successful_calls = 0
     embedding_placeholder_calls = 0
     embedding_failed_calls = 0
+    embedding_provider_models: Counter[str] = Counter()
+    embedding_dimensions: Counter[str] = Counter()
     for row in rows:
         by_provider[str(row.get("provider") or "unknown")] += 1
         by_purpose[str(row.get("purpose") or "unknown")] += 1
@@ -473,6 +475,10 @@ def _model_usage_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             raw_call_count = metadata.get("call_count")
             call_count = int(raw_call_count) if raw_call_count is not None else 1
             status = str(row.get("status") or "unknown")
+            provider_model = f"{row.get('provider') or 'unknown'}:{row.get('model') or 'unknown'}"
+            embedding_provider_models[provider_model] += call_count
+            if metadata.get("embedding_dimensions") is not None:
+                embedding_dimensions[str(metadata.get("embedding_dimensions"))] += call_count
             embedding_attempted_calls += call_count
             if status == "ok":
                 embedding_successful_calls += call_count
@@ -491,6 +497,8 @@ def _model_usage_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "embedding_successful_calls": embedding_successful_calls,
         "embedding_placeholder_calls": embedding_placeholder_calls,
         "embedding_failed_calls": embedding_failed_calls,
+        "embedding_provider_models": dict(sorted(embedding_provider_models.items())),
+        "embedding_dimensions": dict(sorted(embedding_dimensions.items())),
         "total_runtime_ms": runtime_ms,
         "external_cost": None,
         "external_cost_note": "Cost is unavailable unless provider token/cost metadata is present.",

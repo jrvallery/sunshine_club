@@ -182,6 +182,8 @@ export default function PipelineEvalPage() {
               <KeyValue label="Embedding successful" value={String((summary?.model_usage?.embedding_successful_calls as number | undefined) ?? 0)} />
               <KeyValue label="Placeholder embeddings" value={String((summary?.model_usage?.embedding_placeholder_calls as number | undefined) ?? 0)} />
               <KeyValue label="Failed embeddings" value={String((summary?.model_usage?.embedding_failed_calls as number | undefined) ?? 0)} />
+              <KeyValue label="Embedding providers" value={formatMap(summary?.model_usage?.embedding_provider_models)} />
+              <KeyValue label="Embedding dimensions" value={formatMap(summary?.model_usage?.embedding_dimensions)} />
               <KeyValue label="Runtime ms" value={String((summary?.model_usage?.total_runtime_ms as number | undefined) ?? 0)} />
             </section>
             <section>
@@ -267,4 +269,15 @@ function semanticDetail(row: Record<string, unknown>) {
     return "-";
   }
   return `same-family top5: ${String(count ?? 0)}; top1: ${String(top ?? "-")}`;
+}
+
+function formatMap(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return "-";
+  }
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (!entries.length) {
+    return "-";
+  }
+  return entries.map(([key, count]) => `${key} (${String(count)})`).join(", ");
 }
