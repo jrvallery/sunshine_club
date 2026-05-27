@@ -50,6 +50,7 @@ DEFAULT_ACCEPTANCE_THRESHOLDS = {
     "invalid_primary_tag_count": 0,
     "tag_evidence_presence_rate": 1.0,
     "model_usage_required_fields_tracked": 1.0,
+    "model_usage_cost_basis_tracked": 1.0,
     "external_model_usage_tracked": 1.0,
     "sensitive_false_accepts": 0,
     "sensitive_medium_low_confidence_accepts": 0,
@@ -603,6 +604,8 @@ def _production_next_actions(
         actions.append("Ensure every persisted tag decision includes human-readable evidence.")
     if "model_usage_required_fields_tracked" in blocking_reasons:
         actions.append("Complete model usage lineage for every model call: provider, model, purpose, status, runtime, and cost basis.")
+    if "model_usage_cost_basis_tracked" in blocking_reasons:
+        actions.append("Classify every model call as local, external, or placeholder so local Cortex calls and paid API calls are separated.")
     if "privacy_accuracy" in blocking_reasons or "sensitive_false_accepts" in blocking_reasons:
         actions.append("Audit privacy and sensitive-record review routing; sensitive false accepts must be zero.")
     if "sensitive_medium_low_confidence_accepts" in blocking_reasons:
@@ -674,6 +677,11 @@ def _acceptance_gate(metrics: dict[str, Any], model_usage: dict[str, Any], golde
             "model_usage_required_fields_tracked",
             model_usage.get("required_field_completeness_rate"),
             DEFAULT_ACCEPTANCE_THRESHOLDS["model_usage_required_fields_tracked"],
+        ),
+        _minimum_check(
+            "model_usage_cost_basis_tracked",
+            model_usage.get("cost_basis_completeness_rate"),
+            DEFAULT_ACCEPTANCE_THRESHOLDS["model_usage_cost_basis_tracked"],
         ),
         _maximum_check("sensitive_false_accepts", metrics.get("sensitive_false_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["sensitive_false_accepts"]),
         _maximum_check("sensitive_medium_low_confidence_accepts", metrics.get("sensitive_medium_low_confidence_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["sensitive_medium_low_confidence_accepts"]),
@@ -921,6 +929,10 @@ def _model_usage_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     total_tokens = 0
     estimated_external_cost_usd = 0.0
     unknown_external_cost_calls = 0
+    local_call_count = 0
+    external_call_count = 0
+    placeholder_call_count = 0
+    unknown_cost_basis_count = 0
     embedding_attempted_calls = 0
     embedding_successful_calls = 0
     embedding_placeholder_calls = 0
@@ -940,6 +952,14 @@ def _model_usage_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         by_purpose[str(row.get("purpose") or "unknown")] += 1
         cost_basis = str(row.get("cost_basis") or "unknown")
         by_cost_basis[cost_basis] += 1
+        if cost_basis == "local":
+            local_call_count += 1
+        elif cost_basis == "external":
+            external_call_count += 1
+        elif cost_basis == "placeholder":
+            placeholder_call_count += 1
+        else:
+            unknown_cost_basis_count += 1
         runtime_ms += int(row.get("runtime_ms") or 0)
         input_tokens += int(row.get("input_tokens") or 0)
         output_tokens += int(row.get("output_tokens") or 0)
@@ -969,9 +989,13 @@ def _model_usage_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "by_provider": dict(sorted(by_provider.items())),
         "by_purpose": dict(sorted(by_purpose.items())),
         "by_cost_basis": dict(sorted(by_cost_basis.items())),
-        "external_call_count": sum(count for basis, count in by_cost_basis.items() if basis == "external"),
+        "local_call_count": local_call_count,
+        "external_call_count": external_call_count,
+        "placeholder_call_count": placeholder_call_count,
+        "unknown_cost_basis_count": unknown_cost_basis_count,
         "unknown_external_cost_calls": unknown_external_cost_calls,
         "required_field_completeness_rate": _safe_divide(complete_required_field_rows, len(rows)),
+        "cost_basis_completeness_rate": _safe_divide(len(rows) - unknown_cost_basis_count, len(rows)),
         "missing_required_field_counts": dict(sorted(missing_required_fields.items())),
         "embedding_attempted_calls": embedding_attempted_calls,
         "embedding_successful_calls": embedding_successful_calls,
