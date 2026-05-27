@@ -42,6 +42,23 @@ class _TeaLLMTagInspector(LLMTagInspector):
         }
 
 
+class _HistoryLLMTagInspector(LLMTagInspector):
+    model = "test-llm"
+
+    def inspect(self, **_kwargs):
+        return {
+            "llm_status": "inspected",
+            "model": self.model,
+            "primary_tag": "history_archive_general",
+            "secondary_tags": ["history_archive"],
+            "confidence": 0.94,
+            "evidence": ["file reads like a historical summary"],
+            "rationale": "History evidence is strong.",
+            "needs_review": False,
+            "warning": None,
+        }
+
+
 class _FlakyTeaLLMTagInspector(_TeaLLMTagInspector):
     def __init__(self) -> None:
         self.calls = 0
@@ -122,6 +139,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert final_result["route_status"] == "route_candidate"
     assert final_result["top_tag_candidate"] == "annual_spring_tea"
     assert final_result["tag_assignment_source"] == "deterministic+llm"
+    assert final_result["confidence_calibration"]["status"] == "calibrated"
     assert graph_result["final_result"]["top_tag_candidate"] == "annual_spring_tea"
     assert pipeline_rows == [final_result]
     assert review_rows == []
@@ -143,9 +161,32 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
         "assign_deterministic_tags",
         "inspect_tags_with_llm",
         "combine_tag_evidence",
+        "calibrate_tag_confidence",
         "resolve_route_or_review",
         "persist_outputs",
     ]
+
+
+def test_langgraph_confidence_calibration_routes_llm_disagreement_to_review(tmp_path: Path) -> None:
+    source = tmp_path / "tea.txt"
+    source.write_text("Annual Sunshine Tea guest list and event notes.", encoding="utf-8")
+
+    result = run_document_graph(
+        source,
+        source_path="/source/tea.txt",
+        relative_path="Sunshine shared folders/Teas/tea.txt",
+        output_dir=tmp_path / "graph-out",
+        embedding_provider=PlaceholderEmbeddingProvider(dimensions=4),
+        llm_tag_inspector=_HistoryLLMTagInspector(),
+    )
+
+    final_result = result["final_result"]
+
+    assert final_result["top_tag_candidate"] == "annual_spring_tea"
+    assert final_result["route_status"] == "review_tag_confidence_calibration"
+    assert final_result["review_reason"] == "llm_tag_disagreement"
+    assert final_result["tag_confidence"] == 0.78
+    assert "llm_primary_disagrees:history_archive_general" in final_result["confidence_calibration"]["factors"]
 
 
 def test_langgraph_retrieves_labeled_examples_and_uses_them_as_tag_evidence(tmp_path: Path) -> None:

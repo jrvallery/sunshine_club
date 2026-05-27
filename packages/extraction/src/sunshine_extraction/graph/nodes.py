@@ -47,6 +47,7 @@ from sunshine_extraction.sample_pipeline import (
     assign_tag_candidates,
     build_ocr_summary,
     chunk_content,
+    calibrate_tag_confidence,
     combine_tag_candidates,
     embed_chunks_with_fallback,
     extract_content,
@@ -421,6 +422,18 @@ def _combine_tag_evidence(state: DocumentPipelineState) -> dict[str, Any]:
     }
 
 
+def _calibrate_tag_confidence_node(state: DocumentPipelineState) -> dict[str, Any]:
+    tag_candidates, calibration = calibrate_tag_confidence(
+        state.get("tag_candidates", []),
+        state.get("extraction_quality", {"quality": "failed", "requires_review": True}),
+        state["extraction_plan"],
+        llm_inspection=state.get("llm_tag_inspection", {}),
+        semantic_examples=state.get("semantic_examples", []),
+        embeddings=state.get("embeddings", []),
+    )
+    return {"tag_candidates": tag_candidates, "confidence_calibration": calibration}
+
+
 def _resolve_route_or_review_node(state: DocumentPipelineState) -> dict[str, Any]:
     return {
         "route": resolve_route_or_review(
@@ -636,6 +649,7 @@ def _final_result_from_state(state: DocumentPipelineState) -> dict[str, Any]:
             state.get("tag_candidates", []),
             state.get("route", {"route_status": "review_failed_extraction", "review_reason": "unknown"}),
             state.get("llm_tag_inspection", {}),
+            state.get("confidence_calibration", {}),
         )
         result["semantic_example_count"] = len(state.get("semantic_examples", []))
         result["semantic_examples"] = state.get("semantic_examples", [])[:5]
@@ -728,6 +742,8 @@ def _node_summary(name: str, updates: dict[str, Any]) -> str:
         return f"llm {updates['llm_tag_inspection'].get('llm_status')}"
     if name == "combine_tag_evidence":
         return f"tag candidates {len(updates.get('tag_candidates', []))}"
+    if name == "calibrate_tag_confidence" and updates.get("confidence_calibration"):
+        return f"calibrated {updates['confidence_calibration'].get('calibrated_confidence')}"
     if name == "resolve_route_or_review" and updates.get("route"):
         return f"route {updates['route'].get('route_status')}"
     if name == "persist_outputs":

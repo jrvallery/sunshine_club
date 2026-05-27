@@ -67,6 +67,7 @@ from sunshine_extraction.graph.nodes import (
     _after_load_file_context,
     _after_quality_gate,
     _assign_deterministic_tags,
+    _calibrate_tag_confidence_node,
     _chunk_content_node,
     _classify_content_type,
     _combine_tag_evidence,
@@ -98,6 +99,7 @@ def build_document_graph(deps: DocumentPipelineDeps | None = None, *, checkpoint
     builder.add_node("assign_deterministic_tags", lambda state: _run_node("assign_deterministic_tags", state, _assign_deterministic_tags))
     builder.add_node("inspect_tags_with_llm", lambda state: _run_node("inspect_tags_with_llm", state, lambda active: _inspect_tags_with_llm(active, active_deps)))
     builder.add_node("combine_tag_evidence", lambda state: _run_node("combine_tag_evidence", state, _combine_tag_evidence))
+    builder.add_node("calibrate_tag_confidence", lambda state: _run_node("calibrate_tag_confidence", state, _calibrate_tag_confidence_node))
     builder.add_node("resolve_route_or_review", lambda state: _run_node("resolve_route_or_review", state, _resolve_route_or_review_node))
     builder.add_node("persist_outputs", lambda state: _run_node("persist_outputs", state, _persist_outputs))
 
@@ -121,8 +123,8 @@ def build_document_graph(deps: DocumentPipelineDeps | None = None, *, checkpoint
     builder.add_edge("retrieve_labeled_examples", "assign_deterministic_tags")
     builder.add_edge("assign_deterministic_tags", "inspect_tags_with_llm")
     builder.add_edge("inspect_tags_with_llm", "combine_tag_evidence")
-    builder.add_edge("combine_tag_evidence", "resolve_route_or_review")
+    builder.add_edge("combine_tag_evidence", "calibrate_tag_confidence")
+    builder.add_edge("calibrate_tag_confidence", "resolve_route_or_review")
     builder.add_edge("resolve_route_or_review", "persist_outputs")
     builder.add_edge("persist_outputs", END)
     return builder.compile(checkpointer=checkpointer)
-

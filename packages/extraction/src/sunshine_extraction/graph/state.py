@@ -41,6 +41,7 @@ class DocumentPipelineState(TypedDict, total=False):
     llm_tag_inspection: dict[str, Any]
     model_usage: list[dict[str, Any]]
     tag_candidates: list[dict[str, Any]]
+    confidence_calibration: dict[str, Any]
     route: dict[str, Any]
     final_result: dict[str, Any]
 
