@@ -127,6 +127,8 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert summary["embedding_success_rate"] == 0.0
     assert summary["semantic_same_family_top5_rate"] == 0.0
     assert summary["high_risk_primary_accuracy_min"] is None
+    assert summary["high_confidence_primary_accuracy"] == 0.5
+    assert summary["high_confidence_false_accepts"] == 0
     assert summary["source_file_mutations"] == 0
     assert summary["golden_label_readiness"]["ready"] is False
     assert summary["golden_label_readiness"]["total_golden_labels"] == 2
@@ -149,6 +151,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
         "golden_label_count",
         "high_risk_label_min_count",
         "high_risk_primary_accuracy",
+        "high_confidence_primary_accuracy",
         "primary_taxonomy_coverage",
         "primary_accuracy",
         "placement_destination_accuracy",
@@ -172,6 +175,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     }
     assert any("golden QA set" in action for action in summary["production_readiness"]["required_next_actions"])
     assert any("real embedding provider" in action for action in summary["production_readiness"]["required_next_actions"])
+    assert any("Calibrate confidence" in action for action in summary["production_readiness"]["required_next_actions"])
     assert summary["by_failure_reason"] == {
         "embedding_quality_unavailable": 2,
         "placement_destination_mismatch": 1,
@@ -243,6 +247,7 @@ def test_golden_pipeline_evaluation_records_missing_files(tmp_path: Path) -> Non
     assert summary["failure_count"] == 1
     assert summary["primary_accuracy"] == 0.0
     assert summary["acceptance_gate"]["status"] == "fail"
+    assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "high_confidence_primary_accuracy")["status"] == "not_evaluated"
     assert summary["production_readiness"]["larger_batch_allowed"] is False
     assert summary["production_status_counts"]["failed"] == 1
     results = [json.loads(line) for line in (output_dir / "eval-results.jsonl").read_text(encoding="utf-8").splitlines()]

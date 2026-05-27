@@ -77,6 +77,7 @@ export default function PipelineEvalPage() {
       ["Embedding success", summary?.embedding_success_rate],
       ["Semantic top 5", summary?.semantic_same_family_top5_rate],
       ["High-risk min", summary?.high_risk_primary_accuracy_min],
+      ["High-conf accuracy", summary?.high_confidence_primary_accuracy],
       ["Placement", summary?.placement_destination_accuracy],
       ["Privacy", summary?.privacy_accuracy],
       ["Review route", summary?.review_routing_accuracy]
@@ -305,6 +306,7 @@ export default function PipelineEvalPage() {
               <KeyValue label="Recall" value={formatPercent(summary?.review_routing_recall)} />
               <KeyValue label="False accepts" value={String(summary?.review_false_accepts ?? 0)} />
               <KeyValue label="False reviews" value={String(summary?.review_false_reviews ?? 0)} />
+              <KeyValue label="High-conf false accepts" value={String(summary?.high_confidence_false_accepts ?? 0)} />
             </section>
             <section>
               <h3>LLM Output</h3>
@@ -349,7 +351,7 @@ export default function PipelineEvalPage() {
                 <KeyValue
                   key={bucket}
                   label={bucket}
-                  value={`${formatPercent(metric.primary_accuracy)} primary, ${formatPercent(metric.review_required_rate)} review (${metric.primary_correct}/${metric.total})`}
+                  value={`${formatPercent(metric.primary_accuracy)} primary, ${formatPercent(metric.review_required_rate)} review, ${metric.false_accepts} false accepts (${metric.primary_correct}/${metric.total})`}
                 />
               ))}
             </section>

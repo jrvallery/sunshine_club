@@ -161,6 +161,7 @@ def pipeline_eval_run_compare(eval_run_id: int, baseline_eval_run_id: int) -> di
         "review_routing_accuracy",
         "placement_destination_accuracy",
         "privacy_accuracy",
+        "high_confidence_primary_accuracy",
         "embedding_success_rate",
         "semantic_same_family_top5_rate",
     ]

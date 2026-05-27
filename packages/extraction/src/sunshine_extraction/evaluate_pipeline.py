@@ -37,6 +37,8 @@ DEFAULT_ACCEPTANCE_THRESHOLDS = {
     "ocr_quality_accuracy": 0.90,
     "placement_destination_accuracy": 0.90,
     "privacy_accuracy": 1.0,
+    "high_confidence_primary_accuracy": 0.95,
+    "high_confidence_false_accepts": 0,
     "external_model_usage_tracked": 1.0,
     "sensitive_false_accepts": 0,
     "source_file_mutations": 0,
@@ -377,6 +379,8 @@ def _summary(
         ),
         "semantic_same_family_top5_rate": _safe_divide(totals["semantic_same_family_top5"], total),
         "high_risk_primary_accuracy_min": high_risk_min_accuracy,
+        "high_confidence_primary_accuracy": (confidence_bucket_metrics.get("high") or {}).get("primary_accuracy"),
+        "high_confidence_false_accepts": (confidence_bucket_metrics.get("high") or {}).get("false_accepts"),
         "source_file_mutations": 0,
     }
     production_status_counts = {
@@ -506,6 +510,10 @@ def _production_next_actions(
         actions.append("Add multiple labels for every high-risk category." + suffix)
     if any(reason in blocking_reasons for reason in ("primary_accuracy", "high_risk_primary_accuracy")):
         actions.append("Improve semantic tagging with stronger retrieved examples and rerun the golden eval.")
+    if "high_confidence_primary_accuracy" in blocking_reasons:
+        actions.append("Calibrate confidence so high-confidence predictions meet measured accuracy thresholds.")
+    if "high_confidence_false_accepts" in blocking_reasons:
+        actions.append("Route high-confidence false accepts to review; high-confidence items cannot bypass review when labels expect review.")
     if "content_class_accuracy" in blocking_reasons:
         actions.append("Fix content-class classifier errors before trusting downstream extraction strategy.")
     if "ocr_quality_accuracy" in blocking_reasons:
@@ -542,6 +550,8 @@ def _acceptance_gate(metrics: dict[str, Any], model_usage: dict[str, Any], golde
         _minimum_check("ocr_quality_accuracy", metrics.get("ocr_quality_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["ocr_quality_accuracy"]),
         _minimum_check("placement_destination_accuracy", metrics.get("placement_destination_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["placement_destination_accuracy"]),
         _minimum_check("privacy_accuracy", metrics.get("privacy_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["privacy_accuracy"]),
+        _minimum_check("high_confidence_primary_accuracy", metrics.get("high_confidence_primary_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["high_confidence_primary_accuracy"]),
+        _maximum_check("high_confidence_false_accepts", metrics.get("high_confidence_false_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["high_confidence_false_accepts"]),
         _maximum_check("sensitive_false_accepts", metrics.get("sensitive_false_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["sensitive_false_accepts"]),
         _maximum_check("source_file_mutations", metrics.get("source_file_mutations"), DEFAULT_ACCEPTANCE_THRESHOLDS["source_file_mutations"]),
         _maximum_check("embedding_placeholder_calls", model_usage.get("embedding_placeholder_calls", 0), 0),
