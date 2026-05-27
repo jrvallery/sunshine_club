@@ -82,7 +82,9 @@ def test_eval_row_requires_uncertainty_evidence_for_medium_confidence(tmp_path: 
 
     assert unexplained["confidence_bucket"] == "medium"
     assert unexplained["medium_confidence_uncertainty_explained"] is False
+    assert "medium_confidence_unexplained" in unexplained["failure_reasons"]
     assert explained["medium_confidence_uncertainty_explained"] is True
+    assert "medium_confidence_unexplained" not in explained["failure_reasons"]
     assert explained["confidence_calibration_factors"] == ["semantic_examples_weak"]
 
 
@@ -250,6 +252,7 @@ def test_sensitive_false_accept_counts_even_when_primary_tag_is_correct(tmp_path
 
     assert row["primary_correct"] is True
     assert row["predicted_review_required"] is False
+    assert "sensitive_false_accept" in row["failure_reasons"]
     assert totals["review_false_negative"] == 1
     assert totals["sensitive_false_accepts"] == 1
 

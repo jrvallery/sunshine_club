@@ -329,6 +329,12 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
         failure_reasons.append("content_class_mismatch")
     if review_routing_correct is False:
         failure_reasons.append("review_routing_mismatch")
+    if label.sensitive_record and label.expected_review_required is True and not review_required:
+        failure_reasons.append("sensitive_false_accept")
+    if label.sensitive_record and not review_required and confidence_bucket in {"medium", "low"}:
+        failure_reasons.append("sensitive_medium_low_confidence_accept")
+    if medium_confidence_uncertainty_explained is False:
+        failure_reasons.append("medium_confidence_unexplained")
     if label.ocr_quality_label and final_result.get("quality") != label.ocr_quality_label:
         failure_reasons.append("ocr_quality_mismatch")
     if ocr_fallback_failed:
