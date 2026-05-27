@@ -399,12 +399,7 @@ def _summary(
         "invalid_primary_tag_count": _invalid_primary_tag_count(evaluated, taxonomy_path),
         "source_file_mutations": totals["source_file_mutations"],
     }
-    production_status_counts = {
-        "accepted": totals["route_candidate"],
-        "review_required": totals["review_required"],
-        "failed": len(failures),
-        "deferred": sum(count for status, count in counters["by_route_status"].items() if "defer" in status),
-    }
+    production_status_counts = _production_status_counts(evaluated)
     acceptance_gate = _acceptance_gate(metrics, model_usage, golden_label_readiness)
     production_readiness = _production_readiness(
         metrics=metrics,
@@ -563,6 +558,29 @@ def _production_next_actions(
     if metrics.get("review_false_accepts"):
         actions.append("Inspect review false accepts; files that should require review cannot silently route as accepted.")
     return actions
+
+
+def _production_status_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts = Counter(_production_status(row) for row in rows)
+    return {
+        "accepted": int(counts["accepted"]),
+        "review_required": int(counts["review_required"]),
+        "failed": int(counts["failed"]),
+        "deferred": int(counts["deferred"]),
+    }
+
+
+def _production_status(row: dict[str, Any]) -> str:
+    route_status = str(row.get("route_status") or "").lower()
+    review_reason = str(row.get("review_reason") or "").lower()
+    failure_reasons = set(_string_list(row.get("failure_reasons")))
+    if "missing_file" in failure_reasons or "failed" in route_status:
+        return "failed"
+    if "defer" in route_status or "defer" in review_reason:
+        return "deferred"
+    if route_status == "route_candidate" or row.get("predicted_review_required") is False:
+        return "accepted"
+    return "review_required"
 
 
 def _acceptance_gate(metrics: dict[str, Any], model_usage: dict[str, Any], golden_label_readiness: dict[str, Any]) -> dict[str, Any]:

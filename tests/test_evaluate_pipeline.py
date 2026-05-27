@@ -173,7 +173,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert summary["production_readiness"]["status_counts"] == {
         "accepted": 0,
         "review_required": 2,
-        "failed": 2,
+        "failed": 0,
         "deferred": 0,
     }
     assert summary["production_readiness"]["reliable_categories"] == []
@@ -265,6 +265,7 @@ def test_golden_pipeline_evaluation_records_missing_files(tmp_path: Path) -> Non
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "llm_structured_output_validity_rate")["status"] == "not_evaluated"
     assert summary["production_readiness"]["larger_batch_allowed"] is False
     assert summary["production_status_counts"]["failed"] == 1
+    assert summary["production_status_counts"]["review_required"] == 0
     results = [json.loads(line) for line in (output_dir / "eval-results.jsonl").read_text(encoding="utf-8").splitlines()]
     assert results[0]["review_reason"] == "file_missing"
     assert results[0]["failure_reasons"] == ["missing_file", "primary_tag_mismatch"]
