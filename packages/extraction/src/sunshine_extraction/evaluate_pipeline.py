@@ -817,7 +817,7 @@ def _update_totals(totals: Counter, row: dict[str, Any], label: GoldenEvalLabel)
         totals["route_candidate"] += 1
     if int(row.get("semantic_same_family_top5_count") or 0) > 0:
         totals["semantic_same_family_top5"] += 1
-    if label.sensitive_record and not row["predicted_review_required"] and not row["primary_correct"]:
+    if label.sensitive_record and row.get("expected_review_required") is True and not row["predicted_review_required"]:
         totals["sensitive_false_accepts"] += 1
     if label.sensitive_record and not row["predicted_review_required"] and row.get("confidence_bucket") in {"medium", "low"}:
         totals["sensitive_medium_low_confidence_accepts"] += 1

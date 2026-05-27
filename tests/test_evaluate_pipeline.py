@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
+from collections import Counter
 from pathlib import Path
 
 from sunshine_extraction.embeddings import PlaceholderEmbeddingProvider
-from sunshine_extraction.evaluate_pipeline import GoldenEvalLabel, _evaluation_row, _parse_args, run_golden_pipeline_evaluation
+from sunshine_extraction.evaluate_pipeline import GoldenEvalLabel, _evaluation_row, _parse_args, _update_totals, run_golden_pipeline_evaluation
 from sunshine_extraction.sample_pipeline import LLMTagInspector
 
 
@@ -119,6 +120,47 @@ def test_eval_row_marks_resolved_placement_unsafe_when_route_requires_review(tmp
 
     assert row["predicted_review_required"] is True
     assert row["unsafe_placement_proposal"] is True
+
+
+def test_sensitive_false_accept_counts_even_when_primary_tag_is_correct(tmp_path: Path) -> None:
+    label = GoldenEvalLabel(
+        id=1,
+        source_path="/source/member-roster.pdf",
+        relative_path="member-roster.pdf",
+        sample_path=None,
+        correct_primary_tag="membership_rosters_yearbooks",
+        correct_secondary_tags=[],
+        content_class="document",
+        ocr_quality_label="ok",
+        expected_review_required=True,
+        sensitive_record=True,
+        correct_destination_path=None,
+        correct_placement_year=None,
+        correct_privacy=None,
+        reviewer="tester",
+        reviewed_at="2026-05-27T00:00:00Z",
+        notes=None,
+    )
+    row = _evaluation_row(
+        label,
+        {
+            "top_tag_candidate": "membership_rosters_yearbooks",
+            "final_class": "document",
+            "quality": "ok",
+            "route_status": "route_candidate",
+            "tag_confidence": 0.96,
+            "tag_evidence": ["roster evidence"],
+        },
+        tmp_path,
+    )
+    totals = Counter()
+
+    _update_totals(totals, row, label)
+
+    assert row["primary_correct"] is True
+    assert row["predicted_review_required"] is False
+    assert totals["review_false_negative"] == 1
+    assert totals["sensitive_false_accepts"] == 1
 
 
 def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Path) -> None:

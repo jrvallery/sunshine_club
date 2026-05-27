@@ -36,11 +36,17 @@ def _read_model_usage_artifact(output_dir: Path, *, run_id: int) -> list[dict[st
 
 def _model_usage_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
     external_rows = [row for row in rows if _is_external_model_call(row)]
+    local_rows = [row for row in rows if _model_cost_basis(row) == "local"]
+    placeholder_rows = [row for row in rows if _model_cost_basis(row) == "placeholder"]
+    unknown_cost_basis_rows = [row for row in rows if _model_cost_basis(row) == "unknown"]
     summary = {
         "total_calls": len(rows),
         "failed_calls": sum(1 for row in rows if str(row.get("status") or "").lower() not in {"ok", "success", "succeeded", "completed"}),
         "external_calls": len(external_rows),
-        "local_calls": sum(1 for row in rows if not _is_external_model_call(row)),
+        "local_calls": len(local_rows),
+        "placeholder_calls": len(placeholder_rows),
+        "unknown_cost_basis_calls": len(unknown_cost_basis_rows),
+        "cost_basis_completeness_rate": ((len(rows) - len(unknown_cost_basis_rows)) / len(rows)) if rows else None,
         "runtime_ms": _sum_numeric(rows, "runtime_ms"),
         "input_tokens": _sum_numeric(rows, "input_tokens"),
         "output_tokens": _sum_numeric(rows, "output_tokens"),
@@ -61,13 +67,25 @@ def _model_usage_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _is_external_model_call(row: dict[str, Any]) -> bool:
+    return _model_cost_basis(row) == "external"
+
+
+def _model_cost_basis(row: dict[str, Any]) -> str:
     cost_basis = str(row.get("cost_basis") or "").lower()
     provider = str(row.get("provider") or "").lower()
     if cost_basis == "external":
-        return True
+        return "external"
     if cost_basis == "local":
-        return False
-    return provider in {"openai", "gemini", "google", "anthropic"}
+        return "local"
+    if cost_basis == "placeholder":
+        return "placeholder"
+    if provider in {"openai", "gemini", "google", "anthropic"}:
+        return "external"
+    if provider in {"cortex", "vllm", "local", "tesseract"}:
+        return "local"
+    if provider == "placeholder":
+        return "placeholder"
+    return "unknown"
 
 
 def _synthesize_model_usage_from_artifacts(output_dir: Path) -> list[dict[str, Any]]:

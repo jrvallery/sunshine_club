@@ -90,6 +90,8 @@ def test_model_usage_report_infers_calls_from_legacy_artifacts(tmp_path: Path) -
     assert report["summary"]["total_calls"] == 3
     assert report["summary"]["external_calls"] == 2
     assert report["summary"]["local_calls"] == 1
+    assert report["summary"]["unknown_cost_basis_calls"] == 0
+    assert report["summary"]["cost_basis_completeness_rate"] == 1.0
     assert report["summary"]["unknown_external_cost_calls"] == 2
     assert report["by_purpose"]["ocr_fallback"]["calls"] == 1
     assert report["by_purpose"]["tag_inspection"]["calls"] == 1
@@ -584,6 +586,10 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert run_model_usage.status_code == 200
     assert run_model_usage.json()["summary"]["total_calls"] == 2
     assert run_model_usage.json()["summary"]["failed_calls"] == 1
+    assert run_model_usage.json()["summary"]["local_calls"] == 1
+    assert run_model_usage.json()["summary"]["external_calls"] == 1
+    assert run_model_usage.json()["summary"]["unknown_cost_basis_calls"] == 0
+    assert run_model_usage.json()["summary"]["cost_basis_completeness_rate"] == 1.0
     assert run_model_usage.json()["summary"]["total_tokens"] == 370
     assert run_model_usage.json()["summary"]["estimated_external_cost_usd"] == 0.0123
     assert run_report.status_code == 200
