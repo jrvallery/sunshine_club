@@ -252,6 +252,9 @@ def _extract_content_node(state: DocumentPipelineState, deps: DocumentPipelineDe
     }
     if ocr_artifacts.documents:
         updates["ocr_document"] = ocr_artifacts.documents[0]
+    usage_rows = _ocr_model_usage_rows(state, ocr_artifacts.pages, node="extract_content")
+    if usage_rows:
+        updates["model_usage"] = [*state.get("model_usage", []), *usage_rows]
     return updates
 
 
@@ -275,6 +278,9 @@ def _validate_text_extraction_node(state: DocumentPipelineState, deps: DocumentP
         updates["ocr_pages"] = [*state.get("ocr_pages", []), *ocr_artifacts.pages]
     if ocr_artifacts.documents:
         updates["ocr_document"] = ocr_artifacts.documents[-1]
+    usage_rows = _ocr_model_usage_rows(state, ocr_artifacts.pages, node="validate_text_extraction")
+    if usage_rows:
+        updates["model_usage"] = [*state.get("model_usage", []), *usage_rows]
     return updates
 
 
@@ -288,8 +294,23 @@ def _chunk_content_node(state: DocumentPipelineState) -> dict[str, Any]:
 
 def _embed_chunks_node(state: DocumentPipelineState, deps: DocumentPipelineDeps) -> dict[str, Any]:
     chunks = state.get("chunks", [])
+    started = time.monotonic()
     embeddings, embedding_warnings = embed_chunks_with_fallback(chunks, deps["embedding_provider"])
-    return {"embeddings": embeddings, "warnings": [*state.get("warnings", []), *embedding_warnings]}
+    usage_row = _embedding_model_usage_row(
+        state,
+        deps["embedding_provider"],
+        node="embed_chunks",
+        purpose="chunk_embedding",
+        status="failed" if embedding_warnings else "ok",
+        call_count=len(chunks),
+        started=started,
+        error=";".join(embedding_warnings) if embedding_warnings else None,
+    )
+    return {
+        "embeddings": embeddings,
+        "warnings": [*state.get("warnings", []), *embedding_warnings],
+        "model_usage": [*state.get("model_usage", []), usage_row] if usage_row else state.get("model_usage", []),
+    }
 
 
 def _retrieve_labeled_examples_node(state: DocumentPipelineState, deps: DocumentPipelineDeps) -> dict[str, Any]:
@@ -307,12 +328,40 @@ def _retrieve_labeled_examples_node(state: DocumentPipelineState, deps: Document
         ]
     )
     warnings = [*state.get("warnings", [])]
+    started = time.monotonic()
     try:
         examples = search_semantic_index(index_path, query_text, embedding_provider=deps["embedding_provider"], limit=5)
     except Exception as error:  # noqa: BLE001 - retrieval failure should not block extraction.
         warnings.append(f"semantic_example_retrieval_failed:{type(error).__name__}")
-        return {"semantic_examples": [], "warnings": warnings}
-    return {"semantic_examples": examples, "warnings": warnings}
+        usage_row = _embedding_model_usage_row(
+            state,
+            deps["embedding_provider"],
+            node="retrieve_labeled_examples",
+            purpose="semantic_retrieval_embedding",
+            status="failed",
+            call_count=1,
+            started=started,
+            error=f"{type(error).__name__}: {error}",
+        )
+        return {
+            "semantic_examples": [],
+            "warnings": warnings,
+            "model_usage": [*state.get("model_usage", []), usage_row] if usage_row else state.get("model_usage", []),
+        }
+    usage_row = _embedding_model_usage_row(
+        state,
+        deps["embedding_provider"],
+        node="retrieve_labeled_examples",
+        purpose="semantic_retrieval_embedding",
+        status="ok",
+        call_count=1,
+        started=started,
+    )
+    return {
+        "semantic_examples": examples,
+        "warnings": warnings,
+        "model_usage": [*state.get("model_usage", []), usage_row] if usage_row else state.get("model_usage", []),
+    }
 
 
 def _assign_deterministic_tags(state: DocumentPipelineState) -> dict[str, Any]:
@@ -324,6 +373,7 @@ def _assign_deterministic_tags(state: DocumentPipelineState) -> dict[str, Any]:
 def _inspect_tags_with_llm(state: DocumentPipelineState, deps: DocumentPipelineDeps) -> dict[str, Any]:
     taxonomy = load_taxonomy_options(state.get("taxonomy_path", DEFAULT_TAXONOMY_PATH))
     extraction = state.get("extraction_result") or _empty_extraction(state)
+    started = time.monotonic()
     inspection = deps["llm_tag_inspector"].inspect(
         sample=state["sample"],
         corrected=state["content_class"],
@@ -337,7 +387,12 @@ def _inspect_tags_with_llm(state: DocumentPipelineState, deps: DocumentPipelineD
     warnings = [*state.get("warnings", [])]
     if warning:
         warnings.append(str(warning))
-    return {"llm_tag_inspection": inspection, "warnings": warnings}
+    usage_row = _llm_tag_model_usage_row(state, inspection, started=started)
+    return {
+        "llm_tag_inspection": inspection,
+        "warnings": warnings,
+        "model_usage": [*state.get("model_usage", []), usage_row] if usage_row else state.get("model_usage", []),
+    }
 
 
 def _combine_tag_evidence(state: DocumentPipelineState) -> dict[str, Any]:
@@ -385,6 +440,7 @@ def _persist_outputs(state: DocumentPipelineState) -> dict[str, Any]:
     if state.get("sample") and state.get("llm_tag_inspection"):
         artifacts["sample-llm-tag-inspections.jsonl"] = [llm_inspection_row(state["sample"], state["llm_tag_inspection"])]
     artifacts["sample-tag-candidates.jsonl"] = state.get("tag_candidates", [])
+    artifacts["sample-model-usage.jsonl"] = state.get("model_usage", [])
 
     for filename, rows in artifacts.items():
         _write_jsonl(output_dir / filename, rows)
@@ -412,6 +468,143 @@ def _review_queue_row(final_result: dict[str, Any]) -> dict[str, Any] | None:
         "tag_confidence": final_result.get("tag_confidence"),
         "warnings": final_result.get("warnings", []),
     }
+
+
+def _ocr_model_usage_rows(state: DocumentPipelineState, pages: list[dict[str, Any]], *, node: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for page in pages:
+        warning = _first_warning_with_prefix(page.get("warnings", []), "ocr_fallback_used:")
+        if not warning:
+            continue
+        provider, model = _provider_model_from_engine(warning.removeprefix("ocr_fallback_used:"))
+        rows.append(
+            _model_usage_row(
+                state,
+                node=node,
+                purpose="ocr_fallback",
+                provider=provider,
+                model=model,
+                status="ok" if page.get("ocr_status") == "ok" else str(page.get("ocr_status") or "unknown"),
+                runtime_ms=_seconds_to_ms(page.get("seconds")),
+                cost_basis=_cost_basis(provider),
+                metadata={
+                    "page_number": page.get("page_number"),
+                    "page_count": page.get("page_count"),
+                    "ocr_engine": page.get("ocr_engine"),
+                    "cost_estimate": "unavailable",
+                },
+            )
+        )
+    return rows
+
+
+def _embedding_model_usage_row(
+    state: DocumentPipelineState,
+    provider: EmbeddingProvider,
+    *,
+    node: str,
+    purpose: str,
+    status: str,
+    call_count: int,
+    started: float,
+    error: str | None = None,
+) -> dict[str, Any] | None:
+    if call_count <= 0:
+        return None
+    provider_name = str(getattr(provider, "provider_name", "") or provider.__class__.__name__.replace("EmbeddingProvider", "").lower() or "embedding")
+    if provider_name == "placeholder":
+        provider_name = "placeholder"
+    return _model_usage_row(
+        state,
+        node=node,
+        purpose=purpose,
+        provider=provider_name,
+        model=str(getattr(provider, "model", "unknown")),
+        status=status,
+        runtime_ms=round((time.monotonic() - started) * 1000),
+        error=error,
+        cost_basis=_cost_basis(provider_name),
+        metadata={
+            "call_count": call_count,
+            "embedding_dimensions": getattr(provider, "dimensions", None),
+            "cost_estimate": "unavailable",
+        },
+    )
+
+
+def _llm_tag_model_usage_row(state: DocumentPipelineState, inspection: dict[str, Any], *, started: float) -> dict[str, Any] | None:
+    provider = str(inspection.get("provider") or "unknown")
+    status = str(inspection.get("llm_status") or "unknown")
+    if provider == "disabled" and status == "skipped":
+        return None
+    return _model_usage_row(
+        state,
+        node="inspect_tags_with_llm",
+        purpose="tag_inspection",
+        provider=provider,
+        model=str(inspection.get("model") or "unknown"),
+        status="ok" if status == "inspected" else status,
+        runtime_ms=round((time.monotonic() - started) * 1000),
+        error=str(inspection.get("warning") or "") or None,
+        cost_basis=_cost_basis(provider),
+        metadata={"cost_estimate": "unavailable"},
+    )
+
+
+def _model_usage_row(
+    state: DocumentPipelineState,
+    *,
+    node: str,
+    purpose: str,
+    provider: str,
+    model: str,
+    status: str,
+    runtime_ms: int | None = None,
+    error: str | None = None,
+    cost_basis: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "source_path": state.get("source_path"),
+        "relative_path": state.get("relative_path"),
+        "node": node,
+        "purpose": purpose,
+        "provider": provider,
+        "model": model,
+        "status": status,
+        "runtime_ms": runtime_ms,
+        "cost_basis": cost_basis or _cost_basis(provider),
+        "error": error,
+        "metadata": metadata or {},
+    }
+
+
+def _first_warning_with_prefix(warnings: Any, prefix: str) -> str | None:
+    if isinstance(warnings, str):
+        warnings = [warnings]
+    if not isinstance(warnings, list):
+        return None
+    for warning in warnings:
+        if isinstance(warning, str) and warning.startswith(prefix):
+            return warning
+    return None
+
+
+def _provider_model_from_engine(engine: str) -> tuple[str, str]:
+    provider, separator, model = engine.partition(":")
+    if not separator:
+        return provider or "unknown", "unknown"
+    return provider or "unknown", model or "unknown"
+
+
+def _cost_basis(provider: str) -> str:
+    return "external" if provider.lower() in {"openai", "gemini", "google", "anthropic"} else "local"
+
+
+def _seconds_to_ms(value: Any) -> int | None:
+    if not isinstance(value, int | float):
+        return None
+    return round(float(value) * 1000)
 
 
 def _final_result_from_state(state: DocumentPipelineState) -> dict[str, Any]:

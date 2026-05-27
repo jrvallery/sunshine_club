@@ -22,6 +22,8 @@ from sunshine_api.services.run_reports import _read_jsonl_file
 
 def _read_model_usage_artifact(output_dir: Path, *, run_id: int) -> list[dict[str, Any]]:
     rows = _read_jsonl_file(output_dir / "sample-model-usage.jsonl")
+    if not rows:
+        rows = _synthesize_model_usage_from_artifacts(output_dir)
     for index, row in enumerate(rows, start=1):
         row.setdefault("id", index)
         row.setdefault("run_id", run_id)
@@ -33,17 +35,19 @@ def _read_model_usage_artifact(output_dir: Path, *, run_id: int) -> list[dict[st
 
 
 def _model_usage_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    external_rows = [row for row in rows if _is_external_model_call(row)]
     summary = {
         "total_calls": len(rows),
         "failed_calls": sum(1 for row in rows if str(row.get("status") or "").lower() not in {"ok", "success", "succeeded", "completed"}),
-        "external_calls": sum(1 for row in rows if _is_external_model_call(row)),
+        "external_calls": len(external_rows),
         "local_calls": sum(1 for row in rows if not _is_external_model_call(row)),
         "runtime_ms": _sum_numeric(rows, "runtime_ms"),
         "input_tokens": _sum_numeric(rows, "input_tokens"),
         "output_tokens": _sum_numeric(rows, "output_tokens"),
         "total_tokens": _sum_numeric(rows, "total_tokens"),
+        "unknown_external_cost_calls": sum(1 for row in external_rows if row.get("estimated_cost_usd") is None),
         "estimated_external_cost_usd": round(
-            sum(float(row.get("estimated_cost_usd") or 0) for row in rows if _is_external_model_call(row)),
+            sum(float(row.get("estimated_cost_usd") or 0) for row in external_rows),
             6,
         ),
     }
@@ -64,6 +68,137 @@ def _is_external_model_call(row: dict[str, Any]) -> bool:
     if cost_basis == "local":
         return False
     return provider in {"openai", "gemini", "google", "anthropic"}
+
+
+def _synthesize_model_usage_from_artifacts(output_dir: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    rows.extend(_synthesize_ocr_usage(output_dir))
+    rows.extend(_synthesize_llm_tag_usage(output_dir))
+    rows.extend(_synthesize_embedding_usage(output_dir))
+    return rows
+
+
+def _synthesize_ocr_usage(output_dir: Path) -> list[dict[str, Any]]:
+    page_rows = _read_jsonl_file(output_dir / "sample-ocr-pages.jsonl")
+    rows = []
+    for page in page_rows:
+        warning = _first_warning_with_prefix(page.get("warnings", []), "ocr_fallback_used:")
+        if not warning:
+            continue
+        provider, model = _provider_model_from_engine(warning.removeprefix("ocr_fallback_used:"))
+        rows.append(
+            {
+                "source_path": page.get("source_path"),
+                "relative_path": page.get("relative_path"),
+                "node": "ocr_artifact_inference",
+                "purpose": "ocr_fallback",
+                "provider": provider,
+                "model": model,
+                "status": "ok" if page.get("ocr_status") == "ok" else str(page.get("ocr_status") or "unknown"),
+                "runtime_ms": _seconds_to_ms(page.get("seconds")),
+                "cost_basis": "external" if _provider_is_external(provider) else "local",
+                "metadata": {"inferred_from": "sample-ocr-pages.jsonl", "page_number": page.get("page_number")},
+            }
+        )
+    if rows:
+        return rows
+
+    result_rows = _read_jsonl_file(output_dir / "sample-pipeline-results.jsonl")
+    for result in result_rows:
+        warning = _first_warning_with_prefix(result.get("warnings", []), "ocr_fallback_used:")
+        if not warning:
+            continue
+        provider, model = _provider_model_from_engine(warning.removeprefix("ocr_fallback_used:"))
+        rows.append(
+            {
+                "source_path": result.get("source_path"),
+                "relative_path": result.get("relative_path"),
+                "node": "pipeline_result_inference",
+                "purpose": "ocr_fallback",
+                "provider": provider,
+                "model": model,
+                "status": "unknown",
+                "cost_basis": "external" if _provider_is_external(provider) else "local",
+                "metadata": {"inferred_from": "sample-pipeline-results.jsonl"},
+            }
+        )
+    return rows
+
+
+def _synthesize_llm_tag_usage(output_dir: Path) -> list[dict[str, Any]]:
+    rows = []
+    for inspection in _read_jsonl_file(output_dir / "sample-llm-tag-inspections.jsonl"):
+        provider = str(inspection.get("provider") or "unknown")
+        status = str(inspection.get("llm_status") or "unknown")
+        if provider == "disabled" and status == "skipped":
+            continue
+        rows.append(
+            {
+                "source_path": inspection.get("source_path"),
+                "relative_path": inspection.get("relative_path"),
+                "node": "llm_tag_inspection_artifact",
+                "purpose": "tag_inspection",
+                "provider": provider,
+                "model": str(inspection.get("model") or "unknown"),
+                "status": "ok" if status == "inspected" else status,
+                "cost_basis": "external" if _provider_is_external(provider) else "local",
+                "error": inspection.get("warning"),
+                "metadata": {"inferred_from": "sample-llm-tag-inspections.jsonl"},
+            }
+        )
+    return rows
+
+
+def _synthesize_embedding_usage(output_dir: Path) -> list[dict[str, Any]]:
+    rows = []
+    for embedding in _read_jsonl_file(output_dir / "sample-embeddings.jsonl"):
+        provider = str(embedding.get("embedding_provider") or "unknown")
+        rows.append(
+            {
+                "source_path": embedding.get("source_path"),
+                "relative_path": embedding.get("relative_path"),
+                "node": "embedding_artifact",
+                "purpose": "chunk_embedding",
+                "provider": provider,
+                "model": str(embedding.get("embedding_model") or "unknown"),
+                "status": str(embedding.get("embedding_status") or "unknown"),
+                "cost_basis": "external" if _provider_is_external(provider) else "local",
+                "metadata": {
+                    "inferred_from": "sample-embeddings.jsonl",
+                    "chunk_id": embedding.get("chunk_id"),
+                    "embedding_dimensions": embedding.get("embedding_dimensions"),
+                },
+            }
+        )
+    return rows
+
+
+def _first_warning_with_prefix(warnings: Any, prefix: str) -> str | None:
+    if isinstance(warnings, str):
+        warnings = [warnings]
+    if not isinstance(warnings, list):
+        return None
+    for warning in warnings:
+        if isinstance(warning, str) and warning.startswith(prefix):
+            return warning
+    return None
+
+
+def _provider_model_from_engine(engine: str) -> tuple[str, str]:
+    provider, separator, model = engine.partition(":")
+    if not separator:
+        return provider or "unknown", "unknown"
+    return provider or "unknown", model or "unknown"
+
+
+def _provider_is_external(provider: str) -> bool:
+    return provider.lower() in {"openai", "gemini", "google", "anthropic"}
+
+
+def _seconds_to_ms(value: Any) -> int | None:
+    if not isinstance(value, int | float):
+        return None
+    return round(float(value) * 1000)
 
 
 def _model_usage_breakdowns(rows: list[dict[str, Any]], fields: list[str]) -> dict[str, dict[str, Any]]:
@@ -121,4 +256,3 @@ def _count_list_values(rows: list[dict[str, Any]], field: str) -> dict[str, int]
             key = str(value or "unknown")
             counts[key] = counts.get(key, 0) + 1
     return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
-

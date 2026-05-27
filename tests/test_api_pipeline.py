@@ -6,6 +6,7 @@ import json
 from fastapi.testclient import TestClient
 
 from sunshine_api.main import app
+from sunshine_api.services.model_usage import _model_usage_report, _read_model_usage_artifact
 
 
 def test_api_pipeline_run_file_processes_one_file(tmp_path: Path, monkeypatch) -> None:
@@ -38,6 +39,61 @@ def test_api_pipeline_run_file_processes_one_file(tmp_path: Path, monkeypatch) -
     assert Path(payload["graph_result_path"]).exists()
     assert Path(payload["graph_audit_events_path"]).exists()
     assert checkpoint_path.exists()
+
+
+def test_model_usage_report_infers_calls_from_legacy_artifacts(tmp_path: Path) -> None:
+    output_dir = tmp_path / "legacy-run"
+    output_dir.mkdir()
+    (output_dir / "sample-pipeline-results.jsonl").write_text(
+        json.dumps(
+            {
+                "source_path": "/source/scan.pdf",
+                "relative_path": "Scans/scan.pdf",
+                "warnings": ["ocr_fallback_used:openai:gpt-4.1-mini"],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (output_dir / "sample-llm-tag-inspections.jsonl").write_text(
+        json.dumps(
+            {
+                "source_path": "/source/scan.pdf",
+                "relative_path": "Scans/scan.pdf",
+                "provider": "cortex",
+                "model": "gemma4-26b",
+                "llm_status": "inspected",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (output_dir / "sample-embeddings.jsonl").write_text(
+        json.dumps(
+            {
+                "source_path": "/source/scan.pdf",
+                "relative_path": "Scans/scan.pdf",
+                "chunk_id": "scan:1",
+                "embedding_provider": "openai",
+                "embedding_model": "text-embedding-3-large",
+                "embedding_status": "embedded",
+                "embedding_dimensions": 3072,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rows = _read_model_usage_artifact(output_dir, run_id=123)
+    report = _model_usage_report(rows)
+
+    assert report["summary"]["total_calls"] == 3
+    assert report["summary"]["external_calls"] == 2
+    assert report["summary"]["local_calls"] == 1
+    assert report["summary"]["unknown_external_cost_calls"] == 2
+    assert report["by_purpose"]["ocr_fallback"]["calls"] == 1
+    assert report["by_purpose"]["tag_inspection"]["calls"] == 1
+    assert report["by_purpose"]["chunk_embedding"]["calls"] == 1
 
 
 def test_api_pipeline_run_file_missing_file_returns_review_result(tmp_path: Path, monkeypatch) -> None:

@@ -39,6 +39,7 @@ class DocumentPipelineState(TypedDict, total=False):
     semantic_examples: list[dict[str, Any]]
     deterministic_tag_candidates: list[dict[str, Any]]
     llm_tag_inspection: dict[str, Any]
+    model_usage: list[dict[str, Any]]
     tag_candidates: list[dict[str, Any]]
     route: dict[str, Any]
     final_result: dict[str, Any]
@@ -53,4 +54,3 @@ class DocumentPipelineDeps(TypedDict, total=False):
     llm_tag_inspector: LLMTagInspector
     ocr_executor: OcrExecutor
     semantic_index_path: str | None
-
