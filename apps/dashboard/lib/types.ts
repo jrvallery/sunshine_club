@@ -532,6 +532,7 @@ export type PipelineEvalSummary = {
   by_llm_status?: Record<string, number>;
   model_usage?: Record<string, unknown>;
   run_metadata?: Record<string, unknown>;
+  run_warnings?: string[];
   artifacts?: Record<string, string>;
   acceptance_gate?: {
     status: string;

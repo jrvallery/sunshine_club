@@ -312,8 +312,11 @@ export default function PipelineEvalPage() {
               <KeyValue label="Git commit" value={shortCommit(summary?.run_metadata?.git_commit ?? activeRun.run_metadata?.git_commit)} />
               <KeyValue label="Taxonomy" value={String(summary?.run_metadata?.taxonomy_version ?? activeRun.run_metadata?.taxonomy_version ?? "-")} />
               <KeyValue label="Embedding" value={String(summary?.run_metadata?.embedding_provider ?? activeRun.run_metadata?.embedding_provider ?? "-")} />
+              <KeyValue label="Embedding model" value={String(summary?.run_metadata?.embedding_model ?? activeRun.run_metadata?.embedding_model ?? "-")} />
               <KeyValue label="LLM" value={String(summary?.run_metadata?.llm_provider ?? activeRun.run_metadata?.llm_provider ?? "-")} />
               <KeyValue label="OCR" value={String(summary?.run_metadata?.ocr_mode ?? activeRun.run_metadata?.ocr_mode ?? "-")} />
+              <KeyValue label="OCR fallback" value={String(summary?.run_metadata?.ocr_fallback_mode ?? activeRun.run_metadata?.ocr_fallback_mode ?? "-")} />
+              <KeyValue label="Warnings" value={runWarnings(summary).join("; ") || "-"} />
             </section>
             <section>
               <h3>Artifacts</h3>
@@ -598,6 +601,15 @@ function comparisonSampleRows(comparison: PipelineEvalComparison) {
     return comparison.regressed_failures;
   }
   return comparison.changed_failure_reasons ?? [];
+}
+
+function runWarnings(summary: PipelineEvalRun["summary"] | undefined) {
+  const warnings = summary?.run_warnings;
+  if (Array.isArray(warnings)) {
+    return warnings.map(String).filter(Boolean);
+  }
+  const metadataWarnings = summary?.run_metadata?.warnings;
+  return Array.isArray(metadataWarnings) ? metadataWarnings.map(String).filter(Boolean) : [];
 }
 
 function shortCommit(value: unknown) {
