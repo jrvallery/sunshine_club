@@ -224,6 +224,7 @@ def pipeline_eval_run(request: PipelineEvalRequest) -> dict[str, Any]:
         labels_db,
         output_dir=output_dir,
         limit=request.limit,
+        embedding_provider_name=request.embedding_provider,
         llm_tag_inspector=llm_tag_inspector_from_env() if request.enable_llm_tags else LLMTagInspector(),
         ocr_executor=ocr_executor_from_env() if request.enable_ocr else None,
         ocr_fallback_provider=request.ocr_fallback_provider,

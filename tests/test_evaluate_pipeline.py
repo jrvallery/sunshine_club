@@ -46,10 +46,19 @@ def test_pipeline_eval_cli_accepts_documented_golden_labels_alias(monkeypatch) -
     monkeypatch.setattr(
         sys,
         "argv",
-        ["evaluate_pipeline", "--golden-labels", "/tmp/labels.sqlite", "--ocr-fallback-provider", "cortex"],
+        [
+            "evaluate_pipeline",
+            "--golden-labels",
+            "/tmp/labels.sqlite",
+            "--embedding-provider",
+            "placeholder",
+            "--ocr-fallback-provider",
+            "cortex",
+        ],
     )
     args = _parse_args()
     assert args.labels_db == "/tmp/labels.sqlite"
+    assert args.embedding_provider == "placeholder"
     assert args.ocr_fallback_provider == "cortex"
 
 
@@ -320,6 +329,15 @@ def test_eval_embedding_provider_resolution_records_configuration_fallback(monke
     assert isinstance(provider, PlaceholderEmbeddingProvider)
     assert warnings
     assert warnings[0].startswith("embedding_provider_configuration_failed:")
+
+
+def test_eval_embedding_provider_resolution_uses_provider_override(monkeypatch) -> None:
+    monkeypatch.setenv("SUNSHINE_EMBEDDING_PROVIDER", "not-a-provider")
+
+    provider, warnings = _resolve_eval_embedding_provider(None, provider_name_override="placeholder")
+
+    assert isinstance(provider, PlaceholderEmbeddingProvider)
+    assert warnings == []
 
 
 def test_eval_ocr_resolution_records_fallback_configuration_failure(monkeypatch) -> None:

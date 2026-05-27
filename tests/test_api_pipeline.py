@@ -307,7 +307,7 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     pipeline_eval_output_dir = tmp_path / "pipeline-eval"
     pipeline_eval = client.post(
         "/admin/pipeline-eval/run",
-        json={"output_dir": str(pipeline_eval_output_dir), "disable_semantic_index": True},
+        json={"output_dir": str(pipeline_eval_output_dir), "disable_semantic_index": True, "embedding_provider": "placeholder"},
     )
     pipeline_eval_latest = client.get("/admin/pipeline-eval/latest", params={"output_dir": str(pipeline_eval_output_dir)})
     pipeline_eval_import = client.post("/admin/pipeline-eval/import", json={"output_dir": str(pipeline_eval_output_dir)})
@@ -522,6 +522,7 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert pipeline_eval.json()["report"]["total_golden_labels"] == 1
     assert pipeline_eval.json()["report"]["evaluated_predictions"] == 1
     assert pipeline_eval.json()["report"]["run_metadata"]["taxonomy_version"].endswith(".json")
+    assert pipeline_eval.json()["report"]["run_metadata"]["embedding_provider"] == "placeholder"
     assert pipeline_eval.json()["report"]["run_metadata"]["ocr_fallback_mode"] == "disabled"
     assert "git_commit" in pipeline_eval.json()["eval_run"]["run_metadata"]
     assert pipeline_eval.json()["eval_run"]["evaluated_predictions"] == 1

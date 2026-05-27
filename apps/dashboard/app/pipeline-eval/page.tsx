@@ -19,6 +19,7 @@ export default function PipelineEvalPage() {
   const [outputDir, setOutputDir] = useState(".local/pipeline-eval");
   const [limit, setLimit] = useState("25");
   const [disableSemanticIndex, setDisableSemanticIndex] = useState(false);
+  const [embeddingProvider, setEmbeddingProvider] = useState("placeholder");
   const [enableLlmTags, setEnableLlmTags] = useState(false);
   const [enableOcr, setEnableOcr] = useState(false);
   const [ocrFallbackProvider, setOcrFallbackProvider] = useState("disabled");
@@ -56,6 +57,7 @@ export default function PipelineEvalPage() {
         output_dir: outputDir,
         limit: Number(limit) > 0 ? Number(limit) : undefined,
         disable_semantic_index: disableSemanticIndex,
+        embedding_provider: embeddingProvider,
         enable_llm_tags: enableLlmTags,
         enable_ocr: enableOcr,
         ocr_fallback_provider: ocrFallbackProvider
@@ -125,6 +127,12 @@ export default function PipelineEvalPage() {
           <TextInput label="Output dir" value={outputDir} onChange={(event) => setOutputDir(event.target.value)} />
           <TextInput label="Limit" value={limit} onChange={(event) => setLimit(event.target.value)} />
           <CheckboxField label="Disable semantic index" checked={disableSemanticIndex} onChange={(event) => setDisableSemanticIndex(event.target.checked)} />
+          <SelectInput label="Embedding provider" value={embeddingProvider} onChange={(event) => setEmbeddingProvider(event.target.value)}>
+            <option value="placeholder">Placeholder</option>
+            <option value="gemini">Gemini</option>
+            <option value="cortex">Cortex</option>
+            <option value="openai">OpenAI</option>
+          </SelectInput>
           <CheckboxField label="Enable LLM tags" checked={enableLlmTags} onChange={(event) => setEnableLlmTags(event.target.checked)} />
           <CheckboxField label="Enable OCR" checked={enableOcr} onChange={(event) => setEnableOcr(event.target.checked)} />
           <SelectInput label="OCR fallback" value={ocrFallbackProvider} onChange={(event) => setOcrFallbackProvider(event.target.value)}>

@@ -102,6 +102,7 @@ def run_golden_pipeline_evaluation(
     limit: int | None = None,
     taxonomy_path: str | Path = DEFAULT_TAXONOMY_PATH,
     embedding_provider: EmbeddingProvider | None = None,
+    embedding_provider_name: str | None = None,
     llm_tag_inspector: LLMTagInspector | None = None,
     ocr_executor: OcrExecutor | None = None,
     ocr_fallback_provider: str | None = None,
@@ -115,7 +116,7 @@ def run_golden_pipeline_evaluation(
     output_path.mkdir(parents=True, exist_ok=True)
     graph_runs_dir = output_path / "graph-runs"
     graph_runs_dir.mkdir(parents=True, exist_ok=True)
-    active_embedding_provider, provider_warnings = _resolve_eval_embedding_provider(embedding_provider)
+    active_embedding_provider, provider_warnings = _resolve_eval_embedding_provider(embedding_provider, provider_name_override=embedding_provider_name)
     active_ocr_executor, ocr_warnings = _resolve_eval_ocr_executor(ocr_executor, fallback_provider_override=ocr_fallback_provider)
     run_metadata = _eval_run_metadata(
         labels_db=labels_db,
@@ -1134,11 +1135,11 @@ def _eval_run_metadata(
     }
 
 
-def _resolve_eval_embedding_provider(provider: EmbeddingProvider | None) -> tuple[EmbeddingProvider, list[str]]:
+def _resolve_eval_embedding_provider(provider: EmbeddingProvider | None, *, provider_name_override: str | None = None) -> tuple[EmbeddingProvider, list[str]]:
     if provider is not None:
         return provider, []
     try:
-        return provider_from_env(), []
+        return provider_from_env(provider_name_override), []
     except EmbeddingConfigurationError as error:
         return PlaceholderEmbeddingProvider(), [f"embedding_provider_configuration_failed:{error}"]
 
@@ -1579,6 +1580,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--taxonomy-path", default=DEFAULT_TAXONOMY_PATH)
     parser.add_argument("--semantic-index-path", default=DEFAULT_INDEX_DB)
     parser.add_argument("--disable-semantic-index", action="store_true")
+    parser.add_argument("--embedding-provider", choices=["placeholder", "gemini", "cortex", "openai"])
     parser.add_argument("--enable-llm-tags", action="store_true")
     parser.add_argument("--enable-ocr", action="store_true")
     parser.add_argument("--ocr-fallback-provider", choices=["disabled", "openai", "cortex", "local", "openai-compatible"])
@@ -1594,6 +1596,7 @@ def main() -> None:
         output_dir=args.output_dir,
         limit=args.limit,
         taxonomy_path=args.taxonomy_path,
+        embedding_provider_name=args.embedding_provider,
         llm_tag_inspector=llm_tag_inspector_from_env() if args.enable_llm_tags else LLMTagInspector(),
         ocr_executor=ocr_executor_from_env(fallback_provider_override=args.ocr_fallback_provider) if args.enable_ocr else None,
         ocr_fallback_provider=args.ocr_fallback_provider,
