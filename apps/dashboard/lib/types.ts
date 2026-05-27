@@ -581,11 +581,13 @@ export type PipelineEvalComparison = {
   changed_secondary_tag_count?: number;
   fixed_failure_count: number;
   regressed_failure_count: number;
+  changed_failure_reason_count?: number;
   changed_review_route_count: number;
   changed_predictions: Array<Record<string, unknown>>;
   changed_secondary_tags?: Array<Record<string, unknown>>;
   fixed_failures: Array<Record<string, unknown>>;
   regressed_failures: Array<Record<string, unknown>>;
+  changed_failure_reasons?: Array<Record<string, unknown>>;
   changed_review_routes: Array<Record<string, unknown>>;
 };
 

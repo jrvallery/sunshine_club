@@ -250,6 +250,7 @@ export default function PipelineEvalPage() {
                   <h4>Outcome Changes</h4>
                   <KeyValue label="Fixed failures" value={String(comparison.data.fixed_failure_count)} />
                   <KeyValue label="Regressed failures" value={String(comparison.data.regressed_failure_count)} />
+                  <KeyValue label="Changed failure reasons" value={String(comparison.data.changed_failure_reason_count ?? 0)} />
                   <KeyValue label="Changed tags" value={String(comparison.data.changed_prediction_count)} />
                   <KeyValue label="Changed secondary" value={String(comparison.data.changed_secondary_tag_count ?? 0)} />
                   <KeyValue label="Changed routes" value={String(comparison.data.changed_review_route_count)} />
@@ -262,12 +263,12 @@ export default function PipelineEvalPage() {
                 </section>
                 <section>
                   <h4>Sample Changes</h4>
-                  {(comparison.data.changed_predictions.length ? comparison.data.changed_predictions : comparison.data.regressed_failures).slice(0, 5).map((row) => (
+                  {comparisonSampleRows(comparison.data).slice(0, 5).map((row) => (
                     <p className="pathText" key={String(row.source_path)}>
                       {String(row.relative_path ?? row.source_path)}: {String(row.baseline_predicted_primary_tag ?? "-")} to {String(row.current_predicted_primary_tag ?? "-")}
                     </p>
                   ))}
-                  {!comparison.data.changed_predictions.length && !comparison.data.regressed_failures.length ? <p className="muted">No changed predictions or regressions.</p> : null}
+                  {!comparisonSampleRows(comparison.data).length ? <p className="muted">No changed predictions, regressions, or failure reasons.</p> : null}
                 </section>
               </div>
             </section>
@@ -566,6 +567,16 @@ function formatCategoryList(categories: Array<{ tag: string; total: number; corr
 function formatDelta(delta: { baseline: number | null; current: number | null; delta: number | null }) {
   const change = delta.delta === null ? "-" : `${delta.delta >= 0 ? "+" : ""}${formatPercent(delta.delta)}`;
   return `${formatPercent(delta.baseline)} to ${formatPercent(delta.current)} (${change})`;
+}
+
+function comparisonSampleRows(comparison: PipelineEvalComparison) {
+  if (comparison.changed_predictions.length) {
+    return comparison.changed_predictions;
+  }
+  if (comparison.regressed_failures.length) {
+    return comparison.regressed_failures;
+  }
+  return comparison.changed_failure_reasons ?? [];
 }
 
 function shortCommit(value: unknown) {

@@ -138,12 +138,22 @@ def pipeline_eval_run_compare(eval_run_id: int, baseline_eval_run_id: int) -> di
         raise HTTPException(status_code=404, detail=str(error)) from error
     current_results = _eval_rows_by_source(Path(str(current.get("output_dir") or "")) / "eval-results.jsonl")
     baseline_results = _eval_rows_by_source(Path(str(baseline.get("output_dir") or "")) / "eval-results.jsonl")
+    return _pipeline_eval_comparison(baseline, current, baseline_results, current_results)
+
+
+def _pipeline_eval_comparison(
+    baseline: dict[str, Any],
+    current: dict[str, Any],
+    baseline_results: dict[str, dict[str, Any]],
+    current_results: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
     shared_sources = sorted(set(current_results) & set(baseline_results))
     changed_predictions = []
     fixed_failures = []
     regressed_failures = []
     changed_review_routes = []
     changed_secondary_tags = []
+    changed_failure_reasons = []
     for source_path in shared_sources:
         current_row = current_results[source_path]
         baseline_row = baseline_results[source_path]
@@ -157,6 +167,8 @@ def pipeline_eval_run_compare(eval_run_id: int, baseline_eval_run_id: int) -> di
             fixed_failures.append(_comparison_row(source_path, baseline_row, current_row, "failure_fixed"))
         elif not baseline_failed and current_failed:
             regressed_failures.append(_comparison_row(source_path, baseline_row, current_row, "failure_regressed"))
+        if sorted(baseline_row.get("failure_reasons") or []) != sorted(current_row.get("failure_reasons") or []):
+            changed_failure_reasons.append(_comparison_row(source_path, baseline_row, current_row, "failure_reasons_changed"))
         if baseline_row.get("route_status") != current_row.get("route_status"):
             changed_review_routes.append(_comparison_row(source_path, baseline_row, current_row, "route_changed"))
 
@@ -191,11 +203,13 @@ def pipeline_eval_run_compare(eval_run_id: int, baseline_eval_run_id: int) -> di
         "changed_secondary_tag_count": len(changed_secondary_tags),
         "fixed_failure_count": len(fixed_failures),
         "regressed_failure_count": len(regressed_failures),
+        "changed_failure_reason_count": len(changed_failure_reasons),
         "changed_review_route_count": len(changed_review_routes),
         "changed_predictions": changed_predictions[:100],
         "changed_secondary_tags": changed_secondary_tags[:100],
         "fixed_failures": fixed_failures[:100],
         "regressed_failures": regressed_failures[:100],
+        "changed_failure_reasons": changed_failure_reasons[:100],
         "changed_review_routes": changed_review_routes[:100],
     }
 
