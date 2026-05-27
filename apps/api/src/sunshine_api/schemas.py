@@ -106,3 +106,13 @@ class SemanticIndexBuildRequest(BaseModel):
 class SemanticEvalRequest(BaseModel):
     labels_db: str | None = None
     output_dir: str | None = None
+
+
+class PipelineEvalRequest(BaseModel):
+    labels_db: str | None = None
+    output_dir: str | None = None
+    limit: int | None = Field(default=None, ge=1)
+    semantic_index_path: str | None = None
+    disable_semantic_index: bool = False
+    enable_llm_tags: bool = False
+    enable_ocr: bool = False

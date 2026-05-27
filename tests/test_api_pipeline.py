@@ -280,6 +280,12 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     eval_output_dir = tmp_path / "semantic-eval"
     semantic_eval = client.post("/admin/semantic-eval/run", json={"output_dir": str(eval_output_dir)})
     semantic_eval_latest = client.get("/admin/semantic-eval/latest", params={"output_dir": str(eval_output_dir)})
+    pipeline_eval_output_dir = tmp_path / "pipeline-eval"
+    pipeline_eval = client.post(
+        "/admin/pipeline-eval/run",
+        json={"output_dir": str(pipeline_eval_output_dir), "disable_semantic_index": True},
+    )
+    pipeline_eval_latest = client.get("/admin/pipeline-eval/latest", params={"output_dir": str(pipeline_eval_output_dir)})
     deleted_label = client.delete(f"/admin/review/golden-labels/{label_id}")
     file_response = client.get(f"/admin/review/items/{item_id}/file")
     files = client.get("/admin/files", params={"q": "meeting minutes"})
@@ -438,6 +444,12 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert semantic_eval.json()["report"]["total_golden_labels"] == 1
     assert semantic_eval_latest.status_code == 200
     assert semantic_eval_latest.json()["exists"] is True
+    assert pipeline_eval.status_code == 200
+    assert pipeline_eval.json()["report"]["total_golden_labels"] == 1
+    assert pipeline_eval.json()["report"]["evaluated_predictions"] == 1
+    assert (pipeline_eval_output_dir / "eval-summary.json").exists()
+    assert pipeline_eval_latest.status_code == 200
+    assert pipeline_eval_latest.json()["exists"] is True
     assert deleted_label.status_code == 200
     assert deleted_label.json()["deleted"] is True
     assert file_response.status_code == 200
