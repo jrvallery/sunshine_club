@@ -593,7 +593,9 @@ class GeminiLLMTagInspector(LLMTagInspector):
             with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
                 response_payload = json.loads(response.read().decode("utf-8"))
             text = response_payload["candidates"][0]["content"]["parts"][0]["text"]
-            return normalize_llm_inspection(json.loads(text), taxonomy, model=self.model, provider="gemini")
+            inspection = normalize_llm_inspection(json.loads(text), taxonomy, model=self.model, provider="gemini")
+            inspection.update(_gemini_usage_fields(response_payload))
+            return inspection
         except urllib.error.HTTPError as error:
             body = error.read().decode("utf-8", errors="replace")
             return {
@@ -671,7 +673,9 @@ class OpenAICompatibleLLMTagInspector(LLMTagInspector):
                 ]
             )
             payload = _extract_json_object(_message_content_to_text(response.content))
-            return normalize_llm_inspection(json.loads(payload), taxonomy, model=self.model, provider=self.provider_name)
+            inspection = normalize_llm_inspection(json.loads(payload), taxonomy, model=self.model, provider=self.provider_name)
+            inspection.update(_chat_response_usage_fields(response))
+            return inspection
         except Exception as error:  # noqa: BLE001 - every file needs an auditable failure row.
             return {
                 "llm_status": "failed",
@@ -1314,6 +1318,56 @@ def _message_content_to_text(content: Any) -> str:
                 parts.append(item["text"])
         return "\n".join(parts)
     return str(content)
+
+
+def _gemini_usage_fields(response_payload: dict[str, Any]) -> dict[str, int]:
+    usage = response_payload.get("usageMetadata")
+    if not isinstance(usage, dict):
+        return {}
+    fields: dict[str, int] = {}
+    prompt_tokens = _optional_positive_int(usage.get("promptTokenCount"))
+    output_tokens = _optional_positive_int(usage.get("candidatesTokenCount"))
+    total_tokens = _optional_positive_int(usage.get("totalTokenCount"))
+    if prompt_tokens is not None:
+        fields["input_tokens"] = prompt_tokens
+    if output_tokens is not None:
+        fields["output_tokens"] = output_tokens
+    if total_tokens is not None:
+        fields["total_tokens"] = total_tokens
+    elif prompt_tokens is not None or output_tokens is not None:
+        fields["total_tokens"] = int(prompt_tokens or 0) + int(output_tokens or 0)
+    return fields
+
+
+def _chat_response_usage_fields(response: Any) -> dict[str, int]:
+    usage = getattr(response, "usage_metadata", None)
+    if not isinstance(usage, dict):
+        metadata = getattr(response, "response_metadata", None)
+        if isinstance(metadata, dict):
+            usage = metadata.get("token_usage") or metadata.get("usage")
+    if not isinstance(usage, dict):
+        return {}
+    prompt_tokens = _optional_positive_int(usage.get("input_tokens") or usage.get("prompt_tokens"))
+    output_tokens = _optional_positive_int(usage.get("output_tokens") or usage.get("completion_tokens"))
+    total_tokens = _optional_positive_int(usage.get("total_tokens"))
+    fields: dict[str, int] = {}
+    if prompt_tokens is not None:
+        fields["input_tokens"] = prompt_tokens
+    if output_tokens is not None:
+        fields["output_tokens"] = output_tokens
+    if total_tokens is not None:
+        fields["total_tokens"] = total_tokens
+    elif prompt_tokens is not None or output_tokens is not None:
+        fields["total_tokens"] = int(prompt_tokens or 0) + int(output_tokens or 0)
+    return fields
+
+
+def _optional_positive_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float) and value >= 0:
+        return int(value)
+    return None
 
 
 def _extract_json_object(text: str) -> str:

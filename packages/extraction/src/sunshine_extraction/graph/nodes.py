@@ -616,6 +616,10 @@ def _llm_tag_model_usage_row(state: DocumentPipelineState, inspection: dict[str,
         model=str(inspection.get("model") or "unknown"),
         status="ok" if status == "inspected" else status,
         runtime_ms=round((time.monotonic() - started) * 1000),
+        input_tokens=_optional_int(inspection.get("input_tokens")),
+        output_tokens=_optional_int(inspection.get("output_tokens")),
+        total_tokens=_optional_int(inspection.get("total_tokens")),
+        estimated_cost_usd=_optional_float(inspection.get("estimated_cost_usd")),
         error=";".join(warnings) or None,
         cost_basis=_cost_basis(provider),
         metadata={"cost_estimate": "unavailable"},
@@ -631,6 +635,10 @@ def _model_usage_row(
     model: str,
     status: str,
     runtime_ms: int | None = None,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+    total_tokens: int | None = None,
+    estimated_cost_usd: float | None = None,
     error: str | None = None,
     cost_basis: str | None = None,
     metadata: dict[str, Any] | None = None,
@@ -644,6 +652,10 @@ def _model_usage_row(
         "model": model,
         "status": status,
         "runtime_ms": runtime_ms,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+        "estimated_cost_usd": estimated_cost_usd,
         "cost_basis": cost_basis or _cost_basis(provider),
         "error": error,
         "metadata": metadata or {},
@@ -676,6 +688,22 @@ def _seconds_to_ms(value: Any) -> int | None:
     if not isinstance(value, int | float):
         return None
     return round(float(value) * 1000)
+
+
+def _optional_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return int(value)
+    return None
+
+
+def _optional_float(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    return None
 
 
 def _final_result_from_state(state: DocumentPipelineState) -> dict[str, Any]:

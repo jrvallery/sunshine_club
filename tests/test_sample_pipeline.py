@@ -19,6 +19,8 @@ from sunshine_extraction.sample_pipeline import (
     OpenAICompatibleLLMTagInspector,
     SampleFile,
     TaxonomyOptions,
+    _chat_response_usage_fields,
+    _gemini_usage_fields,
     assign_tag_candidates,
     build_llm_tag_prompt,
     build_ocr_summary,
@@ -60,6 +62,34 @@ class _TeaLLMTagInspector(LLMTagInspector):
             "needs_review": False,
             "warning": None,
         }
+
+
+class _UsageResponse:
+    usage_metadata = {"input_tokens": 11, "output_tokens": 7, "total_tokens": 18}
+    response_metadata = {}
+
+
+class _TokenUsageResponse:
+    usage_metadata = None
+    response_metadata = {"token_usage": {"prompt_tokens": 13, "completion_tokens": 5, "total_tokens": 18}}
+
+
+def test_llm_usage_helpers_normalize_gemini_and_openai_compatible_tokens() -> None:
+    assert _gemini_usage_fields({"usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 4, "totalTokenCount": 14}}) == {
+        "input_tokens": 10,
+        "output_tokens": 4,
+        "total_tokens": 14,
+    }
+    assert _chat_response_usage_fields(_UsageResponse()) == {
+        "input_tokens": 11,
+        "output_tokens": 7,
+        "total_tokens": 18,
+    }
+    assert _chat_response_usage_fields(_TokenUsageResponse()) == {
+        "input_tokens": 13,
+        "output_tokens": 5,
+        "total_tokens": 18,
+    }
 
 
 class _MissingOcrExecutor(OcrExecutor):

@@ -26,6 +26,9 @@ class _TeaLLMTagInspector(LLMTagInspector):
             "rationale": "Test model always returns tea.",
             "needs_review": False,
             "warning": None,
+            "input_tokens": 100,
+            "output_tokens": 20,
+            "total_tokens": 120,
         }
 
 
@@ -376,7 +379,9 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert summary["model_usage"]["required_field_completeness_rate"] == 1.0
     assert summary["model_usage"]["cost_basis_completeness_rate"] == 1.0
     assert summary["model_usage"]["missing_required_field_counts"] == {}
-    assert summary["model_usage"]["total_tokens"] == 0
+    assert summary["model_usage"]["input_tokens"] == 200
+    assert summary["model_usage"]["output_tokens"] == 40
+    assert summary["model_usage"]["total_tokens"] == 240
     assert summary["model_usage"]["estimated_external_cost_usd"] == 0.0
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "model_usage_required_fields_tracked")["status"] == "pass"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "model_usage_cost_basis_tracked")["status"] == "pass"
@@ -414,6 +419,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert failure_groups[0]["reason"] == "embedding_quality_unavailable"
     assert failure_groups[0]["examples"][0]["relative_path"]
     assert {row["golden_label_id"] for row in model_usage} == {1, 2}
+    assert {row["total_tokens"] for row in model_usage if row["purpose"] == "tag_inspection"} == {120}
     assert (output_dir / "graph-runs" / "00001" / "graph-result.json").exists()
 
 
