@@ -8,7 +8,7 @@ import { CheckboxField, TextInput } from "../../components/ui/FormControls";
 import { KeyValue } from "../../components/ui/KeyValue";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { fetchJson, postJson, queryString } from "../../lib/api";
-import type { PipelineEvalDrilldown, PipelineEvalRun, PipelineEvalRunResponse } from "../../lib/types";
+import type { PipelineEvalComparison, PipelineEvalDrilldown, PipelineEvalRun, PipelineEvalRunResponse } from "../../lib/types";
 
 type DrilldownType = "failures" | "results" | "model_usage";
 
@@ -27,12 +27,26 @@ export default function PipelineEvalPage() {
     queryFn: () => fetchJson<PipelineEvalRun[]>("/api/admin/pipeline-eval/runs?limit=100")
   });
   const activeRun = selectedRun ?? evalRuns.data?.[0] ?? null;
+  const baselineRun = useMemo(() => {
+    if (!activeRun) {
+      return null;
+    }
+    return (evalRuns.data ?? []).find((run) => run.id !== activeRun.id) ?? null;
+  }, [activeRun, evalRuns.data]);
   const drilldown = useQuery({
     queryKey: ["pipeline-eval-drilldown", activeRun?.id, drilldownType],
     enabled: Boolean(activeRun),
     queryFn: () =>
       fetchJson<PipelineEvalDrilldown>(
         `/api/admin/pipeline-eval/runs/${activeRun?.id}/results${queryString({ result_type: drilldownType, limit: 200 })}`
+      )
+  });
+  const comparison = useQuery({
+    queryKey: ["pipeline-eval-comparison", activeRun?.id, baselineRun?.id],
+    enabled: Boolean(activeRun && baselineRun),
+    queryFn: () =>
+      fetchJson<PipelineEvalComparison>(
+        `/api/admin/pipeline-eval/runs/${activeRun?.id}/compare${queryString({ baseline_eval_run_id: baselineRun?.id })}`
       )
   });
   const runEval = useMutation({
@@ -217,6 +231,46 @@ export default function PipelineEvalPage() {
               </div>
             </section>
           ) : null}
+          {comparison.data ? (
+            <section className="drawerSection wideSection">
+              <div className="sectionHeader">
+                <div>
+                  <h3>Compared With Previous Eval</h3>
+                  <p className="muted">{comparison.data.baseline_eval_run.eval_key}</p>
+                </div>
+                <span>{comparison.data.shared_file_count} shared files</span>
+              </div>
+              <div className="drawerGrid compactGrid">
+                <section>
+                  <h4>Outcome Changes</h4>
+                  <KeyValue label="Fixed failures" value={String(comparison.data.fixed_failure_count)} />
+                  <KeyValue label="Regressed failures" value={String(comparison.data.regressed_failure_count)} />
+                  <KeyValue label="Changed tags" value={String(comparison.data.changed_prediction_count)} />
+                  <KeyValue label="Changed routes" value={String(comparison.data.changed_review_route_count)} />
+                </section>
+                <section>
+                  <h4>Metric Deltas</h4>
+                  {Object.entries(comparison.data.metric_deltas).map(([metric, delta]) => (
+                    <KeyValue key={metric} label={metric} value={formatDelta(delta)} />
+                  ))}
+                </section>
+                <section>
+                  <h4>Sample Changes</h4>
+                  {(comparison.data.changed_predictions.length ? comparison.data.changed_predictions : comparison.data.regressed_failures).slice(0, 5).map((row) => (
+                    <p className="pathText" key={String(row.source_path)}>
+                      {String(row.relative_path ?? row.source_path)}: {String(row.baseline_predicted_primary_tag ?? "-")} to {String(row.current_predicted_primary_tag ?? "-")}
+                    </p>
+                  ))}
+                  {!comparison.data.changed_predictions.length && !comparison.data.regressed_failures.length ? <p className="muted">No changed predictions or regressions.</p> : null}
+                </section>
+              </div>
+            </section>
+          ) : baselineRun ? (
+            <section className="drawerSection wideSection">
+              <h3>Compared With Previous Eval</h3>
+              <p className="muted">{comparison.isError ? `Comparison failed: ${comparison.error.message}` : "Loading comparison..."}</p>
+            </section>
+          ) : null}
           <div className="drawerGrid">
             <section>
               <h3>Gate</h3>
@@ -398,6 +452,11 @@ function formatCategoryList(categories: Array<{ tag: string; total: number; corr
     .slice(0, 8)
     .map((category) => `${category.tag} ${formatPercent(category.accuracy)} (${category.correct}/${category.total})`)
     .join(", ");
+}
+
+function formatDelta(delta: { baseline: number | null; current: number | null; delta: number | null }) {
+  const change = delta.delta === null ? "-" : `${delta.delta >= 0 ? "+" : ""}${formatPercent(delta.delta)}`;
+  return `${formatPercent(delta.baseline)} to ${formatPercent(delta.current)} (${change})`;
 }
 
 function shortCommit(value: unknown) {

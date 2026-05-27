@@ -526,6 +526,23 @@ export type PipelineEvalDrilldown = {
   items: Array<Record<string, unknown>>;
 };
 
+export type PipelineEvalComparison = {
+  baseline_eval_run: PipelineEvalRun;
+  current_eval_run: PipelineEvalRun;
+  shared_file_count: number;
+  baseline_only_count: number;
+  current_only_count: number;
+  metric_deltas: Record<string, { baseline: number | null; current: number | null; delta: number | null }>;
+  changed_prediction_count: number;
+  fixed_failure_count: number;
+  regressed_failure_count: number;
+  changed_review_route_count: number;
+  changed_predictions: Array<Record<string, unknown>>;
+  fixed_failures: Array<Record<string, unknown>>;
+  regressed_failures: Array<Record<string, unknown>>;
+  changed_review_routes: Array<Record<string, unknown>>;
+};
+
 export type PlacementReport = {
   db_path: string;
   total_results: number;

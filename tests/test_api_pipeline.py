@@ -312,6 +312,15 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     pipeline_eval_results = client.get(f"/admin/pipeline-eval/runs/{pipeline_eval_run_id}/results")
     pipeline_eval_failures = client.get(f"/admin/pipeline-eval/runs/{pipeline_eval_run_id}/results", params={"result_type": "failures"})
     pipeline_eval_model_usage = client.get(f"/admin/pipeline-eval/runs/{pipeline_eval_run_id}/results", params={"result_type": "model_usage"})
+    pipeline_eval_output_dir_2 = tmp_path / "pipeline-eval-2"
+    pipeline_eval_2 = client.post(
+        "/admin/pipeline-eval/run",
+        json={"output_dir": str(pipeline_eval_output_dir_2), "disable_semantic_index": True},
+    )
+    pipeline_eval_comparison = client.get(
+        f"/admin/pipeline-eval/runs/{pipeline_eval_2.json()['eval_run']['id']}/compare",
+        params={"baseline_eval_run_id": pipeline_eval_run_id},
+    )
     deleted_label = client.delete(f"/admin/review/golden-labels/{label_id}")
     file_response = client.get(f"/admin/review/items/{item_id}/file")
     files = client.get("/admin/files", params={"q": "meeting minutes"})
@@ -516,6 +525,11 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert pipeline_eval_failures.json()["result_type"] == "failures"
     assert pipeline_eval_model_usage.status_code == 200
     assert pipeline_eval_model_usage.json()["result_type"] == "model_usage"
+    assert pipeline_eval_2.status_code == 200
+    assert pipeline_eval_comparison.status_code == 200
+    assert pipeline_eval_comparison.json()["shared_file_count"] == 1
+    assert "primary_accuracy" in pipeline_eval_comparison.json()["metric_deltas"]
+    assert pipeline_eval_comparison.json()["changed_prediction_count"] == 0
     assert deleted_label.status_code == 200
     assert deleted_label.json()["deleted"] is True
     assert file_response.status_code == 200

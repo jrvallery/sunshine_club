@@ -126,6 +126,70 @@ def pipeline_eval_run_results(eval_run_id: int, result_type: str = "results", li
     }
 
 
+@router.get("/admin/pipeline-eval/runs/{eval_run_id}/compare")
+def pipeline_eval_run_compare(eval_run_id: int, baseline_eval_run_id: int) -> dict[str, Any]:
+    try:
+        current = review_store().get_pipeline_eval_run(eval_run_id)
+        baseline = review_store().get_pipeline_eval_run(baseline_eval_run_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    current_results = _eval_rows_by_source(Path(str(current.get("output_dir") or "")) / "eval-results.jsonl")
+    baseline_results = _eval_rows_by_source(Path(str(baseline.get("output_dir") or "")) / "eval-results.jsonl")
+    shared_sources = sorted(set(current_results) & set(baseline_results))
+    changed_predictions = []
+    fixed_failures = []
+    regressed_failures = []
+    changed_review_routes = []
+    for source_path in shared_sources:
+        current_row = current_results[source_path]
+        baseline_row = baseline_results[source_path]
+        if current_row.get("predicted_primary_tag") != baseline_row.get("predicted_primary_tag"):
+            changed_predictions.append(_comparison_row(source_path, baseline_row, current_row, "primary_tag_changed"))
+        baseline_failed = bool(baseline_row.get("failure_reasons"))
+        current_failed = bool(current_row.get("failure_reasons"))
+        if baseline_failed and not current_failed:
+            fixed_failures.append(_comparison_row(source_path, baseline_row, current_row, "failure_fixed"))
+        elif not baseline_failed and current_failed:
+            regressed_failures.append(_comparison_row(source_path, baseline_row, current_row, "failure_regressed"))
+        if baseline_row.get("route_status") != current_row.get("route_status"):
+            changed_review_routes.append(_comparison_row(source_path, baseline_row, current_row, "route_changed"))
+
+    metric_keys = [
+        "primary_accuracy",
+        "content_class_accuracy",
+        "ocr_quality_accuracy",
+        "review_routing_accuracy",
+        "placement_destination_accuracy",
+        "privacy_accuracy",
+        "embedding_success_rate",
+        "semantic_same_family_top5_rate",
+    ]
+    metric_deltas = {
+        key: {
+            "baseline": _summary_metric(baseline, key),
+            "current": _summary_metric(current, key),
+            "delta": _metric_delta(_summary_metric(baseline, key), _summary_metric(current, key)),
+        }
+        for key in metric_keys
+    }
+    return {
+        "baseline_eval_run": baseline,
+        "current_eval_run": current,
+        "shared_file_count": len(shared_sources),
+        "baseline_only_count": len(set(baseline_results) - set(current_results)),
+        "current_only_count": len(set(current_results) - set(baseline_results)),
+        "metric_deltas": metric_deltas,
+        "changed_prediction_count": len(changed_predictions),
+        "fixed_failure_count": len(fixed_failures),
+        "regressed_failure_count": len(regressed_failures),
+        "changed_review_route_count": len(changed_review_routes),
+        "changed_predictions": changed_predictions[:100],
+        "fixed_failures": fixed_failures[:100],
+        "regressed_failures": regressed_failures[:100],
+        "changed_review_routes": changed_review_routes[:100],
+    }
+
+
 @router.post("/admin/pipeline-eval/run")
 def pipeline_eval_run(request: PipelineEvalRequest) -> dict[str, Any]:
     load_pipeline_env()
@@ -141,6 +205,45 @@ def pipeline_eval_run(request: PipelineEvalRequest) -> dict[str, Any]:
     )
     eval_run = review_store().record_pipeline_eval(report)
     return {"ok": True, "output_dir": output_dir, "eval_run": eval_run, "report": report}
+
+
+def _eval_rows_by_source(path: Path) -> dict[str, dict[str, Any]]:
+    return {
+        str(row.get("source_path") or row.get("relative_path") or index): row
+        for index, row in enumerate(_read_eval_jsonl(path, limit=100000))
+    }
+
+
+def _summary_metric(eval_run: dict[str, Any], key: str) -> float | None:
+    summary = eval_run.get("summary") if isinstance(eval_run.get("summary"), dict) else {}
+    value = summary.get(key) if isinstance(summary, dict) else eval_run.get(key)
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _metric_delta(baseline: float | None, current: float | None) -> float | None:
+    if baseline is None or current is None:
+        return None
+    return current - baseline
+
+
+def _comparison_row(source_path: str, baseline: dict[str, Any], current: dict[str, Any], reason: str) -> dict[str, Any]:
+    return {
+        "source_path": source_path,
+        "relative_path": current.get("relative_path") or baseline.get("relative_path"),
+        "reason": reason,
+        "correct_primary_tag": current.get("correct_primary_tag") or baseline.get("correct_primary_tag"),
+        "baseline_predicted_primary_tag": baseline.get("predicted_primary_tag"),
+        "current_predicted_primary_tag": current.get("predicted_primary_tag"),
+        "baseline_route_status": baseline.get("route_status"),
+        "current_route_status": current.get("route_status"),
+        "baseline_failure_reasons": baseline.get("failure_reasons") or [],
+        "current_failure_reasons": current.get("failure_reasons") or [],
+    }
 
 
 def _read_eval_jsonl(path: Path, *, limit: int) -> list[dict[str, Any]]:
