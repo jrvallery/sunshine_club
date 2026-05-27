@@ -404,6 +404,8 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert manifest_by_name["failure_groups"]["exists"] is True
     assert sorted(row["primary_correct"] for row in results) == [False, True]
     assert {row["source_file_mutation"]["mutated"] for row in results} == {False}
+    assert all(len(row["source_file_mutation"]["before"]["sha256"]) == 64 for row in results)
+    assert all(row["source_file_mutation"]["before"]["sha256"] == row["source_file_mutation"]["after"]["sha256"] for row in results)
     assert {row["confidence_bucket"] for row in results} == {"high"}
     assert {row["ocr_fallback_used"] for row in results} == {False}
     assert {row["llm_structured_output_valid"] for row in results} == {True}

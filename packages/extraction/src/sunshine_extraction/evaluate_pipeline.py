@@ -1225,13 +1225,14 @@ def _source_file_snapshot(path: Path) -> dict[str, Any]:
         "path": str(path),
         "size_bytes": stat.st_size,
         "mtime_ns": stat.st_mtime_ns,
+        "sha256": _sha256(path),
     }
 
 
 def _source_file_mutation(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
     mutated_fields = [
         field
-        for field in ("size_bytes", "mtime_ns")
+        for field in ("size_bytes", "mtime_ns", "sha256")
         if before.get(field) != after.get(field)
     ]
     return {
