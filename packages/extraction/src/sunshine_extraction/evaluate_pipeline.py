@@ -278,7 +278,16 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
     review_routing_correct = None
     if label.expected_review_required is not None:
         review_routing_correct = review_required == label.expected_review_required
-    ocr_fallback_used = _has_warning_prefix(final_result.get("warnings", []), "ocr_fallback_used:")
+    warnings = final_result.get("warnings", [])
+    ocr_fallback_used = _has_warning_prefix(warnings, "ocr_fallback_used:")
+    ocr_fallback_failed = _has_any_warning_prefix(
+        warnings,
+        [
+            "ocr_fallback_failed:",
+            "ocr_fallback_render_failed:",
+            "ocr_fallback_page_failed:",
+        ],
+    )
     llm_status = final_result.get("llm_status")
     llm_structured_output_valid = True if llm_status == "inspected" else False if llm_status in {"invalid", "failed", "inspected_with_invalid_fields"} else None
     placement_destination_correct = None
@@ -322,6 +331,8 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
         failure_reasons.append("review_routing_mismatch")
     if label.ocr_quality_label and final_result.get("quality") != label.ocr_quality_label:
         failure_reasons.append("ocr_quality_mismatch")
+    if ocr_fallback_failed:
+        failure_reasons.append("ocr_fallback_failed")
     if llm_structured_output_valid is False:
         failure_reasons.append("llm_structured_output_invalid")
     if placement_destination_correct is False:
@@ -359,6 +370,7 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
         "predicted_review_required": review_required,
         "review_routing_correct": review_routing_correct,
         "ocr_fallback_used": ocr_fallback_used,
+        "ocr_fallback_failed": ocr_fallback_failed,
         "expected_destination_path": label.correct_destination_path,
         "predicted_destination_path": final_result.get("destination_path"),
         "placement_destination_correct": placement_destination_correct,
@@ -430,6 +442,7 @@ def _summary(
         "review_false_accepts": totals["review_false_negative"],
         "review_false_reviews": totals["review_false_positive"],
         "ocr_fallback_rate": _safe_divide(totals["ocr_fallback_used"], total),
+        "ocr_fallback_failed_count": totals["ocr_fallback_failed"],
         "llm_structured_output_validity_rate": _safe_divide(totals["llm_structured_output_valid"], totals["llm_structured_output_attempted"]),
         "placement_destination_accuracy": _safe_divide(totals["placement_destination_correct"], totals["placement_destination_labeled"]),
         "placement_year_accuracy": _safe_divide(totals["placement_year_correct"], totals["placement_year_labeled"]),
@@ -793,6 +806,8 @@ def _update_totals(totals: Counter, row: dict[str, Any], label: GoldenEvalLabel)
             totals["review_true_negative"] += 1
     if row.get("ocr_fallback_used"):
         totals["ocr_fallback_used"] += 1
+    if row.get("ocr_fallback_failed"):
+        totals["ocr_fallback_failed"] += 1
     if (row.get("source_file_mutation") or {}).get("mutated"):
         totals["source_file_mutations"] += 1
     if row.get("llm_structured_output_valid") is not None:
@@ -1267,6 +1282,8 @@ def _missing_file_result(label: GoldenEvalLabel) -> dict[str, Any]:
         "expected_ocr_quality": label.ocr_quality_label,
         "predicted_ocr_quality": None,
         "ocr_quality_correct": False if label.ocr_quality_label else None,
+        "ocr_fallback_used": False,
+        "ocr_fallback_failed": False,
         "expected_review_required": label.expected_review_required,
         "predicted_review_required": True,
         "review_routing_correct": (label.expected_review_required is True) if label.expected_review_required is not None else None,
@@ -1379,6 +1396,10 @@ def _string_list(value: Any) -> list[str]:
 
 def _has_warning_prefix(warnings: Any, prefix: str) -> bool:
     return any(warning.startswith(prefix) for warning in _string_list(warnings))
+
+
+def _has_any_warning_prefix(warnings: Any, prefixes: list[str]) -> bool:
+    return any(any(warning.startswith(prefix) for prefix in prefixes) for warning in _string_list(warnings))
 
 
 def _semantic_examples(value: Any) -> list[dict[str, Any]]:

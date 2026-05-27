@@ -454,6 +454,7 @@ export type PipelineEvalSummary = {
   review_false_accepts?: number;
   review_false_reviews?: number;
   ocr_fallback_rate?: number | null;
+  ocr_fallback_failed_count?: number;
   llm_structured_output_validity_rate?: number | null;
   placement_destination_accuracy?: number | null;
   placement_year_accuracy?: number | null;
@@ -527,6 +528,7 @@ export type PipelineEvalSummary = {
     primary_label_counts: Record<string, number>;
   };
   by_failure_reason?: Record<string, number>;
+  by_quality?: Record<string, number>;
   by_llm_status?: Record<string, number>;
   model_usage?: Record<string, unknown>;
   run_metadata?: Record<string, unknown>;

@@ -311,6 +311,16 @@ export default function PipelineEvalPage() {
               <KeyValue label="High-risk undercovered" value={(summary?.golden_label_readiness?.underrepresented_high_risk_tags ?? []).join(", ") || "-"} />
             </section>
             <section>
+              <h3>OCR</h3>
+              <KeyValue label="Quality accuracy" value={formatPercent(summary?.ocr_quality_accuracy)} />
+              <KeyValue label="Acceptable rate" value={formatPercent(summary?.ocr_acceptable_rate)} />
+              <KeyValue label="Fallback rate" value={formatPercent(summary?.ocr_fallback_rate)} />
+              <KeyValue label="Fallback failures" value={String(summary?.ocr_fallback_failed_count ?? 0)} />
+              {Object.entries(summary?.by_quality ?? {}).map(([quality, count]) => (
+                <KeyValue key={quality} label={quality} value={count} />
+              ))}
+            </section>
+            <section>
               <h3>Review Routing</h3>
               <KeyValue label="Accuracy" value={formatPercent(summary?.review_routing_accuracy)} />
               <KeyValue label="Precision" value={formatPercent(summary?.review_routing_precision)} />

@@ -167,6 +167,51 @@ def test_eval_row_groups_invalid_llm_structured_output_as_failure(tmp_path: Path
     assert "llm_structured_output_invalid" in row["failure_reasons"]
 
 
+def test_eval_row_groups_ocr_fallback_failures_by_cause(tmp_path: Path) -> None:
+    label = GoldenEvalLabel(
+        id=1,
+        source_path="/source/guest-list.pdf",
+        relative_path="guest-list.pdf",
+        sample_path=None,
+        correct_primary_tag="annual_spring_tea",
+        correct_secondary_tags=[],
+        content_class="scanned_document",
+        ocr_quality_label="ok",
+        expected_review_required=True,
+        sensitive_record=False,
+        correct_destination_path=None,
+        correct_placement_year=None,
+        correct_privacy=None,
+        reviewer="tester",
+        reviewed_at="2026-05-27T00:00:00Z",
+        notes=None,
+    )
+
+    row = _evaluation_row(
+        label,
+        {
+            "top_tag_candidate": "annual_spring_tea",
+            "final_class": "scanned_document",
+            "quality": "poor",
+            "route_status": "review_ocr_quality",
+            "review_reason": "ocr_quality_not_trusted",
+            "tag_confidence": 0.58,
+            "tag_evidence": ["matched tea"],
+            "warnings": ["ocr_fallback_failed:TimeoutError"],
+        },
+        tmp_path,
+    )
+
+    totals = Counter()
+    _update_totals(totals, row, label)
+
+    assert row["ocr_fallback_used"] is False
+    assert row["ocr_fallback_failed"] is True
+    assert "ocr_fallback_failed" in row["failure_reasons"]
+    assert "ocr_quality_mismatch" in row["failure_reasons"]
+    assert totals["ocr_fallback_failed"] == 1
+
+
 def test_sensitive_false_accept_counts_even_when_primary_tag_is_correct(tmp_path: Path) -> None:
     label = GoldenEvalLabel(
         id=1,
@@ -296,6 +341,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert summary["ocr_quality_accuracy"] == 1.0
     assert summary["ocr_acceptable_rate"] == 1.0
     assert summary["ocr_fallback_rate"] == 0.0
+    assert summary["ocr_fallback_failed_count"] == 0
     assert summary["review_routing_precision"] == 0.5
     assert summary["review_routing_recall"] == 1.0
     assert summary["review_false_accepts"] == 0
@@ -455,6 +501,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert all(row["source_file_mutation"]["before"]["sha256"] == row["source_file_mutation"]["after"]["sha256"] for row in results)
     assert {row["confidence_bucket"] for row in results} == {"high"}
     assert {row["ocr_fallback_used"] for row in results} == {False}
+    assert {row["ocr_fallback_failed"] for row in results} == {False}
     assert {row["llm_structured_output_valid"] for row in results} == {True}
     assert all(row["tag_evidence"] for row in results)
     assert failures[0]["correct_primary_tag"] == "history_archive_general"
