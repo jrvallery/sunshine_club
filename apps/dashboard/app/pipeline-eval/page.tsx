@@ -173,6 +173,14 @@ export default function PipelineEvalPage() {
               <KeyValue label="Source mutations" value={String(summary?.source_file_mutations ?? 0)} />
             </section>
             <section>
+              <h3>Run Metadata</h3>
+              <KeyValue label="Git commit" value={shortCommit(summary?.run_metadata?.git_commit ?? activeRun.run_metadata?.git_commit)} />
+              <KeyValue label="Taxonomy" value={String(summary?.run_metadata?.taxonomy_version ?? activeRun.run_metadata?.taxonomy_version ?? "-")} />
+              <KeyValue label="Embedding" value={String(summary?.run_metadata?.embedding_provider ?? activeRun.run_metadata?.embedding_provider ?? "-")} />
+              <KeyValue label="LLM" value={String(summary?.run_metadata?.llm_provider ?? activeRun.run_metadata?.llm_provider ?? "-")} />
+              <KeyValue label="OCR" value={String(summary?.run_metadata?.ocr_mode ?? activeRun.run_metadata?.ocr_mode ?? "-")} />
+            </section>
+            <section>
               <h3>Review Routing</h3>
               <KeyValue label="Accuracy" value={formatPercent(summary?.review_routing_accuracy)} />
               <KeyValue label="Precision" value={formatPercent(summary?.review_routing_precision)} />
@@ -305,4 +313,9 @@ function formatMap(value: unknown) {
     return "-";
   }
   return entries.map(([key, count]) => `${key} (${String(count)})`).join(", ");
+}
+
+function shortCommit(value: unknown) {
+  const text = typeof value === "string" ? value : "";
+  return text ? text.slice(0, 12) : "-";
 }

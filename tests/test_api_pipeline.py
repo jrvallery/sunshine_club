@@ -477,6 +477,8 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert pipeline_eval.status_code == 200
     assert pipeline_eval.json()["report"]["total_golden_labels"] == 1
     assert pipeline_eval.json()["report"]["evaluated_predictions"] == 1
+    assert pipeline_eval.json()["report"]["run_metadata"]["taxonomy_version"].endswith(".json")
+    assert "git_commit" in pipeline_eval.json()["eval_run"]["run_metadata"]
     assert pipeline_eval.json()["eval_run"]["evaluated_predictions"] == 1
     assert (pipeline_eval_output_dir / "eval-summary.json").exists()
     assert pipeline_eval_latest.status_code == 200
@@ -525,6 +527,8 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert previous_run.status_code == 200
     assert current_run.status_code == 200
     assert current_run.json()["embedding_provider"] == "openai"
+    assert current_run.json()["run_metadata"]["embedding_provider"] == "openai"
+    assert current_run.json()["run_metadata"]["taxonomy_version"].endswith(".json")
     assert imported_run_results.status_code == 200
     assert imported_run_results.json()["imported_model_usage"] == 2
     assert run_comparison.status_code == 200

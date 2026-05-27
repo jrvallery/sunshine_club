@@ -14,6 +14,7 @@ import os
 import random
 import shutil
 import sqlite3
+import subprocess
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -688,7 +689,7 @@ class ReviewStore:
                     """
                     select id, run_key, preset_key, status, input_root, output_dir, command_json,
                            embedding_provider, enable_llm_tags, llm_tag_provider, ocr_fallback_provider, semantic_index_path,
-                           started_at, completed_at, processed_count, route_candidate_count,
+                           run_metadata_json, started_at, completed_at, processed_count, route_candidate_count,
                            review_required_count, failed_count, summary_json, error, created_at, updated_at
                     from pipeline_runs
                     where id = ?
@@ -1167,6 +1168,7 @@ class ReviewStore:
         output_dir = str(summary.get("output_dir") or "")
         if not output_dir:
             raise ValueError("pipeline eval summary requires output_dir")
+        run_metadata = summary.get("run_metadata") if isinstance(summary.get("run_metadata"), dict) else {}
         with self._connect() as connection:
             cursor = connection.execute(
                 """
@@ -1174,8 +1176,8 @@ class ReviewStore:
                     eval_key, labels_db, output_dir, status, total_golden_labels, evaluated_predictions,
                     primary_accuracy, content_class_accuracy, secondary_precision, secondary_recall,
                     ocr_quality_accuracy, review_routing_accuracy, failure_count, model_usage_json,
-                    summary_json, created_at, updated_at
-                ) values (?, ?, ?, 'succeeded', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                    summary_json, run_metadata_json, created_at, updated_at
+                ) values (?, ?, ?, 'succeeded', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
                 on conflict(output_dir) do update set
                     labels_db=excluded.labels_db,
                     status=excluded.status,
@@ -1190,6 +1192,7 @@ class ReviewStore:
                     failure_count=excluded.failure_count,
                     model_usage_json=excluded.model_usage_json,
                     summary_json=excluded.summary_json,
+                    run_metadata_json=excluded.run_metadata_json,
                     updated_at=datetime('now')
                 returning id
                 """,
@@ -1208,6 +1211,7 @@ class ReviewStore:
                     summary.get("failure_count"),
                     json.dumps(summary.get("model_usage") or {}, sort_keys=True),
                     json.dumps(summary, sort_keys=True),
+                    json.dumps(run_metadata, sort_keys=True),
                 ),
             )
             row_id = int(cursor.fetchone()[0])
@@ -1220,7 +1224,7 @@ class ReviewStore:
                 select id, eval_key, labels_db, output_dir, status, total_golden_labels, evaluated_predictions,
                        primary_accuracy, content_class_accuracy, secondary_precision, secondary_recall,
                        ocr_quality_accuracy, review_routing_accuracy, failure_count, model_usage_json,
-                       summary_json, created_at, updated_at
+                       summary_json, run_metadata_json, created_at, updated_at
                 from pipeline_eval_runs
                 order by updated_at desc, id desc
                 limit ?
@@ -1236,7 +1240,7 @@ class ReviewStore:
                 select id, eval_key, labels_db, output_dir, status, total_golden_labels, evaluated_predictions,
                        primary_accuracy, content_class_accuracy, secondary_precision, secondary_recall,
                        ocr_quality_accuracy, review_routing_accuracy, failure_count, model_usage_json,
-                       summary_json, created_at, updated_at
+                       summary_json, run_metadata_json, created_at, updated_at
                 from pipeline_eval_runs
                 where id = ?
                 """,
@@ -1331,14 +1335,23 @@ class ReviewStore:
         semantic_index_path: str | None = None,
     ) -> dict[str, Any]:
         run_key = f"{preset_key}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
+        run_metadata = _run_metadata(
+            input_root=input_root,
+            output_dir=output_dir,
+            embedding_provider=embedding_provider,
+            enable_llm_tags=enable_llm_tags,
+            llm_tag_provider=llm_tag_provider,
+            ocr_fallback_provider=ocr_fallback_provider,
+            semantic_index_path=semantic_index_path,
+        )
         with self._connect() as connection:
             cursor = connection.execute(
                 """
                 insert into pipeline_runs (
                     run_key, preset_key, status, input_root, output_dir, command_json,
                     embedding_provider, enable_llm_tags, llm_tag_provider, ocr_fallback_provider, semantic_index_path,
-                    created_at, updated_at
-                ) values (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                    run_metadata_json, created_at, updated_at
+                ) values (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
                 """,
                 (
                     run_key,
@@ -1351,10 +1364,11 @@ class ReviewStore:
                     llm_tag_provider,
                     ocr_fallback_provider,
                     semantic_index_path,
+                    json.dumps(run_metadata, sort_keys=True),
                 ),
             )
             run_id = int(cursor.lastrowid)
-            self.add_pipeline_run_event(connection, run_id, level="info", message="Run queued.", payload={"command": command})
+            self.add_pipeline_run_event(connection, run_id, level="info", message="Run queued.", payload={"command": command, "run_metadata": run_metadata})
         return self.get_pipeline_run(run_id)
 
     def mark_pipeline_run_started(self, run_id: int) -> None:
@@ -1439,7 +1453,7 @@ class ReviewStore:
                 """
                 select id, run_key, preset_key, status, input_root, output_dir, command_json,
                        embedding_provider, enable_llm_tags, llm_tag_provider, ocr_fallback_provider, semantic_index_path,
-                       started_at, completed_at, processed_count, route_candidate_count,
+                       run_metadata_json, started_at, completed_at, processed_count, route_candidate_count,
                        review_required_count, failed_count, summary_json, error, created_at, updated_at
                 from pipeline_runs
                 order by created_at desc, id desc
@@ -1455,7 +1469,7 @@ class ReviewStore:
                 """
                 select id, run_key, preset_key, status, input_root, output_dir, command_json,
                        embedding_provider, enable_llm_tags, llm_tag_provider, ocr_fallback_provider, semantic_index_path,
-                       started_at, completed_at, processed_count, route_candidate_count,
+                       run_metadata_json, started_at, completed_at, processed_count, route_candidate_count,
                        review_required_count, failed_count, summary_json, error, created_at, updated_at
                 from pipeline_runs where id = ?
                 """,
@@ -1478,7 +1492,7 @@ class ReviewStore:
                 """
                 select id, run_key, preset_key, status, input_root, output_dir, command_json,
                        embedding_provider, enable_llm_tags, llm_tag_provider, ocr_fallback_provider, semantic_index_path,
-                       started_at, completed_at, processed_count, route_candidate_count,
+                       run_metadata_json, started_at, completed_at, processed_count, route_candidate_count,
                        review_required_count, failed_count, summary_json, error, created_at, updated_at
                 from pipeline_runs where id = ?
                 """,
@@ -1790,6 +1804,7 @@ class ReviewStore:
                     llm_tag_provider text,
                     ocr_fallback_provider text,
                     semantic_index_path text,
+                    run_metadata_json text not null default '{}',
                     started_at text,
                     completed_at text,
                     processed_count integer,
@@ -1856,6 +1871,7 @@ class ReviewStore:
                     failure_count integer,
                     model_usage_json text not null default '{}',
                     summary_json text not null default '{}',
+                    run_metadata_json text not null default '{}',
                     created_at text not null default (datetime('now')),
                     updated_at text not null default (datetime('now'))
                 );
@@ -1889,6 +1905,8 @@ class ReviewStore:
             _ensure_column(connection, "review_items", "ocr_fallback_provider", "ocr_fallback_provider text")
             _ensure_column(connection, "review_items", "enable_llm_tags", "enable_llm_tags integer")
             _ensure_column(connection, "pipeline_runs", "embedding_provider", "embedding_provider text")
+            _ensure_column(connection, "pipeline_runs", "run_metadata_json", "run_metadata_json text not null default '{}'")
+            _ensure_column(connection, "pipeline_eval_runs", "run_metadata_json", "run_metadata_json text not null default '{}'")
             _ensure_column(connection, "golden_labels", "content_class", "content_class text")
             _ensure_column(connection, "golden_labels", "ocr_quality_label", "ocr_quality_label text")
             _ensure_column(connection, "golden_labels", "expected_review_required", "expected_review_required integer")
@@ -1975,6 +1993,38 @@ def _taxonomy_primary_tags() -> list[str]:
         return load_taxonomy_options(DEFAULT_TAXONOMY_PATH).primary_tags
     except Exception:  # noqa: BLE001 - coverage summary should not break review CRUD.
         return []
+
+
+def _run_metadata(
+    *,
+    input_root: str,
+    output_dir: str,
+    embedding_provider: str | None,
+    enable_llm_tags: bool,
+    llm_tag_provider: str | None,
+    ocr_fallback_provider: str | None,
+    semantic_index_path: str | None,
+) -> dict[str, Any]:
+    return {
+        "run_kind": "pipeline_batch",
+        "input_root": input_root,
+        "output_dir": output_dir,
+        "taxonomy_path": str(DEFAULT_TAXONOMY_PATH),
+        "taxonomy_version": Path(DEFAULT_TAXONOMY_PATH).name,
+        "embedding_provider": embedding_provider,
+        "enable_llm_tags": enable_llm_tags,
+        "llm_tag_provider": llm_tag_provider,
+        "ocr_fallback_provider": ocr_fallback_provider,
+        "semantic_index_path": semantic_index_path,
+        "git_commit": _git_commit(),
+    }
+
+
+def _git_commit() -> str | None:
+    try:
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=Path.cwd(), text=True).strip()
+    except Exception:  # noqa: BLE001 - metadata should not block dashboard runs.
+        return None
 
 
 def _safe_divide(numerator: int, denominator: int) -> float | None:
@@ -2672,6 +2722,7 @@ def _pipeline_run_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "llm_tag_provider": row["llm_tag_provider"],
         "ocr_fallback_provider": row["ocr_fallback_provider"],
         "semantic_index_path": row["semantic_index_path"],
+        "run_metadata": _json_object(row["run_metadata_json"]),
         "started_at": row["started_at"],
         "completed_at": row["completed_at"],
         "processed_count": row["processed_count"],
@@ -2703,6 +2754,7 @@ def _pipeline_eval_run_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "failure_count": row["failure_count"],
         "model_usage": _json_object(row["model_usage_json"]),
         "summary": _json_object(row["summary_json"]),
+        "run_metadata": _json_object(row["run_metadata_json"]),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }

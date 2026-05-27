@@ -196,6 +196,7 @@ export type PipelineRun = {
   llm_tag_provider?: string | null;
   ocr_fallback_provider?: string | null;
   semantic_index_path?: string | null;
+  run_metadata?: Record<string, unknown>;
   started_at?: string | null;
   completed_at?: string | null;
   processed_count?: number | null;
@@ -398,6 +399,7 @@ export type PipelineEvalRun = {
   failure_count?: number | null;
   model_usage: Record<string, unknown>;
   summary: PipelineEvalSummary;
+  run_metadata?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 };
@@ -434,6 +436,7 @@ export type PipelineEvalSummary = {
   by_failure_reason?: Record<string, number>;
   by_llm_status?: Record<string, number>;
   model_usage?: Record<string, unknown>;
+  run_metadata?: Record<string, unknown>;
   acceptance_gate?: {
     status: string;
     checks: Array<{ name: string; value: number | null; threshold: number; status: string; operator: string }>;

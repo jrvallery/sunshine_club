@@ -6,6 +6,7 @@ import argparse
 import csv
 import json
 import sqlite3
+import subprocess
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -85,6 +86,16 @@ def run_golden_pipeline_evaluation(
     output_path.mkdir(parents=True, exist_ok=True)
     graph_runs_dir = output_path / "graph-runs"
     graph_runs_dir.mkdir(parents=True, exist_ok=True)
+    run_metadata = _eval_run_metadata(
+        labels_db=labels_db,
+        output_dir=output_path,
+        limit=limit,
+        taxonomy_path=taxonomy_path,
+        semantic_index_path=semantic_index_path,
+        embedding_provider=embedding_provider,
+        llm_tag_inspector=llm_tag_inspector,
+        ocr_executor=ocr_executor,
+    )
 
     evaluated: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
@@ -152,6 +163,7 @@ def run_golden_pipeline_evaluation(
         counters=counters,
         totals=totals,
         model_usage_rows=model_usage_rows,
+        run_metadata=run_metadata,
     )
     _write_eval_artifacts(output_path, summary, evaluated, confusion, failures, model_usage_rows)
     return summary
@@ -324,6 +336,7 @@ def _summary(
     counters: dict[str, Counter[str]],
     totals: Counter,
     model_usage_rows: list[dict[str, Any]],
+    run_metadata: dict[str, Any],
 ) -> dict[str, Any]:
     total = len(evaluated)
     model_usage = _model_usage_summary(model_usage_rows)
@@ -377,6 +390,7 @@ def _summary(
         "by_llm_status": dict(sorted(counters["by_llm_status"].items())),
         "by_failure_reason": dict(sorted(counters["by_failure_reason"].items())),
         "model_usage": model_usage,
+        "run_metadata": run_metadata,
         "acceptance_gate": _acceptance_gate(metrics, model_usage),
         "artifacts": {
             "summary": str(output_dir / "eval-summary.json"),
@@ -574,6 +588,48 @@ def _model_usage_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "external_cost": None,
         "external_cost_note": "Cost is unavailable unless provider token/cost metadata is present.",
     }
+
+
+def _eval_run_metadata(
+    *,
+    labels_db: str | Path,
+    output_dir: Path,
+    limit: int | None,
+    taxonomy_path: str | Path,
+    semantic_index_path: str | Path | None,
+    embedding_provider: EmbeddingProvider | None,
+    llm_tag_inspector: LLMTagInspector | None,
+    ocr_executor: OcrExecutor | None,
+) -> dict[str, Any]:
+    return {
+        "run_kind": "pipeline_eval",
+        "labels_db": str(labels_db),
+        "output_dir": str(output_dir),
+        "limit": limit,
+        "taxonomy_path": str(taxonomy_path),
+        "taxonomy_version": Path(taxonomy_path).name,
+        "semantic_index_path": str(semantic_index_path) if semantic_index_path else None,
+        "embedding_provider": _provider_name(embedding_provider),
+        "embedding_model": str(getattr(embedding_provider, "model", "")) if embedding_provider is not None else None,
+        "embedding_dimensions": getattr(embedding_provider, "dimensions", None),
+        "llm_provider": str(getattr(llm_tag_inspector, "provider_name", "")) if llm_tag_inspector is not None else "disabled",
+        "llm_model": str(getattr(llm_tag_inspector, "model", "disabled")) if llm_tag_inspector is not None else "disabled",
+        "ocr_mode": ocr_executor.__class__.__name__ if ocr_executor is not None else "default",
+        "git_commit": _git_commit(),
+    }
+
+
+def _provider_name(provider: Any) -> str | None:
+    if provider is None:
+        return None
+    return str(getattr(provider, "provider_name", "") or provider.__class__.__name__.replace("EmbeddingProvider", "").lower() or "unknown")
+
+
+def _git_commit() -> str | None:
+    try:
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=Path.cwd(), text=True).strip()
+    except Exception:  # noqa: BLE001 - metadata should not break eval runs.
+        return None
 
 
 def _write_eval_artifacts(
