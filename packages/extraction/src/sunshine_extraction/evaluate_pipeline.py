@@ -317,6 +317,7 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
         "route_status": route_status,
         "review_reason": final_result.get("review_reason"),
         "tag_confidence": final_result.get("tag_confidence"),
+        "confidence_bucket": _confidence_bucket(final_result.get("tag_confidence")),
         "embedding_status": final_result.get("embedding_status"),
         "llm_status": llm_status,
         "llm_structured_output_valid": llm_structured_output_valid,
@@ -345,6 +346,7 @@ def _summary(
     total = len(evaluated)
     model_usage = _model_usage_summary(model_usage_rows)
     primary_tag_metrics = _primary_tag_metrics(evaluated)
+    confidence_bucket_metrics = _confidence_bucket_metrics(evaluated)
     golden_label_readiness = _golden_label_readiness(labels, run_metadata.get("taxonomy_path") or DEFAULT_TAXONOMY_PATH)
     high_risk_metrics = {
         tag: metric
@@ -362,6 +364,7 @@ def _summary(
         "review_routing_precision": _safe_divide(totals["review_true_positive"], totals["review_true_positive"] + totals["review_false_positive"]),
         "review_routing_recall": _safe_divide(totals["review_true_positive"], totals["review_true_positive"] + totals["review_false_negative"]),
         "review_false_accepts": totals["review_false_negative"],
+        "review_false_reviews": totals["review_false_positive"],
         "ocr_fallback_rate": _safe_divide(totals["ocr_fallback_used"], total),
         "llm_structured_output_validity_rate": _safe_divide(totals["llm_structured_output_valid"], totals["llm_structured_output_attempted"]),
         "placement_destination_accuracy": _safe_divide(totals["placement_destination_correct"], totals["placement_destination_labeled"]),
@@ -389,6 +392,7 @@ def _summary(
         "confusion": confusion,
         "primary_tag_metrics": primary_tag_metrics,
         "high_risk_primary_tag_metrics": high_risk_metrics,
+        "confidence_bucket_metrics": confidence_bucket_metrics,
         "golden_label_readiness": golden_label_readiness,
         "by_route_status": dict(sorted(counters["by_route_status"].items())),
         "by_quality": dict(sorted(counters["by_quality"].items())),
@@ -564,6 +568,45 @@ def _primary_tag_metrics(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]
         }
         for tag, counts in sorted(by_tag.items())
     }
+
+
+def _confidence_bucket_metrics(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    by_bucket: dict[str, Counter[str]] = {}
+    for row in rows:
+        bucket = str(row.get("confidence_bucket") or "missing")
+        by_bucket.setdefault(bucket, Counter())
+        by_bucket[bucket]["total"] += 1
+        if row.get("primary_correct"):
+            by_bucket[bucket]["primary_correct"] += 1
+        if row.get("predicted_review_required"):
+            by_bucket[bucket]["review_required"] += 1
+        if row.get("expected_review_required") is True and row.get("predicted_review_required") is False:
+            by_bucket[bucket]["false_accept"] += 1
+        if row.get("expected_review_required") is False and row.get("predicted_review_required") is True:
+            by_bucket[bucket]["false_review"] += 1
+    return {
+        bucket: {
+            "total": int(counts["total"]),
+            "primary_correct": int(counts["primary_correct"]),
+            "primary_accuracy": _safe_divide(counts["primary_correct"], counts["total"]),
+            "review_required": int(counts["review_required"]),
+            "review_required_rate": _safe_divide(counts["review_required"], counts["total"]),
+            "false_accepts": int(counts["false_accept"]),
+            "false_reviews": int(counts["false_review"]),
+        }
+        for bucket, counts in sorted(by_bucket.items())
+    }
+
+
+def _confidence_bucket(value: Any) -> str:
+    if not isinstance(value, int | float):
+        return "missing"
+    confidence = float(value)
+    if confidence >= 0.85:
+        return "high"
+    if confidence >= 0.65:
+        return "medium"
+    return "low"
 
 
 def _update_eval_counters(counters: dict[str, Counter[str]], final_result: dict[str, Any]) -> None:

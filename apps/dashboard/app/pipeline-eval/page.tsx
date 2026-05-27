@@ -197,6 +197,7 @@ export default function PipelineEvalPage() {
               <KeyValue label="Precision" value={formatPercent(summary?.review_routing_precision)} />
               <KeyValue label="Recall" value={formatPercent(summary?.review_routing_recall)} />
               <KeyValue label="False accepts" value={String(summary?.review_false_accepts ?? 0)} />
+              <KeyValue label="False reviews" value={String(summary?.review_false_reviews ?? 0)} />
             </section>
             <section>
               <h3>LLM Output</h3>
@@ -233,6 +234,16 @@ export default function PipelineEvalPage() {
               <KeyValue label="High-risk min" value={formatPercent(summary?.high_risk_primary_accuracy_min)} />
               {Object.entries(summary?.high_risk_primary_tag_metrics ?? {}).map(([tag, metric]) => (
                 <KeyValue key={tag} label={tag} value={`${formatPercent(metric.accuracy)} (${metric.correct}/${metric.total})`} />
+              ))}
+            </section>
+            <section>
+              <h3>Confidence Calibration</h3>
+              {Object.entries(summary?.confidence_bucket_metrics ?? {}).map(([bucket, metric]) => (
+                <KeyValue
+                  key={bucket}
+                  label={bucket}
+                  value={`${formatPercent(metric.primary_accuracy)} primary, ${formatPercent(metric.review_required_rate)} review (${metric.primary_correct}/${metric.total})`}
+                />
               ))}
             </section>
           </div>

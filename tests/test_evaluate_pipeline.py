@@ -117,6 +117,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert summary["review_routing_precision"] == 0.5
     assert summary["review_routing_recall"] == 1.0
     assert summary["review_false_accepts"] == 0
+    assert summary["review_false_reviews"] == 1
     assert summary["llm_structured_output_validity_rate"] == 1.0
     assert summary["placement_destination_accuracy"] == 0.5
     assert summary["privacy_accuracy"] == 0.5
@@ -139,6 +140,9 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert "meeting_records" in summary["golden_label_readiness"]["underrepresented_high_risk_tags"]
     assert summary["primary_tag_metrics"]["annual_spring_tea"]["accuracy"] == 1.0
     assert summary["primary_tag_metrics"]["history_archive_general"]["accuracy"] == 0.0
+    assert summary["confidence_bucket_metrics"]["high"]["total"] == 2
+    assert summary["confidence_bucket_metrics"]["high"]["primary_accuracy"] == 0.5
+    assert summary["confidence_bucket_metrics"]["high"]["false_reviews"] == 1
     assert summary["acceptance_gate"]["status"] == "fail"
     assert {check["name"] for check in summary["acceptance_gate"]["blocking_checks"]} == {
         "embedding_placeholder_calls",
@@ -182,6 +186,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     model_usage = [json.loads(line) for line in (output_dir / "eval-model-usage.jsonl").read_text(encoding="utf-8").splitlines()]
 
     assert sorted(row["primary_correct"] for row in results) == [False, True]
+    assert {row["confidence_bucket"] for row in results} == {"high"}
     assert {row["ocr_fallback_used"] for row in results} == {False}
     assert {row["llm_structured_output_valid"] for row in results} == {True}
     assert failures[0]["correct_primary_tag"] == "history_archive_general"
