@@ -40,6 +40,7 @@ DEFAULT_ACCEPTANCE_THRESHOLDS = {
     "privacy_accuracy": 1.0,
     "high_confidence_primary_accuracy": 0.95,
     "high_confidence_false_accepts": 0,
+    "semantic_same_family_top5_rate": 0.80,
     "external_model_usage_tracked": 1.0,
     "sensitive_false_accepts": 0,
     "source_file_mutations": 0,
@@ -524,6 +525,8 @@ def _production_next_actions(
         actions.append("Improve OCR extraction for labels expected to produce usable text; acceptable OCR must meet the production threshold.")
     if "placement_destination_accuracy" in blocking_reasons:
         actions.append("Review placement rules by primary tag and year evidence before proposing folders at scale.")
+    if "semantic_same_family_top5_rate" in blocking_reasons:
+        actions.append("Improve the embedding index or retrieved examples so golden files retrieve same-family labels in the top 5.")
     if "privacy_accuracy" in blocking_reasons or "sensitive_false_accepts" in blocking_reasons:
         actions.append("Audit privacy and sensitive-record review routing; sensitive false accepts must be zero.")
     if "embedding_placeholder_calls" in blocking_reasons or "embedding_failed_calls" in blocking_reasons:
@@ -557,6 +560,7 @@ def _acceptance_gate(metrics: dict[str, Any], model_usage: dict[str, Any], golde
         _minimum_check("privacy_accuracy", metrics.get("privacy_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["privacy_accuracy"]),
         _minimum_check("high_confidence_primary_accuracy", metrics.get("high_confidence_primary_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["high_confidence_primary_accuracy"]),
         _maximum_check("high_confidence_false_accepts", metrics.get("high_confidence_false_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["high_confidence_false_accepts"]),
+        _minimum_check("semantic_same_family_top5_rate", metrics.get("semantic_same_family_top5_rate"), DEFAULT_ACCEPTANCE_THRESHOLDS["semantic_same_family_top5_rate"]),
         _maximum_check("sensitive_false_accepts", metrics.get("sensitive_false_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["sensitive_false_accepts"]),
         _maximum_check("source_file_mutations", metrics.get("source_file_mutations"), DEFAULT_ACCEPTANCE_THRESHOLDS["source_file_mutations"]),
         _maximum_check("embedding_placeholder_calls", model_usage.get("embedding_placeholder_calls", 0), 0),

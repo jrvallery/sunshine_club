@@ -157,6 +157,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
         "primary_accuracy",
         "placement_destination_accuracy",
         "privacy_accuracy",
+        "semantic_same_family_top5_rate",
     }
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "source_file_mutations")["status"] == "pass"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "ocr_acceptable_rate")["status"] == "pass"
@@ -178,6 +179,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert any("golden QA set" in action for action in summary["production_readiness"]["required_next_actions"])
     assert any("real embedding provider" in action for action in summary["production_readiness"]["required_next_actions"])
     assert any("Calibrate confidence" in action for action in summary["production_readiness"]["required_next_actions"])
+    assert any("same-family labels" in action for action in summary["production_readiness"]["required_next_actions"])
     assert summary["by_failure_reason"] == {
         "embedding_quality_unavailable": 2,
         "placement_destination_mismatch": 1,
