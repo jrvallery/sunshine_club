@@ -232,6 +232,8 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
     if label.expected_review_required is not None:
         review_routing_correct = review_required == label.expected_review_required
     ocr_fallback_used = _has_warning_prefix(final_result.get("warnings", []), "ocr_fallback_used:")
+    llm_status = final_result.get("llm_status")
+    llm_structured_output_valid = True if llm_status == "inspected" else False if llm_status in {"invalid", "failed"} else None
     placement_destination_correct = None
     if label.correct_destination_path:
         placement_destination_correct = final_result.get("destination_path") == label.correct_destination_path
@@ -300,7 +302,8 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
         "review_reason": final_result.get("review_reason"),
         "tag_confidence": final_result.get("tag_confidence"),
         "embedding_status": final_result.get("embedding_status"),
-        "llm_status": final_result.get("llm_status"),
+        "llm_status": llm_status,
+        "llm_structured_output_valid": llm_structured_output_valid,
         "semantic_example_count": len(semantic_examples),
         "semantic_same_family_top5_count": semantic_same_family_top5_count,
         "semantic_top1_primary_tag": semantic_top1_primary_tag,
@@ -342,6 +345,7 @@ def _summary(
         "review_routing_recall": _safe_divide(totals["review_true_positive"], totals["review_true_positive"] + totals["review_false_negative"]),
         "review_false_accepts": totals["review_false_negative"],
         "ocr_fallback_rate": _safe_divide(totals["ocr_fallback_used"], total),
+        "llm_structured_output_validity_rate": _safe_divide(totals["llm_structured_output_valid"], totals["llm_structured_output_attempted"]),
         "placement_destination_accuracy": _safe_divide(totals["placement_destination_correct"], totals["placement_destination_labeled"]),
         "placement_year_accuracy": _safe_divide(totals["placement_year_correct"], totals["placement_year_labeled"]),
         "privacy_accuracy": _safe_divide(totals["privacy_correct"], totals["privacy_labeled"]),
@@ -455,6 +459,10 @@ def _update_totals(totals: Counter, row: dict[str, Any], label: GoldenEvalLabel)
             totals["review_true_negative"] += 1
     if row.get("ocr_fallback_used"):
         totals["ocr_fallback_used"] += 1
+    if row.get("llm_structured_output_valid") is not None:
+        totals["llm_structured_output_attempted"] += 1
+        if row.get("llm_structured_output_valid"):
+            totals["llm_structured_output_valid"] += 1
     if row["placement_destination_correct"] is not None:
         totals["placement_destination_labeled"] += 1
         if row["placement_destination_correct"]:

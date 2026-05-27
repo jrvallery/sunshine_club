@@ -417,6 +417,7 @@ export type PipelineEvalSummary = {
   review_routing_recall?: number | null;
   review_false_accepts?: number;
   ocr_fallback_rate?: number | null;
+  llm_structured_output_validity_rate?: number | null;
   placement_destination_accuracy?: number | null;
   placement_year_accuracy?: number | null;
   privacy_accuracy?: number | null;
@@ -431,6 +432,7 @@ export type PipelineEvalSummary = {
   primary_tag_metrics?: Record<string, { total: number; correct: number; accuracy: number | null; review_required: number; review_required_rate: number | null }>;
   high_risk_primary_tag_metrics?: Record<string, { total: number; correct: number; accuracy: number | null; review_required: number; review_required_rate: number | null }>;
   by_failure_reason?: Record<string, number>;
+  by_llm_status?: Record<string, number>;
   model_usage?: Record<string, unknown>;
   acceptance_gate?: {
     status: string;

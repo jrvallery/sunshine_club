@@ -58,6 +58,7 @@ export default function PipelineEvalPage() {
       ["Content class", summary?.content_class_accuracy],
       ["OCR quality", summary?.ocr_quality_accuracy],
       ["OCR fallback", summary?.ocr_fallback_rate],
+      ["LLM valid", summary?.llm_structured_output_validity_rate],
       ["Embedding success", summary?.embedding_success_rate],
       ["Semantic top 5", summary?.semantic_same_family_top5_rate],
       ["High-risk min", summary?.high_risk_primary_accuracy_min],
@@ -177,6 +178,13 @@ export default function PipelineEvalPage() {
               <KeyValue label="Precision" value={formatPercent(summary?.review_routing_precision)} />
               <KeyValue label="Recall" value={formatPercent(summary?.review_routing_recall)} />
               <KeyValue label="False accepts" value={String(summary?.review_false_accepts ?? 0)} />
+            </section>
+            <section>
+              <h3>LLM Output</h3>
+              <KeyValue label="Structured validity" value={formatPercent(summary?.llm_structured_output_validity_rate)} />
+              {Object.entries(summary?.by_llm_status ?? {}).map(([status, count]) => (
+                <KeyValue key={status} label={status} value={count} />
+              ))}
             </section>
             <section>
               <h3>Failure Reasons</h3>
