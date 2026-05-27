@@ -168,6 +168,7 @@ export default function PipelineEvalPage() {
               {(gate?.checks ?? []).map((check) => (
                 <KeyValue key={check.name} label={check.name} value={`${check.status} ${formatPercent(check.value)} ${check.operator} ${formatPercent(check.threshold)}`} />
               ))}
+              <KeyValue label="Source mutations" value={String(summary?.source_file_mutations ?? 0)} />
             </section>
             <section>
               <h3>Failure Reasons</h3>

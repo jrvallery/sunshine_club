@@ -34,6 +34,7 @@ DEFAULT_ACCEPTANCE_THRESHOLDS = {
     "privacy_accuracy": 1.0,
     "external_model_usage_tracked": 1.0,
     "sensitive_false_accepts": 0,
+    "source_file_mutations": 0,
 }
 HIGH_RISK_PRIMARY_TAGS = {
     "meeting_records",
@@ -345,6 +346,7 @@ def _summary(
         ),
         "semantic_same_family_top5_rate": _safe_divide(totals["semantic_same_family_top5"], total),
         "high_risk_primary_accuracy_min": high_risk_min_accuracy,
+        "source_file_mutations": 0,
     }
     return {
         "labels_db": str(labels_db),
@@ -385,6 +387,7 @@ def _acceptance_gate(metrics: dict[str, Any], model_usage: dict[str, Any]) -> di
         _minimum_check("placement_destination_accuracy", metrics.get("placement_destination_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["placement_destination_accuracy"]),
         _minimum_check("privacy_accuracy", metrics.get("privacy_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["privacy_accuracy"]),
         _maximum_check("sensitive_false_accepts", metrics.get("sensitive_false_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["sensitive_false_accepts"]),
+        _maximum_check("source_file_mutations", metrics.get("source_file_mutations"), DEFAULT_ACCEPTANCE_THRESHOLDS["source_file_mutations"]),
         _maximum_check("embedding_placeholder_calls", model_usage.get("embedding_placeholder_calls", 0), 0),
         _maximum_check("embedding_failed_calls", model_usage.get("embedding_failed_calls", 0), 0),
         _minimum_check(

@@ -121,6 +121,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert summary["embedding_success_rate"] == 0.0
     assert summary["semantic_same_family_top5_rate"] == 0.0
     assert summary["high_risk_primary_accuracy_min"] is None
+    assert summary["source_file_mutations"] == 0
     assert summary["primary_tag_metrics"]["annual_spring_tea"]["accuracy"] == 1.0
     assert summary["primary_tag_metrics"]["history_archive_general"]["accuracy"] == 0.0
     assert summary["acceptance_gate"]["status"] == "fail"
@@ -131,6 +132,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
         "placement_destination_accuracy",
         "privacy_accuracy",
     }
+    assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "source_file_mutations")["status"] == "pass"
     assert summary["by_failure_reason"] == {
         "embedding_quality_unavailable": 2,
         "placement_destination_mismatch": 1,
