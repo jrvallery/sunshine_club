@@ -185,6 +185,9 @@ def test_review_store_imports_langgraph_results_and_records_decision(tmp_path: P
     assert golden_labels[0]["ocr_quality_label"] == "ok"
     assert golden_labels[0]["expected_review_required"] is True
     assert golden_labels[0]["sensitive_record"] is True
+    assert golden_labels[0]["correct_destination_path"] == "01_Governance_Admin/1992-1993"
+    assert golden_labels[0]["correct_placement_year"] == "1992-1993"
+    assert golden_labels[0]["correct_privacy"] == "club_internal"
     assert edited_label["content_class"] == "document"
     assert edited_label["correct_primary_tag"] == "governance_bylaws_policy"
     assert edited_label["correct_secondary_tags"] == ["policy"]

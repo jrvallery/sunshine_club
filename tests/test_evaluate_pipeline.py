@@ -48,6 +48,9 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
                 ocr_quality_label text,
                 expected_review_required integer,
                 sensitive_record integer,
+                correct_destination_path text,
+                correct_placement_year text,
+                correct_privacy text,
                 notes text,
                 updated_at text not null default (datetime('now'))
             );
@@ -58,8 +61,9 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
             insert into golden_labels (
                 source_path, relative_path, sample_path, correct_primary_tag,
                 correct_secondary_tags_json, content_class, ocr_quality_label,
-                expected_review_required, sensitive_record, notes
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                expected_review_required, sensitive_record, correct_destination_path,
+                correct_placement_year, correct_privacy, notes
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -72,6 +76,9 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
                     "ok",
                     0,
                     0,
+                    "90_Intake_Needs_Review/05_Events",
+                    None,
+                    "club_internal",
                     "Known tea event material.",
                 ),
                 (
@@ -84,6 +91,9 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
                     "ok",
                     1,
                     1,
+                    "06_History_Archive",
+                    None,
+                    "public",
                     "Known historical summary.",
                 ),
             ],
@@ -103,16 +113,22 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert summary["primary_accuracy"] == 0.5
     assert summary["content_class_accuracy"] == 1.0
     assert summary["ocr_quality_accuracy"] == 1.0
+    assert summary["placement_destination_accuracy"] == 0.5
+    assert summary["privacy_accuracy"] == 0.5
     assert summary["secondary_precision"] == 0.5
     assert summary["secondary_recall"] == 0.5
     assert summary["failure_count"] == 1
     assert summary["acceptance_gate"]["status"] == "fail"
     assert {check["name"] for check in summary["acceptance_gate"]["blocking_checks"]} == {
         "primary_accuracy",
+        "placement_destination_accuracy",
+        "privacy_accuracy",
         "sensitive_false_accepts",
     }
     assert summary["by_failure_reason"] == {
+        "placement_destination_mismatch": 1,
         "primary_tag_mismatch": 1,
+        "privacy_mismatch": 1,
         "review_routing_mismatch": 1,
     }
     assert summary["model_usage"]["by_purpose"] == {

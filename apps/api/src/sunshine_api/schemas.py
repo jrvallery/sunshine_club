@@ -74,6 +74,9 @@ class GoldenLabelUpdateRequest(BaseModel):
     ocr_quality_label: str | None = None
     expected_review_required: bool | None = None
     sensitive_record: bool | None = None
+    correct_destination_path: str | None = None
+    correct_placement_year: str | None = None
+    correct_privacy: str | None = None
     reviewer: str | None = None
     notes: str | None = None
 

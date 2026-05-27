@@ -665,7 +665,8 @@ class ReviewStore:
                 """
                 select id, review_item_id, source_path, relative_path, sample_path, extracted_text_snippet,
                        content_class, correct_primary_tag, correct_secondary_tags_json, ocr_quality_label,
-                       expected_review_required, sensitive_record, reviewer, notes, proposed_tag,
+                       expected_review_required, sensitive_record, correct_destination_path, correct_placement_year,
+                       correct_privacy, reviewer, notes, proposed_tag,
                        proposed_secondary_tags_json, proposed_confidence, created_at, updated_at
                 from golden_labels
                 where source_path = ?
@@ -900,9 +901,10 @@ class ReviewStore:
                     insert into golden_labels (
                         review_item_id, source_path, relative_path, sample_path, extracted_text_snippet,
                         content_class, correct_primary_tag, correct_secondary_tags_json, ocr_quality_label,
-                        expected_review_required, sensitive_record, reviewer, notes, proposed_tag,
+                        expected_review_required, sensitive_record, correct_destination_path, correct_placement_year,
+                        correct_privacy, reviewer, notes, proposed_tag,
                         proposed_secondary_tags_json, proposed_confidence, created_at, updated_at
-                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
                     on conflict(source_path) do update set
                         review_item_id=excluded.review_item_id,
                         relative_path=excluded.relative_path,
@@ -914,6 +916,9 @@ class ReviewStore:
                         ocr_quality_label=excluded.ocr_quality_label,
                         expected_review_required=excluded.expected_review_required,
                         sensitive_record=excluded.sensitive_record,
+                        correct_destination_path=excluded.correct_destination_path,
+                        correct_placement_year=excluded.correct_placement_year,
+                        correct_privacy=excluded.correct_privacy,
                         reviewer=excluded.reviewer,
                         notes=excluded.notes,
                         proposed_tag=excluded.proposed_tag,
@@ -933,6 +938,9 @@ class ReviewStore:
                         resolved_ocr_quality,
                         1 if resolved_expected_review_required else 0,
                         1 if sensitive_record else 0,
+                        correct_destination_path,
+                        correct_placement_year,
+                        correct_privacy,
                         reviewer,
                         notes,
                         existing["proposed_tag"],
@@ -1013,7 +1021,8 @@ class ReviewStore:
                 """
                 select id, review_item_id, source_path, relative_path, sample_path, extracted_text_snippet,
                        content_class, correct_primary_tag, correct_secondary_tags_json, ocr_quality_label,
-                       expected_review_required, sensitive_record, reviewer, notes, proposed_tag,
+                       expected_review_required, sensitive_record, correct_destination_path, correct_placement_year,
+                       correct_privacy, reviewer, notes, proposed_tag,
                        proposed_secondary_tags_json, proposed_confidence, created_at, updated_at
                 from golden_labels
                 order by updated_at desc, id desc
@@ -1032,7 +1041,8 @@ class ReviewStore:
                 """
                 select id, review_item_id, source_path, relative_path, sample_path, extracted_text_snippet,
                        content_class, correct_primary_tag, correct_secondary_tags_json, ocr_quality_label,
-                       expected_review_required, sensitive_record, reviewer, notes, proposed_tag,
+                       expected_review_required, sensitive_record, correct_destination_path, correct_placement_year,
+                       correct_privacy, reviewer, notes, proposed_tag,
                        proposed_secondary_tags_json, proposed_confidence, created_at, updated_at
                 from golden_labels
                 where id = ?
@@ -1068,6 +1078,9 @@ class ReviewStore:
         ocr_quality_label: str | None = None,
         expected_review_required: bool | None = None,
         sensitive_record: bool | None = None,
+        correct_destination_path: str | None = None,
+        correct_placement_year: str | None = None,
+        correct_privacy: str | None = None,
         reviewer: str | None = None,
         notes: str | None = None,
     ) -> dict[str, Any]:
@@ -1086,6 +1099,9 @@ class ReviewStore:
                     ocr_quality_label = ?,
                     expected_review_required = ?,
                     sensitive_record = ?,
+                    correct_destination_path = ?,
+                    correct_placement_year = ?,
+                    correct_privacy = ?,
                     reviewer = ?,
                     notes = ?,
                     updated_at = datetime('now')
@@ -1102,6 +1118,9 @@ class ReviewStore:
                         else 0
                     ),
                     1 if (sensitive_record if sensitive_record is not None else existing["sensitive_record"]) else 0,
+                    correct_destination_path if correct_destination_path is not None else existing["correct_destination_path"],
+                    correct_placement_year if correct_placement_year is not None else existing["correct_placement_year"],
+                    correct_privacy if correct_privacy is not None else existing["correct_privacy"],
                     reviewer if reviewer is not None else existing["reviewer"],
                     notes if notes is not None else existing["notes"],
                     label_id,
@@ -1713,6 +1732,9 @@ class ReviewStore:
                     ocr_quality_label text,
                     expected_review_required integer,
                     sensitive_record integer not null default 0,
+                    correct_destination_path text,
+                    correct_placement_year text,
+                    correct_privacy text,
                     reviewer text,
                     notes text,
                     proposed_tag text,
@@ -1857,6 +1879,9 @@ class ReviewStore:
             _ensure_column(connection, "golden_labels", "ocr_quality_label", "ocr_quality_label text")
             _ensure_column(connection, "golden_labels", "expected_review_required", "expected_review_required integer")
             _ensure_column(connection, "golden_labels", "sensitive_record", "sensitive_record integer not null default 0")
+            _ensure_column(connection, "golden_labels", "correct_destination_path", "correct_destination_path text")
+            _ensure_column(connection, "golden_labels", "correct_placement_year", "correct_placement_year text")
+            _ensure_column(connection, "golden_labels", "correct_privacy", "correct_privacy text")
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.db_path)
@@ -2563,6 +2588,9 @@ def _golden_label_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "ocr_quality_label": row["ocr_quality_label"],
         "expected_review_required": bool(row["expected_review_required"]) if row["expected_review_required"] is not None else None,
         "sensitive_record": bool(row["sensitive_record"]),
+        "correct_destination_path": row["correct_destination_path"],
+        "correct_placement_year": row["correct_placement_year"],
+        "correct_privacy": row["correct_privacy"],
         "reviewer": row["reviewer"],
         "notes": row["notes"],
         "proposed_tag": row["proposed_tag"],

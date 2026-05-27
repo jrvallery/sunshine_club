@@ -29,6 +29,8 @@ DEFAULT_ACCEPTANCE_THRESHOLDS = {
     "content_class_accuracy": 0.95,
     "primary_accuracy": 0.88,
     "ocr_quality_accuracy": 0.90,
+    "placement_destination_accuracy": 0.90,
+    "privacy_accuracy": 1.0,
     "external_model_usage_tracked": 1.0,
     "sensitive_false_accepts": 0,
 }
@@ -46,6 +48,9 @@ class GoldenEvalLabel:
     ocr_quality_label: str | None
     expected_review_required: bool | None
     sensitive_record: bool
+    correct_destination_path: str | None
+    correct_placement_year: str | None
+    correct_privacy: str | None
     notes: str | None
 
 
@@ -152,6 +157,9 @@ def load_golden_eval_labels(labels_db: str | Path, *, limit: int | None = None) 
         _optional_column(columns, "ocr_quality_label"),
         _optional_column(columns, "expected_review_required"),
         _optional_column(columns, "sensitive_record"),
+        _optional_column(columns, "correct_destination_path"),
+        _optional_column(columns, "correct_placement_year"),
+        _optional_column(columns, "correct_privacy"),
         _optional_column(columns, "notes"),
     ]
     query = f"""
@@ -180,6 +188,9 @@ def load_golden_eval_labels(labels_db: str | Path, *, limit: int | None = None) 
                 ocr_quality_label=_optional_row_text(row, "ocr_quality_label"),
                 expected_review_required=_optional_row_bool(row, "expected_review_required"),
                 sensitive_record=bool(_optional_row_bool(row, "sensitive_record") or False),
+                correct_destination_path=_optional_row_text(row, "correct_destination_path"),
+                correct_placement_year=_optional_row_text(row, "correct_placement_year"),
+                correct_privacy=_optional_row_text(row, "correct_privacy"),
                 notes=_optional_row_text(row, "notes"),
             )
         )
@@ -199,6 +210,15 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
     review_routing_correct = None
     if label.expected_review_required is not None:
         review_routing_correct = review_required == label.expected_review_required
+    placement_destination_correct = None
+    if label.correct_destination_path:
+        placement_destination_correct = final_result.get("destination_path") == label.correct_destination_path
+    placement_year_correct = None
+    if label.correct_placement_year:
+        placement_year_correct = str(final_result.get("placement", {}).get("placement_year_label") or "") == label.correct_placement_year
+    privacy_correct = None
+    if label.correct_privacy:
+        privacy_correct = final_result.get("default_privacy") == label.correct_privacy
 
     failure_reasons = []
     if not primary_correct:
@@ -209,6 +229,12 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
         failure_reasons.append("review_routing_mismatch")
     if label.ocr_quality_label and final_result.get("quality") != label.ocr_quality_label:
         failure_reasons.append("ocr_quality_mismatch")
+    if placement_destination_correct is False:
+        failure_reasons.append("placement_destination_mismatch")
+    if placement_year_correct is False:
+        failure_reasons.append("placement_year_mismatch")
+    if privacy_correct is False:
+        failure_reasons.append("privacy_mismatch")
 
     return {
         "golden_label_id": label.id,
@@ -233,6 +259,15 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
         "expected_review_required": label.expected_review_required,
         "predicted_review_required": review_required,
         "review_routing_correct": review_routing_correct,
+        "expected_destination_path": label.correct_destination_path,
+        "predicted_destination_path": final_result.get("destination_path"),
+        "placement_destination_correct": placement_destination_correct,
+        "expected_placement_year": label.correct_placement_year,
+        "predicted_placement_year": final_result.get("placement", {}).get("placement_year_label") if isinstance(final_result.get("placement"), dict) else None,
+        "placement_year_correct": placement_year_correct,
+        "expected_privacy": label.correct_privacy,
+        "predicted_privacy": final_result.get("default_privacy"),
+        "privacy_correct": privacy_correct,
         "sensitive_record": label.sensitive_record,
         "route_status": route_status,
         "review_reason": final_result.get("review_reason"),
@@ -266,6 +301,9 @@ def _summary(
         "secondary_recall": _safe_divide(totals["secondary_true_positive"], totals["secondary_true_positive"] + totals["secondary_false_negative"]),
         "ocr_quality_accuracy": _safe_divide(totals["ocr_quality_correct"], totals["ocr_quality_labeled"]),
         "review_routing_accuracy": _safe_divide(totals["review_routing_correct"], totals["review_routing_labeled"]),
+        "placement_destination_accuracy": _safe_divide(totals["placement_destination_correct"], totals["placement_destination_labeled"]),
+        "placement_year_accuracy": _safe_divide(totals["placement_year_correct"], totals["placement_year_labeled"]),
+        "privacy_accuracy": _safe_divide(totals["privacy_correct"], totals["privacy_labeled"]),
         "sensitive_false_accepts": totals["sensitive_false_accepts"],
     }
     return {
@@ -301,6 +339,8 @@ def _acceptance_gate(metrics: dict[str, Any], model_usage: dict[str, Any]) -> di
         _minimum_check("content_class_accuracy", metrics.get("content_class_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["content_class_accuracy"]),
         _minimum_check("primary_accuracy", metrics.get("primary_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["primary_accuracy"]),
         _minimum_check("ocr_quality_accuracy", metrics.get("ocr_quality_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["ocr_quality_accuracy"]),
+        _minimum_check("placement_destination_accuracy", metrics.get("placement_destination_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["placement_destination_accuracy"]),
+        _minimum_check("privacy_accuracy", metrics.get("privacy_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["privacy_accuracy"]),
         _maximum_check("sensitive_false_accepts", metrics.get("sensitive_false_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["sensitive_false_accepts"]),
         _minimum_check(
             "external_model_usage_tracked",
@@ -351,6 +391,18 @@ def _update_totals(totals: Counter, row: dict[str, Any], label: GoldenEvalLabel)
         totals["review_routing_labeled"] += 1
         if row["review_routing_correct"]:
             totals["review_routing_correct"] += 1
+    if row["placement_destination_correct"] is not None:
+        totals["placement_destination_labeled"] += 1
+        if row["placement_destination_correct"]:
+            totals["placement_destination_correct"] += 1
+    if row["placement_year_correct"] is not None:
+        totals["placement_year_labeled"] += 1
+        if row["placement_year_correct"]:
+            totals["placement_year_correct"] += 1
+    if row["privacy_correct"] is not None:
+        totals["privacy_labeled"] += 1
+        if row["privacy_correct"]:
+            totals["privacy_correct"] += 1
     if row["predicted_review_required"]:
         totals["review_required"] += 1
     else:
@@ -461,6 +513,15 @@ def _missing_file_result(label: GoldenEvalLabel) -> dict[str, Any]:
         "expected_review_required": label.expected_review_required,
         "predicted_review_required": True,
         "review_routing_correct": (label.expected_review_required is True) if label.expected_review_required is not None else None,
+        "expected_destination_path": label.correct_destination_path,
+        "predicted_destination_path": None,
+        "placement_destination_correct": False if label.correct_destination_path else None,
+        "expected_placement_year": label.correct_placement_year,
+        "predicted_placement_year": None,
+        "placement_year_correct": False if label.correct_placement_year else None,
+        "expected_privacy": label.correct_privacy,
+        "predicted_privacy": None,
+        "privacy_correct": False if label.correct_privacy else None,
         "sensitive_record": label.sensitive_record,
         "route_status": "review_failed_extraction",
         "review_reason": "file_missing",
