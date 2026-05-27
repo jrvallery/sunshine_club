@@ -494,6 +494,21 @@ export type PipelineEvalSummary = {
     checks: Array<{ name: string; value: number | null; threshold: number; status: string; operator: string }>;
     blocking_checks: Array<{ name: string; value: number | null; threshold: number; status: string; operator: string }>;
   };
+  production_readiness?: {
+    status: string;
+    larger_batch_allowed: boolean;
+    customer_claims_allowed: boolean;
+    summary: string;
+    blocking_reasons: string[];
+    required_next_actions: string[];
+    reliable_categories: Array<{ tag: string; total: number; correct: number; accuracy: number | null }>;
+    unreliable_categories: Array<{ tag: string; total: number; correct: number; accuracy: number | null; reason?: string }>;
+    underrepresented_categories: Array<{ tag: string; total: number; correct: number; accuracy: number | null; reason?: string }>;
+    status_counts: Record<string, number>;
+    category_min_examples: number;
+    category_accuracy_threshold: number;
+  };
+  production_status_counts?: Record<string, number>;
 };
 
 export type PipelineEvalRunResponse = {

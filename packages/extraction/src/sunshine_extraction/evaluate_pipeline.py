@@ -379,6 +379,21 @@ def _summary(
         "high_risk_primary_accuracy_min": high_risk_min_accuracy,
         "source_file_mutations": 0,
     }
+    production_status_counts = {
+        "accepted": totals["route_candidate"],
+        "review_required": totals["review_required"],
+        "failed": len(failures),
+        "deferred": sum(count for status, count in counters["by_route_status"].items() if "defer" in status),
+    }
+    acceptance_gate = _acceptance_gate(metrics, model_usage, golden_label_readiness)
+    production_readiness = _production_readiness(
+        metrics=metrics,
+        model_usage=model_usage,
+        golden_label_readiness=golden_label_readiness,
+        acceptance_gate=acceptance_gate,
+        primary_tag_metrics=primary_tag_metrics,
+        production_status_counts=production_status_counts,
+    )
     return {
         "labels_db": str(labels_db),
         "output_dir": str(output_dir),
@@ -401,7 +416,9 @@ def _summary(
         "by_failure_reason": dict(sorted(counters["by_failure_reason"].items())),
         "model_usage": model_usage,
         "run_metadata": run_metadata,
-        "acceptance_gate": _acceptance_gate(metrics, model_usage, golden_label_readiness),
+        "acceptance_gate": acceptance_gate,
+        "production_readiness": production_readiness,
+        "production_status_counts": production_status_counts,
         "artifacts": {
             "summary": str(output_dir / "eval-summary.json"),
             "results": str(output_dir / "eval-results.jsonl"),
@@ -410,6 +427,106 @@ def _summary(
             "model_usage": str(output_dir / "eval-model-usage.jsonl"),
         },
     }
+
+
+def _production_readiness(
+    *,
+    metrics: dict[str, Any],
+    model_usage: dict[str, Any],
+    golden_label_readiness: dict[str, Any],
+    acceptance_gate: dict[str, Any],
+    primary_tag_metrics: dict[str, dict[str, Any]],
+    production_status_counts: dict[str, int],
+) -> dict[str, Any]:
+    gate_passed = acceptance_gate.get("status") == "pass"
+    blocking_reasons = [check["name"] for check in acceptance_gate.get("blocking_checks", [])]
+    reliable_categories: list[dict[str, Any]] = []
+    unreliable_categories: list[dict[str, Any]] = []
+    underrepresented_categories: list[dict[str, Any]] = []
+    min_examples = int(DEFAULT_ACCEPTANCE_THRESHOLDS["high_risk_label_min_count"])
+    primary_threshold = float(DEFAULT_ACCEPTANCE_THRESHOLDS["primary_accuracy"])
+
+    for tag, metric in sorted(primary_tag_metrics.items()):
+        total = int(metric.get("total") or 0)
+        accuracy = metric.get("accuracy")
+        category = {
+            "tag": tag,
+            "total": total,
+            "correct": int(metric.get("correct") or 0),
+            "accuracy": accuracy,
+            "review_required": int(metric.get("review_required") or 0),
+            "review_required_rate": metric.get("review_required_rate"),
+        }
+        if total < min_examples:
+            underrepresented_categories.append({**category, "reason": "not_enough_golden_examples"})
+        elif accuracy is not None and float(accuracy) >= primary_threshold:
+            reliable_categories.append(category)
+        else:
+            unreliable_categories.append({**category, "reason": "below_primary_accuracy_threshold"})
+
+    next_actions = _production_next_actions(blocking_reasons, golden_label_readiness, model_usage, metrics)
+    return {
+        "status": "ready_for_larger_batch" if gate_passed else "not_ready",
+        "larger_batch_allowed": gate_passed,
+        "customer_claims_allowed": gate_passed,
+        "summary": (
+            "Golden evaluation passed every production gate; larger representative batches may proceed."
+            if gate_passed
+            else "Do not process larger customer batches yet; blocking quality gates remain."
+        ),
+        "blocking_reasons": blocking_reasons,
+        "required_next_actions": next_actions,
+        "reliable_categories": reliable_categories,
+        "unreliable_categories": unreliable_categories,
+        "underrepresented_categories": underrepresented_categories,
+        "status_counts": production_status_counts,
+        "category_min_examples": min_examples,
+        "category_accuracy_threshold": primary_threshold,
+    }
+
+
+def _production_next_actions(
+    blocking_reasons: list[str],
+    golden_label_readiness: dict[str, Any],
+    model_usage: dict[str, Any],
+    metrics: dict[str, Any],
+) -> list[str]:
+    actions: list[str] = []
+    if "golden_label_count" in blocking_reasons:
+        actions.append(
+            f"Build golden QA set to at least {golden_label_readiness.get('minimum_label_count', DEFAULT_ACCEPTANCE_THRESHOLDS['golden_label_count'])} labels."
+        )
+    if "primary_taxonomy_coverage" in blocking_reasons:
+        missing = golden_label_readiness.get("missing_primary_tags") or []
+        suffix = f" Missing: {', '.join(missing[:8])}." if missing else ""
+        actions.append(f"Add labels until every primary taxonomy tag is represented.{suffix}")
+    if "high_risk_label_min_count" in blocking_reasons:
+        undercovered = golden_label_readiness.get("underrepresented_high_risk_tags") or []
+        suffix = f" Undercovered: {', '.join(undercovered)}." if undercovered else ""
+        actions.append("Add multiple labels for every high-risk category." + suffix)
+    if any(reason in blocking_reasons for reason in ("primary_accuracy", "high_risk_primary_accuracy")):
+        actions.append("Improve semantic tagging with stronger retrieved examples and rerun the golden eval.")
+    if "content_class_accuracy" in blocking_reasons:
+        actions.append("Fix content-class classifier errors before trusting downstream extraction strategy.")
+    if "ocr_quality_accuracy" in blocking_reasons:
+        actions.append("Tighten OCR quality validation and fallback routing for poor, empty, or gibberish extraction.")
+    if "placement_destination_accuracy" in blocking_reasons:
+        actions.append("Review placement rules by primary tag and year evidence before proposing folders at scale.")
+    if "privacy_accuracy" in blocking_reasons or "sensitive_false_accepts" in blocking_reasons:
+        actions.append("Audit privacy and sensitive-record review routing; sensitive false accepts must be zero.")
+    if "embedding_placeholder_calls" in blocking_reasons or "embedding_failed_calls" in blocking_reasons:
+        actions.append(
+            f"Use a real embedding provider and eliminate placeholder/failed embedding calls. Placeholder={model_usage.get('embedding_placeholder_calls', 0)}, failed={model_usage.get('embedding_failed_calls', 0)}."
+        )
+    if "external_model_usage_tracked" in blocking_reasons:
+        actions.append("Ensure every external model call records provider, model, purpose, runtime, tokens when available, and estimated cost.")
+    if "source_file_mutations" in blocking_reasons:
+        actions.append("Stop and investigate source-file mutation evidence; production runs must be read-only.")
+    if not actions and blocking_reasons:
+        actions.append(f"Resolve remaining blocking gates: {', '.join(blocking_reasons)}.")
+    if metrics.get("review_false_accepts"):
+        actions.append("Inspect review false accepts; files that should require review cannot silently route as accepted.")
+    return actions
 
 
 def _acceptance_gate(metrics: dict[str, Any], model_usage: dict[str, Any], golden_label_readiness: dict[str, Any]) -> dict[str, Any]:

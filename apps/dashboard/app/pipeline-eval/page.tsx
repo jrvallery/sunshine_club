@@ -52,6 +52,7 @@ export default function PipelineEvalPage() {
   });
   const summary = activeRun?.summary;
   const gate = summary?.acceptance_gate;
+  const readiness = summary?.production_readiness;
   const metricCards = useMemo(
     () => [
       ["Primary", summary?.primary_accuracy],
@@ -120,6 +121,7 @@ export default function PipelineEvalPage() {
               <tr>
                 <th>Eval</th>
                 <th>Gate</th>
+                <th>Readiness</th>
                 <th>Labels</th>
                 <th>Primary</th>
                 <th>Embeddings</th>
@@ -140,6 +142,12 @@ export default function PipelineEvalPage() {
                   </td>
                   <td>
                     <StatusBadge value={run.summary?.acceptance_gate?.status ?? run.status} tone={run.summary?.acceptance_gate?.status === "fail" ? "danger" : "default"} />
+                  </td>
+                  <td>
+                    <StatusBadge
+                      value={run.summary?.production_readiness?.status ?? "-"}
+                      tone={run.summary?.production_readiness?.larger_batch_allowed ? "default" : "danger"}
+                    />
                   </td>
                   <td>{run.total_golden_labels ?? "-"}</td>
                   <td>{formatPercent(run.primary_accuracy)}</td>
@@ -164,6 +172,51 @@ export default function PipelineEvalPage() {
             </div>
             <StatusBadge value={gate?.status ?? activeRun.status} tone={gate?.status === "fail" ? "danger" : "default"} />
           </div>
+          {readiness ? (
+            <section className="drawerSection wideSection">
+              <div className="sectionHeader">
+                <div>
+                  <h3>Production Readiness</h3>
+                  <p className="muted">{readiness.summary}</p>
+                </div>
+                <StatusBadge value={readiness.status} tone={readiness.larger_batch_allowed ? "default" : "danger"} />
+              </div>
+              <div className="drawerGrid compactGrid">
+                <section>
+                  <h4>Decision</h4>
+                  <KeyValue label="Larger batch allowed" value={readiness.larger_batch_allowed ? "yes" : "no"} />
+                  <KeyValue label="Customer claims allowed" value={readiness.customer_claims_allowed ? "yes" : "no"} />
+                  <KeyValue label="Blocking gates" value={readiness.blocking_reasons.join(", ") || "-"} />
+                </section>
+                <section>
+                  <h4>Status Buckets</h4>
+                  <KeyValue label="Accepted" value={String(readiness.status_counts.accepted ?? 0)} />
+                  <KeyValue label="Review required" value={String(readiness.status_counts.review_required ?? 0)} />
+                  <KeyValue label="Failed" value={String(readiness.status_counts.failed ?? 0)} />
+                  <KeyValue label="Deferred" value={String(readiness.status_counts.deferred ?? 0)} />
+                </section>
+                <section>
+                  <h4>Reliable Categories</h4>
+                  <KeyValue label="Threshold" value={`${readiness.category_min_examples} labels, ${formatPercent(readiness.category_accuracy_threshold)} accuracy`} />
+                  <KeyValue label="Reliable" value={formatCategoryList(readiness.reliable_categories)} />
+                  <KeyValue label="Unreliable" value={formatCategoryList(readiness.unreliable_categories)} />
+                  <KeyValue label="Underrepresented" value={formatCategoryList(readiness.underrepresented_categories)} />
+                </section>
+                <section>
+                  <h4>Required Next Actions</h4>
+                  {readiness.required_next_actions.length ? (
+                    <ul className="evidenceList">
+                      {readiness.required_next_actions.map((action) => (
+                        <li key={action}>{action}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="muted">No blocking actions.</p>
+                  )}
+                </section>
+              </div>
+            </section>
+          ) : null}
           <div className="drawerGrid">
             <section>
               <h3>Gate</h3>
@@ -335,6 +388,16 @@ function formatMap(value: unknown) {
     return "-";
   }
   return entries.map(([key, count]) => `${key} (${String(count)})`).join(", ");
+}
+
+function formatCategoryList(categories: Array<{ tag: string; total: number; correct: number; accuracy: number | null }>) {
+  if (!categories.length) {
+    return "-";
+  }
+  return categories
+    .slice(0, 8)
+    .map((category) => `${category.tag} ${formatPercent(category.accuracy)} (${category.correct}/${category.total})`)
+    .join(", ");
 }
 
 function shortCommit(value: unknown) {

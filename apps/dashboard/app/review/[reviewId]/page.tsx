@@ -1,0 +1,345 @@
+"use client";
+
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
+import { useParams, useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
+
+import { OcrEvidencePanel } from "../../../components/dashboard/OcrEvidencePanel";
+import { ProviderConfigBadge } from "../../../components/dashboard/ProviderConfigBadge";
+import { RunContextBadge } from "../../../components/dashboard/RunContextBadge";
+import { EmbeddedPreview } from "../../../components/file-preview/EmbeddedPreview";
+import { Button } from "../../../components/ui/Button";
+import { CheckboxField, SelectInput, TextArea, TextInput } from "../../../components/ui/FormControls";
+import { KeyValue } from "../../../components/ui/KeyValue";
+import { MultiTagPicker, TagPicker } from "../../../components/ui/TagPicker";
+import { fetchJson, postJson } from "../../../lib/api";
+import { contentClassOptions, ocrQualityOptions, primaryTagOptions, privacyOptions, secondaryTagOptions } from "../../../lib/taxonomy";
+import type { ReviewItem } from "../../../lib/types";
+
+export default function ReviewItemPage() {
+  return (
+    <Suspense fallback={<main className="pageShell"><div className="empty">Loading review item...</div></main>}>
+      <ReviewItemPageContent />
+    </Suspense>
+  );
+}
+
+function ReviewItemPageContent() {
+  const params = useParams<{ reviewId: string }>();
+  const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
+  const reviewId = Number(params.reviewId);
+  const backHref = useMemo(() => {
+    const filters = new URLSearchParams(searchParams);
+    return `/review${filters.toString() ? `?${filters.toString()}` : ""}`;
+  }, [searchParams]);
+
+  const itemQuery = useQuery({
+    queryKey: ["review-item", reviewId],
+    enabled: Number.isFinite(reviewId),
+    queryFn: () => fetchJson<ReviewItem>(`/api/admin/review/items/${reviewId}`)
+  });
+  const textQuery = useQuery({
+    queryKey: ["review-item-text", reviewId],
+    enabled: Number.isFinite(reviewId),
+    queryFn: async () => {
+      const response = await fetch(`/api/admin/review/items/${reviewId}/text`, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`${response.status} ${response.statusText}`);
+      }
+      return response.text();
+    }
+  });
+  const decisionMutation = useMutation({
+    mutationFn: (body: Record<string, unknown>) => postJson<ReviewItem>(`/api/admin/review/items/${reviewId}/decision`, body),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["review-item", reviewId] }),
+        queryClient.invalidateQueries({ queryKey: ["review-items"] }),
+        queryClient.invalidateQueries({ queryKey: ["review-summary"] })
+      ]);
+    }
+  });
+  const assignmentMutation = useMutation({
+    mutationFn: (body: Record<string, unknown>) => postJson<ReviewItem>(`/api/admin/review/items/${reviewId}/assign`, body),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["review-item", reviewId] }),
+        queryClient.invalidateQueries({ queryKey: ["review-items"] })
+      ]);
+    }
+  });
+  const ocrQualityMutation = useMutation({
+    mutationFn: (body: Record<string, unknown>) => postJson<ReviewItem>(`/api/admin/review/items/${reviewId}/ocr-quality`, body),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["review-item", reviewId] }),
+        queryClient.invalidateQueries({ queryKey: ["review-items"] }),
+        queryClient.invalidateQueries({ queryKey: ["review-facets"] })
+      ]);
+    }
+  });
+
+  if (itemQuery.isLoading) {
+    return <main className="pageShell"><div className="empty">Loading review item...</div></main>;
+  }
+  if (itemQuery.isError || !itemQuery.data) {
+    return (
+      <main className="pageShell">
+        <Link className="secondaryButton" href={backHref}>Back to Review</Link>
+        <div className="empty">Review item failed to load.</div>
+      </main>
+    );
+  }
+
+  const item = itemQuery.data;
+  const extractedText = textQuery.data || item.extraction_text_snippet || "No text snippet available.";
+
+  return (
+    <main className="fileViewerPage">
+      <header className="fileViewerHeader">
+        <div>
+          <p className="eyebrow">Review Item</p>
+          <h1>{item.relative_path}</h1>
+          <p className="muted">{item.source_path}</p>
+        </div>
+        <div className="buttonRow">
+          <Link className="secondaryButton" href={backHref}>Back to Review</Link>
+          <a className="secondaryButton" href={`/api/admin/review/items/${item.id}/download`} download>Download File</a>
+          {item.run_id ? <Link className="secondaryButton" href={`/runs/${item.run_id}/report`}>Run Report</Link> : null}
+        </div>
+      </header>
+
+      <section className="fileViewerGrid">
+        <section className="fileViewerPreview">
+          <EmbeddedPreview previewUrl={`/api/admin/review/items/${item.id}/file`} filename={item.relative_path || item.source_path} autoLoad />
+        </section>
+
+        <section className="fileViewerSidebar">
+          <section className="drawerSection">
+            <h2>Run Context</h2>
+            <KeyValue label="Run" value={<RunContextBadge runId={item.run_id} runKey={item.run_key} preset={item.run_preset_key} />} />
+            <KeyValue label="Providers" value={<ProviderConfigBadge embeddingProvider={item.embedding_provider} llmEnabled={item.enable_llm_tags} llmProvider={item.llm_tag_provider} ocrProvider={item.ocr_fallback_provider} />} />
+            <KeyValue label="Class" value={item.proposed_class ?? "-"} />
+            <KeyValue label="Primary tag" value={item.proposed_tag ?? "-"} />
+            <KeyValue label="Secondary tags" value={item.secondary_tags.join(", ") || "-"} />
+            <KeyValue label="Warnings" value={(item.display_warnings ?? item.warnings).join(", ") || "-"} />
+          </section>
+
+          <section className="drawerSection">
+            <h2>Model Usage</h2>
+            <KeyValue label="Scope" value={item.model_usage_summary?.scope ?? "none"} />
+            <KeyValue label="Calls" value={String(item.model_usage_summary?.total_calls ?? 0)} />
+            <KeyValue label="External / local" value={`${item.model_usage_summary?.external_calls ?? 0} / ${item.model_usage_summary?.local_calls ?? 0}`} />
+            <KeyValue label="Failed" value={String(item.model_usage_summary?.failed_calls ?? 0)} />
+            <KeyValue label="Tokens" value={String(item.model_usage_summary?.total_tokens ?? 0)} />
+            <KeyValue label="Runtime" value={`${item.model_usage_summary?.total_runtime_ms ?? 0} ms`} />
+            <KeyValue label="External cost" value={`$${(item.model_usage_summary?.estimated_external_cost_usd ?? 0).toFixed(4)}`} />
+          </section>
+
+          <section className="drawerSection">
+            <h2>Placement</h2>
+            <KeyValue label="Destination" value={item.result.destination_path ?? "-"} />
+            <KeyValue label="Status" value={item.result.placement_status ?? "-"} />
+            <KeyValue label="Rule" value={item.result.placement_rule ?? "-"} />
+            <KeyValue label="Date confidence" value={item.result.placement_date_confidence ?? "-"} />
+            <KeyValue label="Privacy" value={item.result.default_privacy ?? "-"} />
+          </section>
+        </section>
+      </section>
+
+      <section className="fileViewerText">
+        <div>
+          <h2>OCR / Extracted Text</h2>
+          <div className="textMetaRow">
+            <span>Status {item.status}</span>
+            <span>Reason {item.review_reason ?? "-"}</span>
+            <span>Confidence {item.confidence == null ? "-" : item.confidence.toFixed(2)}</span>
+            <span>OCR label {item.ocr_quality_label ?? "-"}</span>
+          </div>
+        </div>
+        <OcrEvidencePanel
+          evidence={item.ocr_evidence ?? item.result.ocr_evidence}
+          fallbackText={item.extraction_text_snippet}
+          finalText={extractedText}
+        />
+      </section>
+
+      <section className="fileViewerDetailsGrid">
+        <ReviewDecisionPanel
+          item={item}
+          saving={decisionMutation.isPending}
+          assigning={assignmentMutation.isPending || ocrQualityMutation.isPending}
+          onSubmit={(body) => decisionMutation.mutate(body)}
+          onAssign={(body) => assignmentMutation.mutate(body)}
+          onMarkOcrPoor={(body) => ocrQualityMutation.mutate(body)}
+        />
+
+        <section className="drawerSection">
+          <h2>Tag Evidence</h2>
+          <ul className="evidenceList">{(item.result.tag_evidence ?? []).map((evidence) => <li key={evidence}>{evidence}</li>)}</ul>
+          {(item.result.tag_evidence ?? []).length ? null : <p className="muted">No tag evidence available.</p>}
+        </section>
+
+        <section className="drawerSection">
+          <h2>Nearest Examples</h2>
+          {(item.result.semantic_examples ?? []).length ? (
+            <ul className="evidenceList">
+              {(item.result.semantic_examples ?? []).map((example, index) => (
+                <li key={`${example.relative_path}-${index}`}>
+                  {example.correct_primary_tag} {example.score?.toFixed(3)} {example.relative_path}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">No semantic examples used.</p>
+          )}
+        </section>
+
+        <section className="drawerSection wideSection">
+          <h2>Raw JSON</h2>
+          <pre className="jsonPreview">{JSON.stringify(item.result, null, 2)}</pre>
+        </section>
+      </section>
+    </main>
+  );
+}
+
+function ReviewDecisionPanel({
+  item,
+  saving,
+  assigning,
+  onSubmit,
+  onAssign,
+  onMarkOcrPoor
+}: {
+  item: ReviewItem;
+  saving: boolean;
+  assigning: boolean;
+  onSubmit: (body: Record<string, unknown>) => void;
+  onAssign: (body: Record<string, unknown>) => void;
+  onMarkOcrPoor: (body: Record<string, unknown>) => void;
+}) {
+  const [decision, setDecision] = useState("accept");
+  const [correctClass, setCorrectClass] = useState(item.correct_class ?? item.proposed_class ?? "");
+  const [correctTag, setCorrectTag] = useState(item.correct_tag ?? item.proposed_tag ?? "");
+  const [secondary, setSecondary] = useState(item.correct_secondary_tags?.length ? item.correct_secondary_tags : item.secondary_tags);
+  const [ocrQuality, setOcrQuality] = useState(String(item.result.quality ?? ""));
+  const [expectedReviewRequired, setExpectedReviewRequired] = useState(item.route_status !== "route_candidate");
+  const [sensitiveRecord, setSensitiveRecord] = useState(false);
+  const [destination, setDestination] = useState(item.correct_destination_path ?? item.result.destination_path ?? "");
+  const [placementYear, setPlacementYear] = useState(item.correct_placement_year ?? "");
+  const [privacy, setPrivacy] = useState(item.correct_privacy ?? item.result.default_privacy ?? "");
+  const [reviewStage, setReviewStage] = useState(item.review_stage ?? "");
+  const [assignedReviewer, setAssignedReviewer] = useState(item.assigned_reviewer ?? "");
+  const [priority, setPriority] = useState(item.priority ?? "");
+  const [reviewer, setReviewer] = useState("james");
+  const [saveAsGolden, setSaveAsGolden] = useState(decision === "accept" || decision === "change");
+  const [notes, setNotes] = useState(item.notes ?? "");
+
+  return (
+    <section className="drawerSection">
+      <h2>Decision</h2>
+      <div className="formGrid">
+        <SelectInput
+          label="Decision"
+          value={decision}
+          onChange={(event) => {
+            const nextDecision = event.target.value;
+            setDecision(nextDecision);
+            setSaveAsGolden(nextDecision === "accept" || nextDecision === "change");
+          }}
+        >
+          <option value="accept">Accept</option>
+          <option value="change">Change</option>
+          <option value="defer">Defer</option>
+          <option value="ignore">Ignore</option>
+          <option value="reject">Reject</option>
+          <option value="duplicate">Duplicate</option>
+        </SelectInput>
+        <SelectInput label="Correct class" value={correctClass} onChange={(event) => setCorrectClass(event.target.value)}>
+          <option value="">Unset</option>
+          {contentClassOptions.map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
+        </SelectInput>
+        <TagPicker label="Correct primary tag" options={primaryTagOptions} value={correctTag} onChange={setCorrectTag} />
+        <MultiTagPicker label="Correct secondary tags" options={secondaryTagOptions} value={secondary} onChange={setSecondary} />
+        <SelectInput label="OCR quality label" value={ocrQuality} onChange={(event) => setOcrQuality(event.target.value)}>
+          <option value="">Unset</option>
+          {ocrQualityOptions.map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
+        </SelectInput>
+        <TextInput label="Correct destination path" value={destination} onChange={(event) => setDestination(event.target.value)} />
+        <TextInput label="Correct placement year/range" value={placementYear} onChange={(event) => setPlacementYear(event.target.value)} />
+        <SelectInput label="Correct privacy" value={privacy} onChange={(event) => setPrivacy(event.target.value)}>
+          <option value="">Unset</option>
+          {privacyOptions.map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
+        </SelectInput>
+        <CheckboxField label="Expected review required" checked={expectedReviewRequired} onChange={(event) => setExpectedReviewRequired(event.target.checked)} />
+        <CheckboxField label="Sensitive record" checked={sensitiveRecord} onChange={(event) => setSensitiveRecord(event.target.checked)} />
+        <CheckboxField label="Promote decision to golden label" checked={saveAsGolden} onChange={(event) => setSaveAsGolden(event.target.checked)} />
+        <TextInput label="Review stage" value={reviewStage} onChange={(event) => setReviewStage(event.target.value)} />
+        <TextInput label="Assigned reviewer" value={assignedReviewer} onChange={(event) => setAssignedReviewer(event.target.value)} />
+        <TextInput label="Priority" value={priority} onChange={(event) => setPriority(event.target.value)} />
+        <TextInput label="Reviewer" value={reviewer} onChange={(event) => setReviewer(event.target.value)} />
+        <TextArea label="Notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} />
+        <Button
+          disabled={assigning}
+          onClick={() =>
+            onAssign({
+              assigned_reviewer: assignedReviewer || null,
+              review_stage: reviewStage || null,
+              priority: priority || null
+            })
+          }
+        >
+          {assigning ? "Assigning..." : "Save Assignment"}
+        </Button>
+        <Button
+          disabled={assigning}
+          onClick={() => {
+            setOcrQuality("poor");
+            setExpectedReviewRequired(true);
+            setReviewStage("needs_ocr_review");
+            onMarkOcrPoor({
+              ocr_quality_label: "poor",
+              review_stage: "needs_ocr_review",
+              notes: "Marked OCR poor from review dashboard."
+            });
+          }}
+        >
+          Mark OCR Poor
+        </Button>
+        <Button
+          variant="primary"
+          disabled={saving}
+          onClick={() =>
+            onSubmit({
+              decision,
+              correct_class: correctClass || null,
+              correct_tag: correctTag || null,
+              correct_secondary_tags: secondary,
+              ocr_quality_label: ocrQuality || null,
+              expected_review_required: expectedReviewRequired,
+              sensitive_record: sensitiveRecord,
+              correct_destination_path: destination || null,
+              correct_placement_year: placementYear || null,
+              correct_privacy: privacy || null,
+              review_stage: reviewStage || null,
+              notes,
+              reviewer: reviewer || null,
+              save_as_golden: saveAsGolden
+            })
+          }
+        >
+          {saving ? "Saving..." : "Save Decision"}
+        </Button>
+      </div>
+    </section>
+  );
+}

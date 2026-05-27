@@ -155,6 +155,23 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
         "privacy_accuracy",
     }
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "source_file_mutations")["status"] == "pass"
+    assert summary["production_readiness"]["status"] == "not_ready"
+    assert summary["production_readiness"]["larger_batch_allowed"] is False
+    assert summary["production_readiness"]["customer_claims_allowed"] is False
+    assert "embedding_placeholder_calls" in summary["production_readiness"]["blocking_reasons"]
+    assert summary["production_readiness"]["status_counts"] == {
+        "accepted": 0,
+        "review_required": 2,
+        "failed": 2,
+        "deferred": 0,
+    }
+    assert summary["production_readiness"]["reliable_categories"] == []
+    assert {item["tag"] for item in summary["production_readiness"]["underrepresented_categories"]} == {
+        "annual_spring_tea",
+        "history_archive_general",
+    }
+    assert any("golden QA set" in action for action in summary["production_readiness"]["required_next_actions"])
+    assert any("real embedding provider" in action for action in summary["production_readiness"]["required_next_actions"])
     assert summary["by_failure_reason"] == {
         "embedding_quality_unavailable": 2,
         "placement_destination_mismatch": 1,
@@ -226,6 +243,8 @@ def test_golden_pipeline_evaluation_records_missing_files(tmp_path: Path) -> Non
     assert summary["failure_count"] == 1
     assert summary["primary_accuracy"] == 0.0
     assert summary["acceptance_gate"]["status"] == "fail"
+    assert summary["production_readiness"]["larger_batch_allowed"] is False
+    assert summary["production_status_counts"]["failed"] == 1
     results = [json.loads(line) for line in (output_dir / "eval-results.jsonl").read_text(encoding="utf-8").splitlines()]
     assert results[0]["review_reason"] == "file_missing"
     assert results[0]["failure_reasons"] == ["missing_file", "primary_tag_mismatch"]

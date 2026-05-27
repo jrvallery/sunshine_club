@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { DataTable } from "../../components/data-table/DataTable";
@@ -116,6 +117,7 @@ const reviewFacetDefinitions: Array<FacetDefinition<keyof Filters & string>> = [
 
 export default function ReviewPage() {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [selected, setSelected] = useState<ReviewItem | null>(null);
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -146,6 +148,17 @@ export default function ReviewPage() {
 
   function clearFilters() {
     updateFilters(initialFilters);
+  }
+
+  function reviewDetailHref(itemId: number) {
+    const params = new URLSearchParams();
+    for (const key of filterKeys) {
+      const value = filters[key];
+      if (value && value !== initialFilters[key]) {
+        params.set(key, value);
+      }
+    }
+    return `/review/${itemId}${params.toString() ? `?${params.toString()}` : ""}`;
   }
 
   const reviewPath = `/api/admin/review/items${queryString({ ...filters, limit: 200 })}`;
@@ -199,7 +212,7 @@ export default function ReviewPage() {
         accessorKey: "relative_path",
         header: "File",
         cell: ({ row }) => (
-          <PathCell title={row.original.relative_path} subtitle={row.original.source_path} onClick={() => setSelected(row.original)} />
+          <PathCell title={row.original.relative_path} subtitle={row.original.source_path} onClick={() => router.push(reviewDetailHref(row.original.id))} />
         )
       },
       {
@@ -255,7 +268,7 @@ export default function ReviewPage() {
       { accessorKey: "status", header: "Review Status" },
       { accessorKey: "updated_at", header: "Updated" }
     ],
-    []
+    [filters] // eslint-disable-line react-hooks/exhaustive-deps
   );
   const table = useReactTable({
     data: items.data ?? [],
