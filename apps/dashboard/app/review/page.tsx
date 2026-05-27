@@ -7,7 +7,7 @@ import {
   SortingState,
   useReactTable
 } from "@tanstack/react-table";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -16,21 +16,15 @@ import { DataTable } from "../../components/data-table/DataTable";
 import { ActiveFilterChips } from "../../components/dashboard/ActiveFilterChips";
 import { DashboardSearchToolbar } from "../../components/dashboard/DashboardSearchToolbar";
 import { FacetPanel, type FacetDefinition } from "../../components/dashboard/FacetPanel";
-import { InspectorPanel } from "../../components/dashboard/InspectorPanel";
-import { OcrEvidencePanel } from "../../components/dashboard/OcrEvidencePanel";
 import { PathCell } from "../../components/dashboard/PathCell";
 import { ProviderConfigBadge } from "../../components/dashboard/ProviderConfigBadge";
 import { QualityBadge } from "../../components/dashboard/QualityBadge";
 import { ResultTableShell } from "../../components/dashboard/ResultTableShell";
 import { RunContextBadge } from "../../components/dashboard/RunContextBadge";
-import { EmbeddedPreview } from "../../components/file-preview/EmbeddedPreview";
-import { Button } from "../../components/ui/Button";
-import { CheckboxField, SelectInput, TextArea, TextInput } from "../../components/ui/FormControls";
-import { KeyValue } from "../../components/ui/KeyValue";
 import { StatusBadge } from "../../components/ui/StatusBadge";
-import { MultiTagPicker, TagPicker } from "../../components/ui/TagPicker";
-import { fetchJson, postJson, queryString } from "../../lib/api";
-import { contentClassOptions, ocrQualityOptions, primaryTagOptions, privacyOptions, secondaryTagOptions } from "../../lib/taxonomy";
+import { TagPicker } from "../../components/ui/TagPicker";
+import { fetchJson, queryString } from "../../lib/api";
+import { primaryTagOptions, secondaryTagOptions } from "../../lib/taxonomy";
 import type { ReviewFacets, ReviewItem, ReviewSummary } from "../../lib/types";
 
 type Filters = {
@@ -116,10 +110,8 @@ const reviewFacetDefinitions: Array<FacetDefinition<keyof Filters & string>> = [
 ];
 
 export default function ReviewPage() {
-  const queryClient = useQueryClient();
   const router = useRouter();
   const [filters, setFilters] = useState<Filters>(initialFilters);
-  const [selected, setSelected] = useState<ReviewItem | null>(null);
   const [sorting, setSorting] = useState<SortingState>([]);
 
   useEffect(() => {
@@ -175,36 +167,6 @@ export default function ReviewPage() {
     queryKey: ["review-facets", filters],
     queryFn: () => fetchJson<ReviewFacets>(facetsPath),
     placeholderData: (previousData) => previousData ?? {}
-  });
-  const decision = useMutation({
-    mutationFn: (payload: { id: number; body: Record<string, unknown> }) =>
-      postJson<ReviewItem>(`/api/admin/review/items/${payload.id}/decision`, payload.body),
-    onSuccess: async () => {
-      setSelected(null);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["review-items"] }),
-        queryClient.invalidateQueries({ queryKey: ["review-summary"] })
-      ]);
-    }
-  });
-  const assignment = useMutation({
-    mutationFn: (payload: { id: number; body: Record<string, unknown> }) =>
-      postJson<ReviewItem>(`/api/admin/review/items/${payload.id}/assign`, payload.body),
-    onSuccess: async (item) => {
-      setSelected(item);
-      await queryClient.invalidateQueries({ queryKey: ["review-items"] });
-    }
-  });
-  const ocrQualityMutation = useMutation({
-    mutationFn: (payload: { id: number; body: Record<string, unknown> }) =>
-      postJson<ReviewItem>(`/api/admin/review/items/${payload.id}/ocr-quality`, payload.body),
-    onSuccess: async (item) => {
-      setSelected(item);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["review-items"] }),
-        queryClient.invalidateQueries({ queryKey: ["review-facets"] })
-      ]);
-    }
   });
   const columns = useMemo<ColumnDef<ReviewItem>[]>(
     () => [
@@ -340,238 +302,7 @@ export default function ReviewPage() {
           <DataTable table={table} loading={items.isLoading} emptyText="No review items match these filters." />
         </ResultTableShell>
       </section>
-      {selected ? (
-        <ReviewDrawer
-          item={selected}
-          saving={decision.isPending}
-          assigning={assignment.isPending || ocrQualityMutation.isPending}
-          onClose={() => setSelected(null)}
-          onSubmit={(body) => decision.mutate({ id: selected.id, body })}
-          onAssign={(body) => assignment.mutate({ id: selected.id, body })}
-          onMarkOcrPoor={(body) => ocrQualityMutation.mutate({ id: selected.id, body })}
-        />
-      ) : null}
     </main>
-  );
-}
-
-function ReviewDrawer({
-  item,
-  saving,
-  assigning,
-  onClose,
-  onSubmit,
-  onAssign,
-  onMarkOcrPoor
-}: {
-  item: ReviewItem;
-  saving: boolean;
-  assigning: boolean;
-  onClose: () => void;
-  onSubmit: (body: Record<string, unknown>) => void;
-  onAssign: (body: Record<string, unknown>) => void;
-  onMarkOcrPoor: (body: Record<string, unknown>) => void;
-}) {
-  const [decision, setDecision] = useState("accept");
-  const [correctClass, setCorrectClass] = useState(item.correct_class ?? item.proposed_class ?? "");
-  const [correctTag, setCorrectTag] = useState(item.correct_tag ?? item.proposed_tag ?? "");
-  const [secondary, setSecondary] = useState(item.correct_secondary_tags?.length ? item.correct_secondary_tags : item.secondary_tags);
-  const [ocrQuality, setOcrQuality] = useState(String(item.result.quality ?? ""));
-  const [expectedReviewRequired, setExpectedReviewRequired] = useState(item.route_status !== "route_candidate");
-  const [sensitiveRecord, setSensitiveRecord] = useState(false);
-  const [destination, setDestination] = useState(item.correct_destination_path ?? item.result.destination_path ?? "");
-  const [placementYear, setPlacementYear] = useState(item.correct_placement_year ?? "");
-  const [privacy, setPrivacy] = useState(item.correct_privacy ?? item.result.default_privacy ?? "");
-  const [reviewStage, setReviewStage] = useState(item.review_stage ?? "");
-  const [assignedReviewer, setAssignedReviewer] = useState(item.assigned_reviewer ?? "");
-  const [priority, setPriority] = useState(item.priority ?? "");
-  const [reviewer, setReviewer] = useState("james");
-  const [saveAsGolden, setSaveAsGolden] = useState(decision === "accept" || decision === "change");
-  const [notes, setNotes] = useState(item.notes ?? "");
-
-  return (
-    <InspectorPanel className="reviewInspector" eyebrow="Review Item" title={item.relative_path} onClose={onClose}>
-      <div className="drawerGrid">
-        <section>
-          <h3>File</h3>
-          <p className="pathText">{item.source_path}</p>
-          <a className="primaryButton" href={`/api/admin/review/items/${item.id}/file`} target="_blank">
-            Open File
-          </a>
-        </section>
-        <section>
-          <h3>Run Context</h3>
-          <KeyValue label="Run" value={item.run_id ? <Link href={`/runs/${item.run_id}/report`}>{item.run_key ?? `Run #${item.run_id}`}</Link> : "-"} />
-          <KeyValue label="Preset" value={item.run_preset_key ?? "-"} />
-          <KeyValue label="Embedding" value={item.embedding_provider ?? "-"} />
-          <KeyValue label="LLM tags" value={item.enable_llm_tags == null ? "-" : item.enable_llm_tags ? "enabled" : "disabled"} />
-          <KeyValue label="LLM provider" value={item.llm_tag_provider ?? "-"} />
-          <KeyValue label="OCR fallback" value={item.ocr_fallback_provider ?? "-"} />
-        </section>
-        <section>
-          <h3>Model Usage</h3>
-          <KeyValue label="Scope" value={item.model_usage_summary?.scope ?? "none"} />
-          <KeyValue label="Calls" value={String(item.model_usage_summary?.total_calls ?? 0)} />
-          <KeyValue label="External / local" value={`${item.model_usage_summary?.external_calls ?? 0} / ${item.model_usage_summary?.local_calls ?? 0}`} />
-          <KeyValue label="Failed" value={String(item.model_usage_summary?.failed_calls ?? 0)} />
-          <KeyValue label="Tokens" value={String(item.model_usage_summary?.total_tokens ?? 0)} />
-          <KeyValue label="Runtime" value={`${item.model_usage_summary?.total_runtime_ms ?? 0} ms`} />
-          <KeyValue label="External cost" value={`$${(item.model_usage_summary?.estimated_external_cost_usd ?? 0).toFixed(4)}`} />
-          <KeyValue label="Purposes" value={(item.model_usage_summary?.purposes ?? []).join(", ") || "-"} />
-          <KeyValue label="Providers" value={(item.model_usage_summary?.providers ?? []).join(", ") || "-"} />
-        </section>
-        <section className="wideSection">
-          <h3>Preview</h3>
-          <EmbeddedPreview previewUrl={`/api/admin/review/items/${item.id}/file`} filename={item.relative_path || item.source_path} />
-        </section>
-        <section>
-          <h3>OCR / Text</h3>
-          <KeyValue label="Reviewer OCR label" value={item.ocr_quality_label ?? "-"} />
-          <OcrEvidencePanel
-            evidence={item.ocr_evidence ?? item.result.ocr_evidence}
-            fallbackText={item.extraction_text_snippet}
-            finalText={item.extraction_text_snippet}
-          />
-          <div className="buttonRow">
-            <Button
-              disabled={assigning}
-              onClick={() => {
-                setOcrQuality("poor");
-                setExpectedReviewRequired(true);
-                setReviewStage("needs_ocr_review");
-                onMarkOcrPoor({
-                  ocr_quality_label: "poor",
-                  review_stage: "needs_ocr_review",
-                  notes: "Marked OCR poor from review dashboard."
-                });
-              }}
-            >
-              Mark OCR Poor
-            </Button>
-          </div>
-        </section>
-        <section>
-          <h3>Tagging</h3>
-          <KeyValue label="Primary" value={item.proposed_tag ?? "-"} />
-          <KeyValue label="Secondary" value={item.secondary_tags.join(", ") || "-"} />
-          <KeyValue label="Confidence" value={item.confidence == null ? "-" : item.confidence.toFixed(2)} />
-          <ul className="evidenceList">{(item.result.tag_evidence ?? []).map((evidence) => <li key={evidence}>{evidence}</li>)}</ul>
-        </section>
-        <section>
-          <h3>Placement</h3>
-          <KeyValue label="Destination" value={item.result.destination_path ?? "-"} />
-          <KeyValue label="Status" value={item.result.placement_status ?? "-"} />
-          <KeyValue label="Rule" value={item.result.placement_rule ?? "-"} />
-          <KeyValue label="Date confidence" value={item.result.placement_date_confidence ?? "-"} />
-          <KeyValue label="Privacy" value={item.result.default_privacy ?? "-"} />
-        </section>
-        <section>
-          <h3>Nearest Examples</h3>
-          {(item.result.semantic_examples ?? []).length ? (
-            <ul className="evidenceList">
-              {(item.result.semantic_examples ?? []).map((example, index) => (
-                <li key={`${example.relative_path}-${index}`}>
-                  {example.correct_primary_tag} {example.score?.toFixed(3)} {example.relative_path}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="muted">No semantic examples used.</p>
-          )}
-        </section>
-        <section>
-          <h3>Decision</h3>
-          <div className="formGrid">
-            <SelectInput
-              label="Decision"
-              value={decision}
-              onChange={(event) => {
-                const nextDecision = event.target.value;
-                setDecision(nextDecision);
-                setSaveAsGolden(nextDecision === "accept" || nextDecision === "change");
-              }}
-            >
-              <option value="accept">Accept</option>
-              <option value="change">Change</option>
-              <option value="defer">Defer</option>
-              <option value="ignore">Ignore</option>
-              <option value="reject">Reject</option>
-              <option value="duplicate">Duplicate</option>
-            </SelectInput>
-            <SelectInput label="Correct class" value={correctClass} onChange={(event) => setCorrectClass(event.target.value)}>
-              <option value="">Unset</option>
-              {contentClassOptions.map((option) => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </SelectInput>
-            <TagPicker label="Correct primary tag" options={primaryTagOptions} value={correctTag} onChange={setCorrectTag} />
-            <MultiTagPicker label="Correct secondary tags" options={secondaryTagOptions} value={secondary} onChange={setSecondary} />
-            <SelectInput label="OCR quality label" value={ocrQuality} onChange={(event) => setOcrQuality(event.target.value)}>
-              <option value="">Unset</option>
-              {ocrQualityOptions.map((option) => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </SelectInput>
-            <TextInput label="Correct destination path" value={destination} onChange={(event) => setDestination(event.target.value)} />
-            <TextInput label="Correct placement year/range" value={placementYear} onChange={(event) => setPlacementYear(event.target.value)} />
-            <SelectInput label="Correct privacy" value={privacy} onChange={(event) => setPrivacy(event.target.value)}>
-              <option value="">Unset</option>
-              {privacyOptions.map((option) => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </SelectInput>
-            <CheckboxField label="Expected review required" checked={expectedReviewRequired} onChange={(event) => setExpectedReviewRequired(event.target.checked)} />
-            <CheckboxField label="Sensitive record" checked={sensitiveRecord} onChange={(event) => setSensitiveRecord(event.target.checked)} />
-            <CheckboxField label="Promote decision to golden label" checked={saveAsGolden} onChange={(event) => setSaveAsGolden(event.target.checked)} />
-            <TextInput label="Review stage" value={reviewStage} onChange={(event) => setReviewStage(event.target.value)} />
-            <TextInput label="Assigned reviewer" value={assignedReviewer} onChange={(event) => setAssignedReviewer(event.target.value)} />
-            <TextInput label="Priority" value={priority} onChange={(event) => setPriority(event.target.value)} />
-            <TextInput label="Reviewer" value={reviewer} onChange={(event) => setReviewer(event.target.value)} />
-            <TextArea label="Notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} />
-            <Button
-              disabled={assigning}
-              onClick={() =>
-                onAssign({
-                  assigned_reviewer: assignedReviewer || null,
-                  review_stage: reviewStage || null,
-                  priority: priority || null
-                })
-              }
-            >
-              {assigning ? "Assigning..." : "Save Assignment"}
-            </Button>
-            <Button
-              variant="primary"
-              disabled={saving}
-              onClick={() =>
-                onSubmit({
-                  decision,
-                  correct_class: correctClass || null,
-                  correct_tag: correctTag || null,
-                  correct_secondary_tags: secondary,
-                  ocr_quality_label: ocrQuality || null,
-                  expected_review_required: expectedReviewRequired,
-                  sensitive_record: sensitiveRecord,
-                  correct_destination_path: destination || null,
-                  correct_placement_year: placementYear || null,
-                  correct_privacy: privacy || null,
-                  review_stage: reviewStage || null,
-                  notes,
-                  reviewer: reviewer || null,
-                  save_as_golden: saveAsGolden
-                })
-              }
-            >
-              {saving ? "Saving..." : "Save Decision"}
-            </Button>
-          </div>
-        </section>
-        <section className="wideSection">
-          <h3>Raw JSON</h3>
-          <pre className="jsonPreview">{JSON.stringify(item.result, null, 2)}</pre>
-        </section>
-      </div>
-    </InspectorPanel>
   );
 }
 

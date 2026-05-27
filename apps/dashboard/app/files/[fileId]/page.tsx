@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 
-import { OcrEvidencePanel } from "../../../components/dashboard/OcrEvidencePanel";
 import { ProviderConfigBadge } from "../../../components/dashboard/ProviderConfigBadge";
 import { RunContextBadge } from "../../../components/dashboard/RunContextBadge";
 import { EmbeddedPreview } from "../../../components/file-preview/EmbeddedPreview";
@@ -165,16 +164,6 @@ function FileViewerPageContent() {
           <KeyValue label="Destination" value={result.destination_path ?? "-"} />
           <KeyValue label="Placement" value={result.placement_status ?? "-"} />
           <WarningList warnings={result.warnings ?? []} />
-        </section>
-
-        <section className="drawerSection wideSection">
-          <h2>OCR Evidence</h2>
-          <KeyValue label="Fallback" value={String(data.ocr.fallback_provider ?? "-")} />
-          <OcrEvidencePanel
-            evidence={result.ocr_evidence}
-            fallbackText={data.text.snippet}
-            finalText={data.text.text || data.text.snippet}
-          />
         </section>
       </section>
     </main>
