@@ -13,6 +13,7 @@ from sunshine_extraction.evaluate_pipeline import (
     _model_usage_failure_reasons,
     _parse_args,
     _per_file_model_usage_summary,
+    _resolve_eval_embedding_provider,
     _update_totals,
     run_golden_pipeline_evaluation,
 )
@@ -305,6 +306,16 @@ def test_per_file_model_usage_summary_flags_untracked_external_costs() -> None:
     ]
 
 
+def test_eval_embedding_provider_resolution_records_configuration_fallback(monkeypatch) -> None:
+    monkeypatch.setenv("SUNSHINE_EMBEDDING_PROVIDER", "not-a-provider")
+
+    provider, warnings = _resolve_eval_embedding_provider(None)
+
+    assert isinstance(provider, PlaceholderEmbeddingProvider)
+    assert warnings
+    assert warnings[0].startswith("embedding_provider_configuration_failed:")
+
+
 def test_sensitive_false_accept_counts_even_when_primary_tag_is_correct(tmp_path: Path) -> None:
     label = GoldenEvalLabel(
         id=1,
@@ -529,6 +540,11 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert any("real embedding provider" in action for action in summary["production_readiness"]["required_next_actions"])
     assert any("Calibrate confidence" in action for action in summary["production_readiness"]["required_next_actions"])
     assert any("same-family labels" in action for action in summary["production_readiness"]["required_next_actions"])
+    assert summary["run_metadata"]["embedding_provider"] == "placeholder"
+    assert summary["run_metadata"]["embedding_model"] == "local-placeholder"
+    assert summary["run_metadata"]["embedding_dimensions"] == 4
+    assert summary["run_metadata"]["warnings"] == []
+    assert summary["run_warnings"] == []
     assert summary["by_failure_reason"] == {
         "embedding_quality_unavailable": 2,
         "placement_destination_mismatch": 1,

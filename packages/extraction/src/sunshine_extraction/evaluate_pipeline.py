@@ -13,7 +13,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from sunshine_extraction.embeddings import EmbeddingProvider
+from sunshine_extraction.embeddings import (
+    EmbeddingConfigurationError,
+    EmbeddingProvider,
+    PlaceholderEmbeddingProvider,
+    provider_from_env,
+)
 from sunshine_extraction.graph.runtime import run_document_graph
 from sunshine_extraction.sample_pipeline import (
     DEFAULT_TAXONOMY_PATH,
@@ -108,15 +113,17 @@ def run_golden_pipeline_evaluation(
     output_path.mkdir(parents=True, exist_ok=True)
     graph_runs_dir = output_path / "graph-runs"
     graph_runs_dir.mkdir(parents=True, exist_ok=True)
+    active_embedding_provider, provider_warnings = _resolve_eval_embedding_provider(embedding_provider)
     run_metadata = _eval_run_metadata(
         labels_db=labels_db,
         output_dir=output_path,
         limit=limit,
         taxonomy_path=taxonomy_path,
         semantic_index_path=semantic_index_path,
-        embedding_provider=embedding_provider,
+        embedding_provider=active_embedding_provider,
         llm_tag_inspector=llm_tag_inspector,
         ocr_executor=ocr_executor,
+        warnings=provider_warnings,
     )
 
     evaluated: list[dict[str, Any]] = []
@@ -157,7 +164,7 @@ def run_golden_pipeline_evaluation(
             taxonomy_path=taxonomy_path,
             sample_group="golden-eval",
             sample_number=index,
-            embedding_provider=embedding_provider,
+            embedding_provider=active_embedding_provider,
             embedding_failure_mode="review",
             llm_tag_inspector=llm_tag_inspector,
             ocr_executor=ocr_executor,
@@ -511,6 +518,7 @@ def _summary(
         "by_failure_reason": dict(sorted(counters["by_failure_reason"].items())),
         "model_usage": model_usage,
         "run_metadata": run_metadata,
+        "run_warnings": run_metadata.get("warnings", []),
         "acceptance_gate": acceptance_gate,
         "production_readiness": production_readiness,
         "production_status_counts": production_status_counts,
@@ -1099,6 +1107,7 @@ def _eval_run_metadata(
     embedding_provider: EmbeddingProvider | None,
     llm_tag_inspector: LLMTagInspector | None,
     ocr_executor: OcrExecutor | None,
+    warnings: list[str] | None = None,
 ) -> dict[str, Any]:
     return {
         "run_kind": "pipeline_eval",
@@ -1115,7 +1124,17 @@ def _eval_run_metadata(
         "llm_model": str(getattr(llm_tag_inspector, "model", "disabled")) if llm_tag_inspector is not None else "disabled",
         "ocr_mode": ocr_executor.__class__.__name__ if ocr_executor is not None else "default",
         "git_commit": _git_commit(),
+        "warnings": warnings or [],
     }
+
+
+def _resolve_eval_embedding_provider(provider: EmbeddingProvider | None) -> tuple[EmbeddingProvider, list[str]]:
+    if provider is not None:
+        return provider, []
+    try:
+        return provider_from_env(), []
+    except EmbeddingConfigurationError as error:
+        return PlaceholderEmbeddingProvider(), [f"embedding_provider_configuration_failed:{error}"]
 
 
 def _provider_name(provider: Any) -> str | None:
