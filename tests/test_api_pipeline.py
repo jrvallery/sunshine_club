@@ -315,6 +315,7 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     pipeline_eval_failures = client.get(f"/admin/pipeline-eval/runs/{pipeline_eval_run_id}/results", params={"result_type": "failures"})
     pipeline_eval_failure_groups = client.get(f"/admin/pipeline-eval/runs/{pipeline_eval_run_id}/results", params={"result_type": "failure_groups"})
     pipeline_eval_model_usage = client.get(f"/admin/pipeline-eval/runs/{pipeline_eval_run_id}/results", params={"result_type": "model_usage"})
+    pipeline_eval_artifact_manifest = client.get(f"/admin/pipeline-eval/runs/{pipeline_eval_run_id}/results", params={"result_type": "artifact_manifest"})
     pipeline_eval_output_dir_2 = tmp_path / "pipeline-eval-2"
     pipeline_eval_2 = client.post(
         "/admin/pipeline-eval/run",
@@ -535,6 +536,9 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert pipeline_eval_failure_groups.json()["result_type"] == "failure_groups"
     assert pipeline_eval_model_usage.status_code == 200
     assert pipeline_eval_model_usage.json()["result_type"] == "model_usage"
+    assert pipeline_eval_artifact_manifest.status_code == 200
+    assert pipeline_eval_artifact_manifest.json()["result_type"] == "artifact_manifest"
+    assert any(item["name"] == "summary" and len(item["sha256"]) == 64 for item in pipeline_eval_artifact_manifest.json()["items"])
     assert pipeline_eval_2.status_code == 200
     assert pipeline_eval_comparison.status_code == 200
     assert pipeline_eval_comparison.json()["shared_file_count"] == 1

@@ -10,7 +10,7 @@ import { StatusBadge } from "../../components/ui/StatusBadge";
 import { fetchJson, postJson, queryString } from "../../lib/api";
 import type { PipelineEvalComparison, PipelineEvalDrilldown, PipelineEvalRun, PipelineEvalRunResponse } from "../../lib/types";
 
-type DrilldownType = "failures" | "failure_groups" | "results" | "model_usage";
+type DrilldownType = "failures" | "failure_groups" | "results" | "model_usage" | "artifact_manifest";
 
 export default function PipelineEvalPage() {
   const queryClient = useQueryClient();
@@ -417,6 +417,9 @@ export default function PipelineEvalPage() {
             <Button variant={drilldownType === "model_usage" ? "primary" : "secondary"} onClick={() => setDrilldownType("model_usage")}>
               Model Usage
             </Button>
+            <Button variant={drilldownType === "artifact_manifest" ? "primary" : "secondary"} onClick={() => setDrilldownType("artifact_manifest")}>
+              Artifacts
+            </Button>
           </div>
           <EvalRows rows={drilldown.data?.items ?? []} />
         </section>
@@ -445,7 +448,7 @@ function EvalRows({ rows }: { rows: Array<Record<string, unknown>> }) {
             <tr key={`${row.source_path ?? index}`}>
               <td className="pathText">{String(row.relative_path ?? row.source_path ?? "-")}</td>
               <td>{expectedValue(row)}</td>
-              <td>{String(row.predicted_primary_tag ?? row.predicted_destination_path ?? row.model ?? "-")}</td>
+              <td>{String(row.predicted_primary_tag ?? row.predicted_destination_path ?? row.model ?? row.path ?? "-")}</td>
               <td>{reasonValue(row)}</td>
               <td>{routeValue(row)}</td>
               <td>

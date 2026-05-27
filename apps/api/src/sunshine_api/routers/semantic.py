@@ -113,12 +113,13 @@ def pipeline_eval_run_results(eval_run_id: int, result_type: str = "results", li
         "failures": "eval-failures.jsonl",
         "failure_groups": "eval-failure-groups.json",
         "model_usage": "eval-model-usage.jsonl",
+        "artifact_manifest": "eval-artifacts-manifest.json",
     }
     filename = filenames.get(result_type)
     if filename is None:
-        raise HTTPException(status_code=400, detail="result_type must be results, failures, failure_groups, or model_usage")
+        raise HTTPException(status_code=400, detail="result_type must be results, failures, failure_groups, model_usage, or artifact_manifest")
     path = output_dir / filename
-    rows = _read_eval_json(path, limit=max(1, min(limit, 1000))) if result_type == "failure_groups" else _read_eval_jsonl(path, limit=max(1, min(limit, 1000)))
+    rows = _read_eval_json(path, limit=max(1, min(limit, 1000))) if result_type in {"failure_groups", "artifact_manifest"} else _read_eval_jsonl(path, limit=max(1, min(limit, 1000)))
     return {
         "eval_run": eval_run,
         "result_type": result_type,
@@ -283,5 +284,13 @@ def _read_eval_json(path: Path, *, limit: int) -> list[dict[str, Any]]:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return []
-    rows = payload if isinstance(payload, list) else payload.get("items", []) if isinstance(payload, dict) else []
+    rows = payload if isinstance(payload, list) else _json_rows_from_object(payload) if isinstance(payload, dict) else []
     return [row for row in rows if isinstance(row, dict)][:limit]
+
+
+def _json_rows_from_object(payload: dict[str, Any]) -> list[Any]:
+    for key in ("items", "artifacts"):
+        rows = payload.get(key)
+        if isinstance(rows, list):
+            return rows
+    return []
