@@ -193,7 +193,9 @@ h2 {
 
 .metricStrip {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+  justify-content: flex-end;
 }
 
 .miniMetric {
@@ -201,6 +203,7 @@ h2 {
   border: 1px solid var(--border);
   border-radius: 8px;
   display: grid;
+  flex: 1 1 92px;
   min-width: 92px;
   padding: 10px 12px;
 }
@@ -450,6 +453,7 @@ h2 {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
+  max-width: 100%;
   overflow: auto;
 }
 
@@ -509,7 +513,7 @@ h2 {
 
 table {
   border-collapse: collapse;
-  min-width: 1160px;
+  min-width: 1080px;
   width: 100%;
 }
 
@@ -528,6 +532,12 @@ th {
   font-size: 12px;
   letter-spacing: 0;
   text-transform: uppercase;
+}
+
+th:first-child,
+td:first-child {
+  min-width: 220px;
+  width: 220px;
 }
 
 .fileName {
@@ -626,6 +636,7 @@ th {
   display: grid;
   gap: 4px;
   max-width: 520px;
+  min-width: 0;
 }
 
 .fileCell span,
@@ -775,7 +786,7 @@ th {
   align-items: start;
   display: grid;
   gap: 14px;
-  grid-template-columns: 260px minmax(560px, 1fr) 430px;
+  grid-template-columns: 260px minmax(0, 1fr) minmax(300px, 430px);
   margin-top: 14px;
 }
 
@@ -885,6 +896,7 @@ th {
 
 .facetOption span {
   overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 .facetOption strong {
@@ -1286,6 +1298,23 @@ th {
   }
 }
 
+@media (max-width: 1100px) {
+  .reviewWorkspace {
+    grid-template-columns: 1fr;
+  }
+
+  .reviewFacetPanel {
+    max-height: none;
+    position: static;
+  }
+
+  .reviewInspector {
+    grid-column: 1 / -1;
+    max-height: none;
+    position: static;
+  }
+}
+
 .reviewForm {
   display: grid;
   gap: 8px;
@@ -1469,6 +1498,40 @@ th {
 }
 
 @media (max-width: 800px) {
+  .pageShell {
+    padding: 24px 18px;
+  }
+
+  .pageHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .metricStrip {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    justify-content: stretch;
+    width: 100%;
+  }
+
+  .miniMetric {
+    min-width: 0;
+  }
+
+  .dashboardSearchToolbar,
+  .dashboardSearchToolbar input,
+  .dashboardSearchToolbar select,
+  .dashboardSearchToolbar .tagPickerField,
+  .secondaryButton {
+    width: 100%;
+  }
+
+  .segmentedControl {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
   .shell {
     padding: 18px;
   }

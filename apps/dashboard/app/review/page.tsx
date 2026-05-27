@@ -262,6 +262,7 @@ export default function ReviewPage() {
 
       <DashboardSearchToolbar searchPlaceholder="Search path or OCR snippet" searchValue={filters.q} onSearchChange={(value) => updateFilters({ q: value })}>
         <select
+          aria-label="Saved review queues"
           value=""
           onChange={(event) => {
             const queue = savedReviewQueues.find((item) => item.label === event.target.value);
@@ -310,9 +311,9 @@ export default function ReviewPage() {
             onAssign={(body) => assignment.mutate({ id: selected.id, body })}
           />
         ) : (
-          <aside className="reviewInspector">
+          <div className="reviewInspector">
             <div className="empty">Select a review item to inspect it.</div>
-          </aside>
+          </div>
         )}
       </section>
     </main>

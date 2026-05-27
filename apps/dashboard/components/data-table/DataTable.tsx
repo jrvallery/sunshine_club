@@ -10,7 +10,7 @@ export function DataTable<T>({ table, loading, emptyText = "No rows found." }: {
     return <div className="empty">{emptyText}</div>;
   }
   return (
-    <div className="tableWrap">
+    <div className="tableWrap" tabIndex={0} aria-label="Review results table">
       <table>
         <thead>
           {table.getHeaderGroups().map((group) => (

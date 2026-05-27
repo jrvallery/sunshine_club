@@ -28,6 +28,7 @@
     }
   ],
   "captureFullPage": true,
+  "waitUntil": "domcontentloaded",
   "runAxe": true,
   "budgets": {
     "consoleErrors": 0,

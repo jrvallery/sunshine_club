@@ -22,7 +22,7 @@ export function FacetPanel<T extends string>({
   onToggle: (key: T, value: string) => void;
 }) {
   return (
-    <aside className={["facetPanel", className].filter(Boolean).join(" ")}>
+    <div className={["facetPanel", className].filter(Boolean).join(" ")} tabIndex={0} aria-label="Filter facets">
       {definitions.map((definition) => {
         const values = Object.entries(facets[definition.facetKey] ?? {}).slice(0, definition.limit ?? 10);
         return (
@@ -41,6 +41,6 @@ export function FacetPanel<T extends string>({
           </section>
         );
       })}
-    </aside>
+    </div>
   );
 }

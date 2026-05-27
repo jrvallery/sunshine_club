@@ -39,7 +39,10 @@ async function waitForUrl(url, timeoutMs) {
   let lastError = "";
   while (Date.now() - started < timeoutMs) {
     try {
-      const res = await fetch(url, { method: "GET" });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 2500);
+      const res = await fetch(url, { method: "GET", signal: controller.signal });
+      clearTimeout(timer);
       if (res.status < 500) return;
       lastError = `HTTP ${res.status}`;
     } catch (error) {
@@ -48,6 +51,18 @@ async function waitForUrl(url, timeoutMs) {
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
   throw new Error(`Timed out waiting for ${url}: ${lastError}`);
+}
+
+async function isUrlReady(url) {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2500);
+    const res = await fetch(url, { method: "GET", signal: controller.signal });
+    clearTimeout(timer);
+    return res.status < 500;
+  } catch {
+    return false;
+  }
 }
 
 function startServer(command) {
@@ -60,6 +75,9 @@ function startServer(command) {
   });
   child.stdout.on("data", (chunk) => process.stdout.write(chunk));
   child.stderr.on("data", (chunk) => process.stderr.write(chunk));
+  child.on("exit", (code, signal) => {
+    if (code && code !== 0) console.error(`Frontend review server exited with code ${code}${signal ? ` signal ${signal}` : ""}`);
+  });
   return child;
 }
 
@@ -255,8 +273,11 @@ async function main() {
   const runDir = path.join(root, ".frontend-review", "runs", timestamp());
   await fs.mkdir(runDir, { recursive: true });
 
-  const server = startServer(config.startCommand);
+  let server = null;
   try {
+    if (config.startCommand && (!config.reuseExistingServer || !(await isUrlReady(config.readyUrl)))) {
+      server = startServer(config.startCommand);
+    }
     await waitForUrl(config.readyUrl, config.serverTimeoutMs || 90000);
     const { chromium } = await loadPlaywright();
     const browser = await chromium.launch({ headless: true });
@@ -281,7 +302,7 @@ async function main() {
         });
 
         const url = joinUrl(config.readyUrl, route.path || "/");
-        await page.goto(url, { waitUntil: "networkidle", timeout: 45000 });
+        await page.goto(url, { waitUntil: config.waitUntil || "domcontentloaded", timeout: 45000 });
         await page.waitForTimeout(500);
 
         const stem = `${route.name || "route"}-${viewport.name || `${viewport.width}x${viewport.height}`}`.replace(/[^a-z0-9_-]/gi, "_");
