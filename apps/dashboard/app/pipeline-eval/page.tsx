@@ -335,6 +335,8 @@ export default function PipelineEvalPage() {
               <KeyValue label="Embedding dimensions" value={formatMap(summary?.model_usage?.embedding_dimensions)} />
               <KeyValue label="Required fields" value={formatPercent(summary?.model_usage?.required_field_completeness_rate as number | null | undefined)} />
               <KeyValue label="Missing fields" value={formatMap(summary?.model_usage?.missing_required_field_counts)} />
+              <KeyValue label="Tokens" value={String((summary?.model_usage?.total_tokens as number | undefined) ?? 0)} />
+              <KeyValue label="External cost" value={`$${Number((summary?.model_usage?.estimated_external_cost_usd as number | undefined) ?? 0).toFixed(4)}`} />
               <KeyValue label="Runtime ms" value={String((summary?.model_usage?.total_runtime_ms as number | undefined) ?? 0)} />
             </section>
             <section>

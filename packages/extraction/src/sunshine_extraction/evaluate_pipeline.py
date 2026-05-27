@@ -841,6 +841,10 @@ def _model_usage_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     by_purpose: Counter[str] = Counter()
     by_cost_basis: Counter[str] = Counter()
     runtime_ms = 0
+    input_tokens = 0
+    output_tokens = 0
+    total_tokens = 0
+    estimated_external_cost_usd = 0.0
     unknown_external_cost_calls = 0
     embedding_attempted_calls = 0
     embedding_successful_calls = 0
@@ -862,6 +866,11 @@ def _model_usage_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         cost_basis = str(row.get("cost_basis") or "unknown")
         by_cost_basis[cost_basis] += 1
         runtime_ms += int(row.get("runtime_ms") or 0)
+        input_tokens += int(row.get("input_tokens") or 0)
+        output_tokens += int(row.get("output_tokens") or 0)
+        total_tokens += int(row.get("total_tokens") or 0)
+        if cost_basis == "external" and row.get("estimated_cost_usd") is not None:
+            estimated_external_cost_usd += float(row.get("estimated_cost_usd") or 0)
         if cost_basis == "external" and row.get("estimated_cost_usd") is None:
             unknown_external_cost_calls += 1
         if str(row.get("purpose") or "").endswith("embedding"):
@@ -895,9 +904,12 @@ def _model_usage_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "embedding_failed_calls": embedding_failed_calls,
         "embedding_provider_models": dict(sorted(embedding_provider_models.items())),
         "embedding_dimensions": dict(sorted(embedding_dimensions.items())),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
         "total_runtime_ms": runtime_ms,
-        "external_cost": None,
-        "external_cost_note": "Cost is unavailable unless provider token/cost metadata is present.",
+        "estimated_external_cost_usd": round(estimated_external_cost_usd, 6),
+        "external_cost_note": "Known external costs are summed from model usage rows; unknown external cost calls are gated separately.",
     }
 
 
