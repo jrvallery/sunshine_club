@@ -202,6 +202,14 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
     predicted_primary = final_result.get("top_tag_candidate")
     correct_secondary = set(label.correct_secondary_tags)
     predicted_secondary = set(_string_list(final_result.get("secondary_tags", [])))
+    semantic_examples = _semantic_examples(final_result.get("semantic_examples", []))
+    semantic_same_family_top5_count = sum(1 for example in semantic_examples[:5] if example.get("correct_primary_tag") == label.correct_primary_tag)
+    semantic_top1_primary_tag = semantic_examples[0].get("correct_primary_tag") if semantic_examples else None
+    semantic_retrieval_quality = _semantic_retrieval_quality(
+        semantic_examples,
+        correct_primary_tag=label.correct_primary_tag,
+        predicted_primary_tag=predicted_primary,
+    )
     route_status = str(final_result.get("route_status") or "unknown")
     review_required = route_status != "route_candidate"
     primary_correct = predicted_primary == label.correct_primary_tag
@@ -238,6 +246,8 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
         failure_reasons.append("privacy_mismatch")
     if "embedding_quality_unavailable" in _string_list(final_result.get("warnings", [])):
         failure_reasons.append("embedding_quality_unavailable")
+    if not primary_correct and semantic_retrieval_quality in {"missing", "weak", "misleading"}:
+        failure_reasons.append(f"semantic_retrieval_{semantic_retrieval_quality}")
 
     return {
         "golden_label_id": label.id,
@@ -277,7 +287,10 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
         "tag_confidence": final_result.get("tag_confidence"),
         "embedding_status": final_result.get("embedding_status"),
         "llm_status": final_result.get("llm_status"),
-        "semantic_example_count": final_result.get("semantic_example_count"),
+        "semantic_example_count": len(semantic_examples),
+        "semantic_same_family_top5_count": semantic_same_family_top5_count,
+        "semantic_top1_primary_tag": semantic_top1_primary_tag,
+        "semantic_retrieval_quality": semantic_retrieval_quality,
         "warnings": final_result.get("warnings", []),
         "failure_reasons": failure_reasons,
     }
@@ -312,6 +325,7 @@ def _summary(
             model_usage.get("embedding_successful_calls", 0),
             model_usage.get("embedding_attempted_calls", 0),
         ),
+        "semantic_same_family_top5_rate": _safe_divide(totals["semantic_same_family_top5"], total),
     }
     return {
         "labels_db": str(labels_db),
@@ -416,6 +430,8 @@ def _update_totals(totals: Counter, row: dict[str, Any], label: GoldenEvalLabel)
         totals["review_required"] += 1
     else:
         totals["route_candidate"] += 1
+    if int(row.get("semantic_same_family_top5_count") or 0) > 0:
+        totals["semantic_same_family_top5"] += 1
     if label.sensitive_record and not row["predicted_review_required"] and not row["primary_correct"]:
         totals["sensitive_false_accepts"] += 1
 
@@ -645,6 +661,30 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value if str(item).strip()]
+
+
+def _semantic_examples(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _semantic_retrieval_quality(
+    examples: list[dict[str, Any]],
+    *,
+    correct_primary_tag: str,
+    predicted_primary_tag: Any,
+) -> str:
+    if not examples:
+        return "missing"
+    top5 = examples[:5]
+    same_family = [example for example in top5 if example.get("correct_primary_tag") == correct_primary_tag]
+    if same_family:
+        return "supportive"
+    predicted_matches = [example for example in top5 if example.get("correct_primary_tag") == predicted_primary_tag]
+    if predicted_matches:
+        return "misleading"
+    return "weak"
 
 
 def _safe_divide(numerator: int, denominator: int) -> float | None:

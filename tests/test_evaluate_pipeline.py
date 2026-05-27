@@ -119,6 +119,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert summary["secondary_recall"] == 0.5
     assert summary["failure_count"] == 2
     assert summary["embedding_success_rate"] == 0.0
+    assert summary["semantic_same_family_top5_rate"] == 0.0
     assert summary["acceptance_gate"]["status"] == "fail"
     assert {check["name"] for check in summary["acceptance_gate"]["blocking_checks"]} == {
         "embedding_placeholder_calls",
@@ -132,6 +133,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
         "primary_tag_mismatch": 1,
         "privacy_mismatch": 1,
         "review_routing_mismatch": 1,
+        "semantic_retrieval_missing": 1,
     }
     assert summary["model_usage"]["by_purpose"] == {
         "chunk_embedding": 2,
