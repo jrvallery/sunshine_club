@@ -472,8 +472,27 @@ export type PipelineEvalSummary = {
   failure_count?: number;
   review_required_count?: number;
   route_candidate_count?: number;
-  primary_tag_metrics?: Record<string, { total: number; correct: number; accuracy: number | null; review_required: number; review_required_rate: number | null }>;
-  high_risk_primary_tag_metrics?: Record<string, { total: number; correct: number; accuracy: number | null; review_required: number; review_required_rate: number | null }>;
+  primary_tag_metrics?: Record<string, {
+    total: number;
+    correct: number;
+    accuracy: number | null;
+    review_required: number;
+    review_required_rate: number | null;
+    secondary_true_positive?: number;
+    secondary_false_positive?: number;
+    secondary_false_negative?: number;
+    secondary_precision?: number | null;
+    secondary_recall?: number | null;
+  }>;
+  high_risk_primary_tag_metrics?: Record<string, {
+    total: number;
+    correct: number;
+    accuracy: number | null;
+    review_required: number;
+    review_required_rate: number | null;
+    secondary_precision?: number | null;
+    secondary_recall?: number | null;
+  }>;
   confidence_bucket_metrics?: Record<string, {
     total: number;
     primary_correct: number;

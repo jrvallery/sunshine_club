@@ -70,6 +70,8 @@ export default function PipelineEvalPage() {
   const metricCards = useMemo(
     () => [
       ["Primary", summary?.primary_accuracy],
+      ["Secondary precision", summary?.secondary_precision],
+      ["Secondary recall", summary?.secondary_recall],
       ["Content class", summary?.content_class_accuracy],
       ["OCR quality", summary?.ocr_quality_accuracy],
       ["OCR acceptable", summary?.ocr_acceptable_rate],
@@ -363,7 +365,11 @@ export default function PipelineEvalPage() {
               <h3>Category Reliability</h3>
               <KeyValue label="High-risk min" value={formatPercent(summary?.high_risk_primary_accuracy_min)} />
               {Object.entries(summary?.high_risk_primary_tag_metrics ?? {}).map(([tag, metric]) => (
-                <KeyValue key={tag} label={tag} value={`${formatPercent(metric.accuracy)} (${metric.correct}/${metric.total})`} />
+                <KeyValue
+                  key={tag}
+                  label={tag}
+                  value={`${formatPercent(metric.accuracy)} primary, ${formatPercent(metric.secondary_precision)} secondary precision, ${formatPercent(metric.secondary_recall)} secondary recall (${metric.correct}/${metric.total})`}
+                />
               ))}
             </section>
             <section>

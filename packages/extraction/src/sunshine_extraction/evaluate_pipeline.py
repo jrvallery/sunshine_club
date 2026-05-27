@@ -835,6 +835,9 @@ def _primary_tag_metrics(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]
             by_tag[tag]["correct"] += 1
         if row.get("predicted_review_required"):
             by_tag[tag]["review_required"] += 1
+        by_tag[tag]["secondary_true_positive"] += int(row.get("secondary_true_positive") or 0)
+        by_tag[tag]["secondary_false_positive"] += int(row.get("secondary_false_positive") or 0)
+        by_tag[tag]["secondary_false_negative"] += int(row.get("secondary_false_negative") or 0)
     return {
         tag: {
             "total": int(counts["total"]),
@@ -842,6 +845,17 @@ def _primary_tag_metrics(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]
             "accuracy": _safe_divide(counts["correct"], counts["total"]),
             "review_required": int(counts["review_required"]),
             "review_required_rate": _safe_divide(counts["review_required"], counts["total"]),
+            "secondary_true_positive": int(counts["secondary_true_positive"]),
+            "secondary_false_positive": int(counts["secondary_false_positive"]),
+            "secondary_false_negative": int(counts["secondary_false_negative"]),
+            "secondary_precision": _safe_divide(
+                counts["secondary_true_positive"],
+                counts["secondary_true_positive"] + counts["secondary_false_positive"],
+            ),
+            "secondary_recall": _safe_divide(
+                counts["secondary_true_positive"],
+                counts["secondary_true_positive"] + counts["secondary_false_negative"],
+            ),
         }
         for tag, counts in sorted(by_tag.items())
     }
