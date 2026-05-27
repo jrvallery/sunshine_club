@@ -339,6 +339,8 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
         failure_reasons.append("placement_destination_mismatch")
     if placement_year_correct is False:
         failure_reasons.append("placement_year_mismatch")
+    if unsafe_placement_proposal:
+        failure_reasons.append("unsafe_placement_proposal")
     if privacy_correct is False:
         failure_reasons.append("privacy_mismatch")
     if "embedding_quality_unavailable" in _string_list(final_result.get("warnings", [])):

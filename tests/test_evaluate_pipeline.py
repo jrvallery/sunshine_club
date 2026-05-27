@@ -123,6 +123,7 @@ def test_eval_row_marks_resolved_placement_unsafe_when_route_requires_review(tmp
 
     assert row["predicted_review_required"] is True
     assert row["unsafe_placement_proposal"] is True
+    assert "unsafe_placement_proposal" in row["failure_reasons"]
 
 
 def test_eval_row_groups_invalid_llm_structured_output_as_failure(tmp_path: Path) -> None:
