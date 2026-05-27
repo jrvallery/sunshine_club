@@ -459,6 +459,7 @@ export type PipelineEvalSummary = {
   source_file_mutations?: number;
   high_confidence_primary_accuracy?: number | null;
   high_confidence_false_accepts?: number;
+  low_confidence_false_accepts?: number;
   invalid_primary_tag_count?: number;
   tag_evidence_presence_rate?: number | null;
   embedding_success_rate?: number | null;

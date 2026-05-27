@@ -41,6 +41,7 @@ DEFAULT_ACCEPTANCE_THRESHOLDS = {
     "privacy_accuracy": 1.0,
     "high_confidence_primary_accuracy": 0.95,
     "high_confidence_false_accepts": 0,
+    "low_confidence_false_accepts": 0,
     "semantic_same_family_top5_rate": 0.80,
     "llm_structured_output_validity_rate": 1.0,
     "invalid_primary_tag_count": 0,
@@ -404,6 +405,7 @@ def _summary(
         "high_risk_primary_accuracy_min": high_risk_min_accuracy,
         "high_confidence_primary_accuracy": (confidence_bucket_metrics.get("high") or {}).get("primary_accuracy"),
         "high_confidence_false_accepts": (confidence_bucket_metrics.get("high") or {}).get("false_accepts"),
+        "low_confidence_false_accepts": (confidence_bucket_metrics.get("low") or {}).get("false_accepts", 0),
         "invalid_primary_tag_count": _invalid_primary_tag_count(evaluated, taxonomy_path),
         "tag_evidence_presence_rate": _safe_divide(totals["tag_evidence_present"], totals["tag_evidence_expected"]),
         "source_file_mutations": totals["source_file_mutations"],
@@ -534,6 +536,8 @@ def _production_next_actions(
         actions.append("Calibrate confidence so high-confidence predictions meet measured accuracy thresholds.")
     if "high_confidence_false_accepts" in blocking_reasons:
         actions.append("Route high-confidence false accepts to review; high-confidence items cannot bypass review when labels expect review.")
+    if "low_confidence_false_accepts" in blocking_reasons:
+        actions.append("Route low-confidence predictions to review; low-confidence accepted items are not production-safe.")
     if "content_class_accuracy" in blocking_reasons:
         actions.append("Fix content-class classifier errors before trusting downstream extraction strategy.")
     if "ocr_quality_accuracy" in blocking_reasons:
@@ -611,6 +615,7 @@ def _acceptance_gate(metrics: dict[str, Any], model_usage: dict[str, Any], golde
         _minimum_check("privacy_accuracy", metrics.get("privacy_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["privacy_accuracy"]),
         _minimum_check("high_confidence_primary_accuracy", metrics.get("high_confidence_primary_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["high_confidence_primary_accuracy"]),
         _maximum_check("high_confidence_false_accepts", metrics.get("high_confidence_false_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["high_confidence_false_accepts"]),
+        _maximum_check("low_confidence_false_accepts", metrics.get("low_confidence_false_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["low_confidence_false_accepts"]),
         _minimum_check("semantic_same_family_top5_rate", metrics.get("semantic_same_family_top5_rate"), DEFAULT_ACCEPTANCE_THRESHOLDS["semantic_same_family_top5_rate"]),
         _minimum_check("llm_structured_output_validity_rate", metrics.get("llm_structured_output_validity_rate"), DEFAULT_ACCEPTANCE_THRESHOLDS["llm_structured_output_validity_rate"]),
         _maximum_check("invalid_primary_tag_count", metrics.get("invalid_primary_tag_count"), DEFAULT_ACCEPTANCE_THRESHOLDS["invalid_primary_tag_count"]),
