@@ -260,6 +260,8 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
         },
     )
     golden_labels = client.get("/admin/review/golden-labels")
+    golden_export_csv = client.get("/admin/review/golden-labels/export")
+    golden_export_jsonl = client.get("/admin/review/golden-labels/export", params={"format": "jsonl"})
     label_id = golden_labels.json()[0]["id"]
     golden_file = client.get(f"/admin/review/golden-labels/{label_id}/file")
     edited_label = client.patch(
@@ -430,6 +432,11 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert golden_labels.status_code == 200
     assert golden_labels.json()[0]["correct_primary_tag"] == "annual_spring_tea"
     assert golden_labels.json()[0]["correct_secondary_tags"] == ["event_material"]
+    assert golden_export_csv.status_code == 200
+    assert "correct_primary_tag" in golden_export_csv.text
+    assert "annual_spring_tea" in golden_export_csv.text
+    assert golden_export_jsonl.status_code == 200
+    assert json.loads(golden_export_jsonl.text.splitlines()[0])["correct_primary_tag"] == "annual_spring_tea"
     assert golden_file.status_code == 200
     assert golden_file.content == b"review pdf bytes"
     assert edited_label.status_code == 200

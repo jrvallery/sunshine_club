@@ -128,6 +128,72 @@ def golden_labels(limit: int = 100) -> list[dict[str, Any]]:
     return review_store().list_golden_labels(limit=limit)
 
 
+@router.get("/admin/review/golden-labels/export")
+def golden_labels_export(format: str = "csv", limit: int = 10000) -> StreamingResponse:
+    rows = review_store().golden_label_export_rows(limit=limit)
+    normalized_format = format.strip().lower()
+    if normalized_format == "jsonl":
+        payload = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
+        return StreamingResponse(
+            iter([payload]),
+            media_type="application/x-ndjson",
+            headers={"Content-Disposition": 'attachment; filename="sunshine-golden-labels.jsonl"'},
+        )
+    if normalized_format != "csv":
+        raise HTTPException(status_code=400, detail="format must be csv or jsonl")
+
+    output = io.StringIO()
+    fieldnames = [
+        "id",
+        "review_item_id",
+        "relative_path",
+        "source_path",
+        "sample_path",
+        "content_class",
+        "correct_primary_tag",
+        "correct_secondary_tags",
+        "ocr_quality_label",
+        "expected_review_required",
+        "sensitive_record",
+        "proposed_tag",
+        "proposed_secondary_tags",
+        "proposed_confidence",
+        "reviewer",
+        "notes",
+        "updated_at",
+    ]
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(
+            {
+                "id": row.get("id"),
+                "review_item_id": row.get("review_item_id"),
+                "relative_path": row.get("relative_path"),
+                "source_path": row.get("source_path"),
+                "sample_path": row.get("sample_path"),
+                "content_class": row.get("content_class"),
+                "correct_primary_tag": row.get("correct_primary_tag"),
+                "correct_secondary_tags": ";".join(row.get("correct_secondary_tags") or []),
+                "ocr_quality_label": row.get("ocr_quality_label"),
+                "expected_review_required": row.get("expected_review_required"),
+                "sensitive_record": row.get("sensitive_record"),
+                "proposed_tag": row.get("proposed_tag"),
+                "proposed_secondary_tags": ";".join(row.get("proposed_secondary_tags") or []),
+                "proposed_confidence": row.get("proposed_confidence"),
+                "reviewer": row.get("reviewer"),
+                "notes": row.get("notes"),
+                "updated_at": row.get("updated_at"),
+            }
+        )
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="sunshine-golden-labels.csv"'},
+    )
+
+
 @router.get("/admin/review/golden-labels/summary")
 def golden_label_summary() -> dict[str, Any]:
     return review_store().golden_label_summary()

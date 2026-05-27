@@ -1023,6 +1023,9 @@ class ReviewStore:
             ).fetchall()
         return [_golden_label_from_row(row) for row in rows]
 
+    def golden_label_export_rows(self, *, limit: int = 10000) -> list[dict[str, Any]]:
+        return self.list_golden_labels(limit=limit)
+
     def get_golden_label(self, label_id: int) -> dict[str, Any]:
         with self._connect() as connection:
             row = connection.execute(
