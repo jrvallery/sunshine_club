@@ -112,6 +112,7 @@ def run_golden_pipeline_evaluation(
             sample_group="golden-eval",
             sample_number=index,
             embedding_provider=embedding_provider,
+            embedding_failure_mode="review",
             llm_tag_inspector=llm_tag_inspector,
             ocr_executor=ocr_executor,
             semantic_index_path=semantic_index_path,
@@ -235,6 +236,8 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
         failure_reasons.append("placement_year_mismatch")
     if privacy_correct is False:
         failure_reasons.append("privacy_mismatch")
+    if "embedding_quality_unavailable" in _string_list(final_result.get("warnings", [])):
+        failure_reasons.append("embedding_quality_unavailable")
 
     return {
         "golden_label_id": label.id,
@@ -305,6 +308,10 @@ def _summary(
         "placement_year_accuracy": _safe_divide(totals["placement_year_correct"], totals["placement_year_labeled"]),
         "privacy_accuracy": _safe_divide(totals["privacy_correct"], totals["privacy_labeled"]),
         "sensitive_false_accepts": totals["sensitive_false_accepts"],
+        "embedding_success_rate": _safe_divide(
+            model_usage.get("embedding_successful_calls", 0),
+            model_usage.get("embedding_attempted_calls", 0),
+        ),
     }
     return {
         "labels_db": str(labels_db),
@@ -342,6 +349,8 @@ def _acceptance_gate(metrics: dict[str, Any], model_usage: dict[str, Any]) -> di
         _minimum_check("placement_destination_accuracy", metrics.get("placement_destination_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["placement_destination_accuracy"]),
         _minimum_check("privacy_accuracy", metrics.get("privacy_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["privacy_accuracy"]),
         _maximum_check("sensitive_false_accepts", metrics.get("sensitive_false_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["sensitive_false_accepts"]),
+        _maximum_check("embedding_placeholder_calls", model_usage.get("embedding_placeholder_calls", 0), 0),
+        _maximum_check("embedding_failed_calls", model_usage.get("embedding_failed_calls", 0), 0),
         _minimum_check(
             "external_model_usage_tracked",
             1.0 if model_usage.get("unknown_external_cost_calls", 0) == 0 else 0.0,
@@ -431,6 +440,10 @@ def _model_usage_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     by_cost_basis: Counter[str] = Counter()
     runtime_ms = 0
     unknown_external_cost_calls = 0
+    embedding_attempted_calls = 0
+    embedding_successful_calls = 0
+    embedding_placeholder_calls = 0
+    embedding_failed_calls = 0
     for row in rows:
         by_provider[str(row.get("provider") or "unknown")] += 1
         by_purpose[str(row.get("purpose") or "unknown")] += 1
@@ -439,6 +452,18 @@ def _model_usage_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         runtime_ms += int(row.get("runtime_ms") or 0)
         if cost_basis == "external" and row.get("estimated_cost_usd") is None:
             unknown_external_cost_calls += 1
+        if str(row.get("purpose") or "").endswith("embedding"):
+            metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+            raw_call_count = metadata.get("call_count")
+            call_count = int(raw_call_count) if raw_call_count is not None else 1
+            status = str(row.get("status") or "unknown")
+            embedding_attempted_calls += call_count
+            if status == "ok":
+                embedding_successful_calls += call_count
+            elif status == "placeholder":
+                embedding_placeholder_calls += call_count
+            elif status == "failed":
+                embedding_failed_calls += call_count
     return {
         "total_model_usage_rows": len(rows),
         "by_provider": dict(sorted(by_provider.items())),
@@ -446,6 +471,10 @@ def _model_usage_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "by_cost_basis": dict(sorted(by_cost_basis.items())),
         "external_call_count": sum(count for basis, count in by_cost_basis.items() if basis == "external"),
         "unknown_external_cost_calls": unknown_external_cost_calls,
+        "embedding_attempted_calls": embedding_attempted_calls,
+        "embedding_successful_calls": embedding_successful_calls,
+        "embedding_placeholder_calls": embedding_placeholder_calls,
+        "embedding_failed_calls": embedding_failed_calls,
         "total_runtime_ms": runtime_ms,
         "external_cost": None,
         "external_cost_note": "Cost is unavailable unless provider token/cost metadata is present.",

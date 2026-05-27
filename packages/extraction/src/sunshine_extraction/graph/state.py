@@ -52,6 +52,7 @@ class DocumentPipelineState(TypedDict, total=False):
 
 class DocumentPipelineDeps(TypedDict, total=False):
     embedding_provider: EmbeddingProvider
+    embedding_failure_mode: str
     llm_tag_inspector: LLMTagInspector
     ocr_executor: OcrExecutor
     semantic_index_path: str | None

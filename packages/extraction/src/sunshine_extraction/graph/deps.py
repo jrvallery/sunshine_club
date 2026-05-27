@@ -65,6 +65,7 @@ from sunshine_extraction.sample_pipeline import (
 def _resolve_deps(
     *,
     embedding_provider: EmbeddingProvider | None = None,
+    embedding_failure_mode: str | None = None,
     llm_tag_inspector: LLMTagInspector | None = None,
     ocr_executor: OcrExecutor | None = None,
     semantic_index_path: str | Path | None = None,
@@ -76,10 +77,18 @@ def _resolve_deps(
             embedding_provider = PlaceholderEmbeddingProvider()
     return {
         "embedding_provider": embedding_provider,
+        "embedding_failure_mode": _embedding_failure_mode(embedding_failure_mode),
         "llm_tag_inspector": llm_tag_inspector or llm_tag_inspector_from_env(),
         "ocr_executor": ocr_executor or ocr_executor_from_env(),
         "semantic_index_path": str(semantic_index_path) if semantic_index_path is not None else _semantic_index_path_from_env(),
     }
+
+
+def _embedding_failure_mode(configured: str | None) -> str:
+    mode = (configured or os.environ.get("SUNSHINE_EMBEDDING_FAILURE_MODE") or "fallback").strip().lower()
+    if mode in {"review", "fail_closed", "fail-closed", "strict"}:
+        return "review"
+    return "fallback"
 
 
 def _semantic_index_path_from_env() -> str | None:
@@ -87,4 +96,3 @@ def _semantic_index_path_from_env() -> str | None:
     if not configured:
         return None
     return configured
-

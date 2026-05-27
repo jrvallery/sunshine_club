@@ -79,6 +79,7 @@ def run_document_graph(
     sample_number: int = 1,
     index_metadata: dict[str, Any] | None = None,
     embedding_provider: EmbeddingProvider | None = None,
+    embedding_failure_mode: str | None = None,
     llm_tag_inspector: LLMTagInspector | None = None,
     ocr_executor: OcrExecutor | None = None,
     semantic_index_path: str | Path | None = None,
@@ -122,6 +123,7 @@ def run_document_graph(
 
     deps = _resolve_deps(
         embedding_provider=embedding_provider,
+        embedding_failure_mode=embedding_failure_mode,
         llm_tag_inspector=llm_tag_inspector,
         ocr_executor=ocr_executor,
         semantic_index_path=semantic_index_path,
@@ -143,4 +145,3 @@ def run_document_graph(
         encoding="utf-8",
     )
     return result
-

@@ -24,6 +24,7 @@ from langgraph.graph import END, START, StateGraph
 from sunshine_extraction.embeddings import (
     EmbeddingConfigurationError,
     EmbeddingProvider,
+    EmbeddingProviderError,
     PlaceholderEmbeddingProvider,
     provider_from_env,
 )
@@ -49,6 +50,7 @@ from sunshine_extraction.sample_pipeline import (
     chunk_content,
     calibrate_tag_confidence,
     combine_tag_candidates,
+    embed_chunks,
     embed_chunks_with_fallback,
     extract_content,
     extraction_quality_gate,
@@ -296,16 +298,44 @@ def _chunk_content_node(state: DocumentPipelineState) -> dict[str, Any]:
 def _embed_chunks_node(state: DocumentPipelineState, deps: DocumentPipelineDeps) -> dict[str, Any]:
     chunks = state.get("chunks", [])
     started = time.monotonic()
-    embeddings, embedding_warnings = embed_chunks_with_fallback(chunks, deps["embedding_provider"])
+    provider = deps["embedding_provider"]
+    embedding_warnings: list[str] = []
+    if deps.get("embedding_failure_mode") == "review":
+        try:
+            embeddings = embed_chunks(chunks, provider)
+        except (EmbeddingConfigurationError, EmbeddingProviderError) as error:
+            embeddings = []
+            embedding_warnings = [
+                "embedding_provider_failed",
+                "embedding_quality_unavailable",
+            ]
+            error_message = f"{type(error).__name__}: {error}"
+        else:
+            error_message = None
+            if isinstance(provider, PlaceholderEmbeddingProvider) or any(row.get("embedding_status") == "placeholder" for row in embeddings):
+                embedding_warnings = [
+                    "embedding_placeholder_disallowed_in_eval",
+                    "embedding_quality_unavailable",
+                ]
+    else:
+        embeddings, embedding_warnings = embed_chunks_with_fallback(chunks, provider)
+        error_message = ";".join(embedding_warnings) if embedding_warnings else None
+
+    if isinstance(provider, PlaceholderEmbeddingProvider) or any(row.get("embedding_status") == "placeholder" for row in embeddings):
+        usage_status = "placeholder"
+    elif embedding_warnings:
+        usage_status = "failed"
+    else:
+        usage_status = "ok"
     usage_row = _embedding_model_usage_row(
         state,
-        deps["embedding_provider"],
+        provider,
         node="embed_chunks",
         purpose="chunk_embedding",
-        status="failed" if embedding_warnings else "ok",
+        status=usage_status,
         call_count=len(chunks),
         started=started,
-        error=";".join(embedding_warnings) if embedding_warnings else None,
+        error=error_message,
     )
     return {
         "embeddings": embeddings,
@@ -370,7 +400,7 @@ def _retrieve_labeled_examples_node(state: DocumentPipelineState, deps: Document
         deps["embedding_provider"],
         node="retrieve_labeled_examples",
         purpose="semantic_retrieval_embedding",
-        status="ok",
+        status="placeholder" if isinstance(deps["embedding_provider"], PlaceholderEmbeddingProvider) else "ok",
         call_count=1,
         started=started,
     )
@@ -435,6 +465,13 @@ def _calibrate_tag_confidence_node(state: DocumentPipelineState) -> dict[str, An
 
 
 def _resolve_route_or_review_node(state: DocumentPipelineState) -> dict[str, Any]:
+    if "embedding_quality_unavailable" in state.get("warnings", []):
+        return {
+            "route": {
+                "route_status": "review_embedding_unavailable",
+                "review_reason": "embedding_quality_unavailable",
+            }
+        }
     return {
         "route": resolve_route_or_review(
             state.get("tag_candidates", []),
@@ -653,6 +690,7 @@ def _final_result_from_state(state: DocumentPipelineState) -> dict[str, Any]:
         )
         result["semantic_example_count"] = len(state.get("semantic_examples", []))
         result["semantic_examples"] = state.get("semantic_examples", [])[:5]
+        result["warnings"] = _unique_strings([*result.get("warnings", []), *state.get("warnings", [])])
         return result
     return {
         "sample_path": state.get("input_path"),
@@ -707,6 +745,17 @@ def _empty_extraction(state: DocumentPipelineState) -> ExtractionResult:
         page_count=None,
         warnings=state.get("warnings", []),
     )
+
+
+def _unique_strings(values: list[Any]) -> list[str]:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value)
+        if text not in seen:
+            seen.add(text)
+            unique.append(text)
+    return unique
 
 
 def _after_load_file_context(state: DocumentPipelineState) -> str:

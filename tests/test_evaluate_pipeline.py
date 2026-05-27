@@ -117,15 +117,17 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert summary["privacy_accuracy"] == 0.5
     assert summary["secondary_precision"] == 0.5
     assert summary["secondary_recall"] == 0.5
-    assert summary["failure_count"] == 1
+    assert summary["failure_count"] == 2
+    assert summary["embedding_success_rate"] == 0.0
     assert summary["acceptance_gate"]["status"] == "fail"
     assert {check["name"] for check in summary["acceptance_gate"]["blocking_checks"]} == {
+        "embedding_placeholder_calls",
         "primary_accuracy",
         "placement_destination_accuracy",
         "privacy_accuracy",
-        "sensitive_false_accepts",
     }
     assert summary["by_failure_reason"] == {
+        "embedding_quality_unavailable": 2,
         "placement_destination_mismatch": 1,
         "primary_tag_mismatch": 1,
         "privacy_mismatch": 1,
@@ -136,6 +138,10 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
         "semantic_retrieval_embedding": 2,
         "tag_inspection": 2,
     }
+    assert summary["model_usage"]["embedding_attempted_calls"] == 2
+    assert summary["model_usage"]["embedding_successful_calls"] == 0
+    assert summary["model_usage"]["embedding_placeholder_calls"] == 2
+    assert summary["model_usage"]["embedding_failed_calls"] == 0
     assert (output_dir / "eval-summary.json").exists()
     assert (output_dir / "eval-results.jsonl").exists()
     assert (output_dir / "eval-confusion-matrix.json").exists()
