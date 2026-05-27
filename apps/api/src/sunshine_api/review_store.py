@@ -1127,6 +1127,89 @@ class ReviewStore:
             "golden_by_secondary_tag": by_secondary_tag,
         }
 
+    def record_pipeline_eval(self, summary: dict[str, Any]) -> dict[str, Any]:
+        output_dir = str(summary.get("output_dir") or "")
+        if not output_dir:
+            raise ValueError("pipeline eval summary requires output_dir")
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                insert into pipeline_eval_runs (
+                    eval_key, labels_db, output_dir, status, total_golden_labels, evaluated_predictions,
+                    primary_accuracy, content_class_accuracy, secondary_precision, secondary_recall,
+                    ocr_quality_accuracy, review_routing_accuracy, failure_count, model_usage_json,
+                    summary_json, created_at, updated_at
+                ) values (?, ?, ?, 'succeeded', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                on conflict(output_dir) do update set
+                    labels_db=excluded.labels_db,
+                    status=excluded.status,
+                    total_golden_labels=excluded.total_golden_labels,
+                    evaluated_predictions=excluded.evaluated_predictions,
+                    primary_accuracy=excluded.primary_accuracy,
+                    content_class_accuracy=excluded.content_class_accuracy,
+                    secondary_precision=excluded.secondary_precision,
+                    secondary_recall=excluded.secondary_recall,
+                    ocr_quality_accuracy=excluded.ocr_quality_accuracy,
+                    review_routing_accuracy=excluded.review_routing_accuracy,
+                    failure_count=excluded.failure_count,
+                    model_usage_json=excluded.model_usage_json,
+                    summary_json=excluded.summary_json,
+                    updated_at=datetime('now')
+                returning id
+                """,
+                (
+                    f"pipeline-eval-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}",
+                    summary.get("labels_db"),
+                    output_dir,
+                    summary.get("total_golden_labels"),
+                    summary.get("evaluated_predictions"),
+                    summary.get("primary_accuracy"),
+                    summary.get("content_class_accuracy"),
+                    summary.get("secondary_precision"),
+                    summary.get("secondary_recall"),
+                    summary.get("ocr_quality_accuracy"),
+                    summary.get("review_routing_accuracy"),
+                    summary.get("failure_count"),
+                    json.dumps(summary.get("model_usage") or {}, sort_keys=True),
+                    json.dumps(summary, sort_keys=True),
+                ),
+            )
+            row_id = int(cursor.fetchone()[0])
+        return self.get_pipeline_eval_run(row_id)
+
+    def list_pipeline_eval_runs(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                select id, eval_key, labels_db, output_dir, status, total_golden_labels, evaluated_predictions,
+                       primary_accuracy, content_class_accuracy, secondary_precision, secondary_recall,
+                       ocr_quality_accuracy, review_routing_accuracy, failure_count, model_usage_json,
+                       summary_json, created_at, updated_at
+                from pipeline_eval_runs
+                order by updated_at desc, id desc
+                limit ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [_pipeline_eval_run_from_row(row) for row in rows]
+
+    def get_pipeline_eval_run(self, eval_run_id: int) -> dict[str, Any]:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                select id, eval_key, labels_db, output_dir, status, total_golden_labels, evaluated_predictions,
+                       primary_accuracy, content_class_accuracy, secondary_precision, secondary_recall,
+                       ocr_quality_accuracy, review_routing_accuracy, failure_count, model_usage_json,
+                       summary_json, created_at, updated_at
+                from pipeline_eval_runs
+                where id = ?
+                """,
+                (eval_run_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(f"pipeline eval run {eval_run_id} not found")
+        return _pipeline_eval_run_from_row(row)
+
     def run_presets(self) -> list[dict[str, Any]]:
         base_manifest = "/mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25"
         return [
@@ -1717,12 +1800,35 @@ class ReviewStore:
                     created_at text not null default (datetime('now'))
                 );
 
+                create table if not exists pipeline_eval_runs (
+                    id integer primary key autoincrement,
+                    eval_key text not null unique,
+                    labels_db text,
+                    output_dir text not null unique,
+                    status text not null,
+                    total_golden_labels integer,
+                    evaluated_predictions integer,
+                    primary_accuracy real,
+                    content_class_accuracy real,
+                    secondary_precision real,
+                    secondary_recall real,
+                    ocr_quality_accuracy real,
+                    review_routing_accuracy real,
+                    failure_count integer,
+                    model_usage_json text not null default '{}',
+                    summary_json text not null default '{}',
+                    created_at text not null default (datetime('now')),
+                    updated_at text not null default (datetime('now'))
+                );
+
                 create index if not exists idx_model_usage_run_id
                     on pipeline_run_model_usage(run_id);
                 create index if not exists idx_model_usage_provider_model
                     on pipeline_run_model_usage(provider, model);
                 create index if not exists idx_model_usage_source_path
                     on pipeline_run_model_usage(source_path);
+                create index if not exists idx_pipeline_eval_runs_updated_at
+                    on pipeline_eval_runs(updated_at);
                 """
             )
             _ensure_column(connection, "pipeline_results", "secondary_tags_json", "secondary_tags_json text not null default '[]'")
@@ -2486,6 +2592,29 @@ def _pipeline_run_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "failed_count": row["failed_count"],
         "summary": _json_object(row["summary_json"]),
         "error": row["error"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _pipeline_eval_run_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "eval_key": row["eval_key"],
+        "labels_db": row["labels_db"],
+        "output_dir": row["output_dir"],
+        "status": row["status"],
+        "total_golden_labels": row["total_golden_labels"],
+        "evaluated_predictions": row["evaluated_predictions"],
+        "primary_accuracy": row["primary_accuracy"],
+        "content_class_accuracy": row["content_class_accuracy"],
+        "secondary_precision": row["secondary_precision"],
+        "secondary_recall": row["secondary_recall"],
+        "ocr_quality_accuracy": row["ocr_quality_accuracy"],
+        "review_routing_accuracy": row["review_routing_accuracy"],
+        "failure_count": row["failure_count"],
+        "model_usage": _json_object(row["model_usage_json"]),
+        "summary": _json_object(row["summary_json"]),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }

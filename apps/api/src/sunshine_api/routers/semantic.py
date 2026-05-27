@@ -88,6 +88,19 @@ def pipeline_eval_latest(output_dir: str | None = None) -> dict[str, Any]:
     return {"ok": True, "exists": True, "output_dir": str(resolved_output_dir), "report": report}
 
 
+@router.get("/admin/pipeline-eval/runs")
+def pipeline_eval_runs(limit: int = 100) -> list[dict[str, Any]]:
+    return review_store().list_pipeline_eval_runs(limit=limit)
+
+
+@router.get("/admin/pipeline-eval/runs/{eval_run_id}")
+def pipeline_eval_run_detail(eval_run_id: int) -> dict[str, Any]:
+    try:
+        return review_store().get_pipeline_eval_run(eval_run_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
 @router.post("/admin/pipeline-eval/run")
 def pipeline_eval_run(request: PipelineEvalRequest) -> dict[str, Any]:
     load_pipeline_env()
@@ -101,4 +114,5 @@ def pipeline_eval_run(request: PipelineEvalRequest) -> dict[str, Any]:
         ocr_executor=ocr_executor_from_env() if request.enable_ocr else None,
         semantic_index_path=None if request.disable_semantic_index else (request.semantic_index_path or DEFAULT_INDEX_DB),
     )
-    return {"ok": True, "output_dir": output_dir, "report": report}
+    eval_run = review_store().record_pipeline_eval(report)
+    return {"ok": True, "output_dir": output_dir, "eval_run": eval_run, "report": report}

@@ -115,6 +115,23 @@ def test_review_store_imports_langgraph_results_and_records_decision(tmp_path: P
     )
     golden_labels = store.list_golden_labels()
     golden_summary = store.golden_label_summary()
+    eval_record = store.record_pipeline_eval(
+        {
+            "labels_db": str(store.db_path),
+            "output_dir": str(tmp_path / "eval-output"),
+            "total_golden_labels": 1,
+            "evaluated_predictions": 1,
+            "primary_accuracy": 1.0,
+            "content_class_accuracy": 1.0,
+            "secondary_precision": 1.0,
+            "secondary_recall": 1.0,
+            "ocr_quality_accuracy": 1.0,
+            "review_routing_accuracy": 1.0,
+            "failure_count": 0,
+            "model_usage": {"total_model_usage_rows": 3},
+        }
+    )
+    eval_runs = store.list_pipeline_eval_runs()
     edited_label = store.update_golden_label(
         golden_labels[0]["id"],
         correct_primary_tag="governance_bylaws_policy",
@@ -179,6 +196,10 @@ def test_review_store_imports_langgraph_results_and_records_decision(tmp_path: P
     assert store.list_golden_labels() == []
     assert golden_summary["total_golden_labels"] == 1
     assert golden_summary["golden_by_primary_tag"]["meeting_records"] == 1
+    assert eval_record["evaluated_predictions"] == 1
+    assert eval_record["primary_accuracy"] == 1.0
+    assert eval_record["model_usage"]["total_model_usage_rows"] == 3
+    assert eval_runs[0]["id"] == eval_record["id"]
     assert store.file_path_for_review_item(review_item["id"]) == sample_file
 
     files = store.list_files(q="meeting minutes")
