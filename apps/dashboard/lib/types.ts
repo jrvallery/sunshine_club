@@ -200,6 +200,7 @@ export type PipelineRun = {
   id: number;
   run_key: string;
   preset_key: string;
+  run_role?: string | null;
   status: string;
   input_root?: string | null;
   output_dir?: string | null;

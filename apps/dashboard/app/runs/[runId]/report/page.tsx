@@ -126,6 +126,7 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
         <div className="runMetaGrid">
           <KeyValue label="Run" value={<RunContextBadge runId={run.id} runKey={run.run_key} preset={run.preset_key} />} />
           <KeyValue label="Preset" value={run.preset_key} />
+          <KeyValue label="Role" value={run.run_role ?? "test"} />
           <KeyValue label="Started" value={run.started_at ?? "-"} />
           <KeyValue label="Completed" value={run.completed_at ?? "-"} />
           <KeyValue label="Output" value={run.output_dir ?? "-"} />

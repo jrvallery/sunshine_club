@@ -124,6 +124,7 @@ export default function RunsPage() {
             <thead>
               <tr>
                 <th>Run</th>
+                <th>Role</th>
                 <th>Preset</th>
                 <th>Status</th>
                 <th>Processed</th>
@@ -139,6 +140,9 @@ export default function RunsPage() {
                     <Link className="linkButton" href={`/runs/${run.id}/report`}>
                       {run.run_key}
                     </Link>
+                  </td>
+                  <td>
+                    <StatusBadge value={run.run_role ?? "test"} />
                   </td>
                   <td>{run.preset_key}</td>
                   <td>
@@ -209,6 +213,7 @@ export default function RunsPage() {
               </div>
               <RunProgressBar progress={progress.data} run={activeRun} />
               <KeyValue label="Preset" value={activeRun.preset_key} />
+              <KeyValue label="Role" value={activeRun.run_role ?? "test"} />
               <KeyValue label="Processed" value={formatRunProgress(progress.data, activeRun)} />
               <KeyValue label="Started" value={activeRun.started_at ?? "-"} />
               <KeyValue label="Updated" value={progress.data?.updated_at ?? activeRun.updated_at ?? "-"} />

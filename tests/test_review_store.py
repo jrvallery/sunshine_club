@@ -118,6 +118,16 @@ def test_review_store_imports_langgraph_results_and_records_decision(tmp_path: P
         llm_tag_provider="cortex",
         ocr_fallback_provider="openai",
     )
+    baseline_run = store.create_pipeline_run(
+        preset_key="qa_samples_full",
+        input_root="/tmp/qa samples",
+        output_dir="/tmp/dashboard-runs/qa_samples_full",
+        command=["python", "-m", "sunshine_extraction.langgraph_pipeline"],
+        embedding_provider="cortex",
+        enable_llm_tags=True,
+        llm_tag_provider="cortex",
+        ocr_fallback_provider="openai",
+    )
 
     imported = store.import_langgraph_output(output_dir, sample_routed_per_bucket=1, sample_seed=7, run_id=lineage_run["id"])
     summary = store.summary()
@@ -191,6 +201,9 @@ def test_review_store_imports_langgraph_results_and_records_decision(tmp_path: P
     assert facets["review_reason"]["ocr_quality_not_trusted"] == 1
     assert review_item["run_id"] == lineage_run["id"]
     assert review_item["run_key"] == lineage_run["run_key"]
+    assert lineage_run["run_role"] == "test"
+    assert baseline_run["run_role"] == "baseline"
+    assert baseline_run["run_metadata"]["run_role"] == "baseline"
     assert review_item["run_preset_key"] == "qa_samples_fast"
     assert review_item["embedding_provider"] == "openai"
     assert review_item["enable_llm_tags"] is True

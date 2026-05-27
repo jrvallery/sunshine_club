@@ -2012,8 +2012,10 @@ def _run_metadata(
     ocr_fallback_provider: str | None,
     semantic_index_path: str | None,
 ) -> dict[str, Any]:
+    run_role = _run_role_for_preset(Path(output_dir), input_root=input_root)
     return {
         "run_kind": "pipeline_batch",
+        "run_role": run_role,
         "input_root": input_root,
         "output_dir": output_dir,
         "taxonomy_path": str(DEFAULT_TAXONOMY_PATH),
@@ -2025,6 +2027,14 @@ def _run_metadata(
         "semantic_index_path": semantic_index_path,
         "git_commit": _git_commit(),
     }
+
+
+def _run_role_for_preset(output_dir: Path, *, input_root: str) -> str:
+    output_text = str(output_dir).lower()
+    input_text = str(input_root).lower()
+    if "qa_samples_full" in output_text or "qa samples" in input_text and "full" in output_text:
+        return "baseline"
+    return "test"
 
 
 def _git_commit() -> str | None:
@@ -2795,6 +2805,7 @@ def _golden_label_from_row(row: sqlite3.Row) -> dict[str, Any]:
 
 
 def _pipeline_run_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    run_metadata = _json_object(row["run_metadata_json"])
     return {
         "id": row["id"],
         "run_key": row["run_key"],
@@ -2808,7 +2819,8 @@ def _pipeline_run_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "llm_tag_provider": row["llm_tag_provider"],
         "ocr_fallback_provider": row["ocr_fallback_provider"],
         "semantic_index_path": row["semantic_index_path"],
-        "run_metadata": _json_object(row["run_metadata_json"]),
+        "run_metadata": run_metadata,
+        "run_role": run_metadata.get("run_role") or "test",
         "started_at": row["started_at"],
         "completed_at": row["completed_at"],
         "processed_count": row["processed_count"],
