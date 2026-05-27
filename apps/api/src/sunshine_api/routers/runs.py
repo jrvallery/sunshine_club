@@ -356,6 +356,31 @@ def cancel_run(run_id: int) -> dict[str, Any]:
     return store.get_pipeline_run(run_id)
 
 
+@router.delete("/admin/runs/{run_id}")
+def delete_run(run_id: int, delete_artifacts: bool = True, force: bool = False) -> dict[str, Any]:
+    store = review_store()
+    try:
+        run = store.get_pipeline_run(run_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    with _RUN_PROCESS_LOCK:
+        process = _RUN_PROCESSES.get(run_id)
+    if run["status"] == "running" and not force:
+        raise HTTPException(status_code=400, detail=f"Run is {run['status']}; cancel it first or pass force=true")
+    if process and process.poll() is None:
+        if not force:
+            raise HTTPException(status_code=400, detail="Run process is still active; cancel it first or pass force=true")
+        try:
+            os.killpg(process.pid, 15)
+        except ProcessLookupError:
+            pass
+        except Exception:
+            process.terminate()
+        with _RUN_PROCESS_LOCK:
+            _RUN_PROCESSES.pop(run_id, None)
+    return store.delete_pipeline_run(run_id, delete_artifacts=delete_artifacts)
+
+
 @router.post("/admin/runs/{run_id}/import-results")
 def import_run_results(run_id: int) -> dict[str, Any]:
     store = review_store()
@@ -393,4 +418,3 @@ def rerun_failed(run_id: int) -> dict[str, Any]:
     thread = threading.Thread(target=_execute_run, args=(rerun["id"], command, str(run.get("output_dir") or ""), False), daemon=True)
     thread.start()
     return rerun
-

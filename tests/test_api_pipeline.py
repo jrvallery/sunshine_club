@@ -96,6 +96,82 @@ def test_model_usage_report_infers_calls_from_legacy_artifacts(tmp_path: Path) -
     assert report["by_purpose"]["chunk_embedding"]["calls"] == 1
 
 
+def test_delete_run_removes_run_owned_dashboard_rows_and_artifacts(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SUNSHINE_REVIEW_DB_PATH", str(tmp_path / "review.sqlite"))
+    output_dir = tmp_path / "dashboard-runs" / "delete-me"
+    output_dir.mkdir(parents=True)
+    sample_file = tmp_path / "scan.pdf"
+    sample_file.write_bytes(b"not a real source corpus file")
+    result = {
+        "sample_path": str(sample_file),
+        "source_path": "/source/delete-me.pdf",
+        "relative_path": "Review/delete-me.pdf",
+        "route_status": "review_ocr_quality",
+        "review_reason": "ocr_quality_not_trusted",
+        "final_class": "scanned_document",
+        "extraction_strategy": "ocr_page_level",
+        "extraction_status": "extracted",
+        "quality": "poor",
+        "top_tag_candidate": "meeting_records",
+        "secondary_tags": ["meeting_minutes"],
+        "tag_confidence": 0.42,
+        "llm_status": "skipped",
+        "warnings": ["ocr_fallback_used:openai:gpt-4.1-mini"],
+    }
+    (output_dir / "sample-pipeline-results.jsonl").write_text(json.dumps(result) + "\n", encoding="utf-8")
+    (output_dir / "sample-review-queue.jsonl").write_text(json.dumps(result) + "\n", encoding="utf-8")
+    (output_dir / "sample-extraction-results.jsonl").write_text(json.dumps({**result, "text": "bad OCR text"}) + "\n", encoding="utf-8")
+    (output_dir / "sample-model-usage.jsonl").write_text(
+        json.dumps(
+            {
+                "source_path": "/source/delete-me.pdf",
+                "relative_path": "Review/delete-me.pdf",
+                "purpose": "ocr_fallback",
+                "provider": "openai",
+                "model": "gpt-4.1-mini",
+                "status": "ok",
+                "cost_basis": "external",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    client = TestClient(app)
+
+    run = client.post(
+        "/admin/runs",
+        json={"preset_key": "qa_samples_fast", "input_root": str(tmp_path / "input"), "output_dir": str(output_dir), "start": False},
+    )
+    run_id = run.json()["id"]
+    imported = client.post(f"/admin/runs/{run_id}/import-results", json={})
+    items_before = client.get("/admin/review/items", params={"status": "all", "run_id": run_id})
+    files_before = client.get("/admin/files/search", params={"run_id": run_id})
+    usage_before = client.get(f"/admin/runs/{run_id}/model-usage")
+
+    deleted = client.delete(f"/admin/runs/{run_id}")
+    run_after = client.get(f"/admin/runs/{run_id}")
+    items_after = client.get("/admin/review/items", params={"status": "all", "run_id": run_id})
+    files_after = client.get("/admin/files/search", params={"run_id": run_id})
+
+    assert imported.status_code == 200
+    assert imported.json()["imported_review_items"] == 1
+    assert imported.json()["imported_model_usage"] == 1
+    assert len(items_before.json()) == 1
+    assert files_before.json()["items"][0]["source_path"] == "/source/delete-me.pdf"
+    assert usage_before.json()["summary"]["total_calls"] == 1
+    assert deleted.status_code == 200
+    assert deleted.json()["deleted_counts"]["review_items"] == 1
+    assert deleted.json()["deleted_counts"]["file_index"] == 1
+    assert deleted.json()["deleted_counts"]["pipeline_results"] == 1
+    assert deleted.json()["deleted_counts"]["model_usage"] == 1
+    assert deleted.json()["deleted_counts"]["pipeline_runs"] == 1
+    assert deleted.json()["artifacts"]["deleted"] is True
+    assert run_after.status_code == 404
+    assert items_after.json() == []
+    assert files_after.json()["items"] == []
+    assert not output_dir.exists()
+
+
 def test_api_pipeline_run_file_missing_file_returns_review_result(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SUNSHINE_EMBEDDING_PROVIDER", "placeholder")
     output_dir = tmp_path / "api-out"

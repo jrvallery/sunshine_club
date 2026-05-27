@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { use, useMemo, useState } from "react";
 
 import { PathCell } from "../../../../components/dashboard/PathCell";
@@ -10,7 +11,7 @@ import { QualityBadge } from "../../../../components/dashboard/QualityBadge";
 import { RunContextBadge } from "../../../../components/dashboard/RunContextBadge";
 import { KeyValue } from "../../../../components/ui/KeyValue";
 import { StatusBadge } from "../../../../components/ui/StatusBadge";
-import { fetchJson, postJson } from "../../../../lib/api";
+import { deleteJson, fetchJson, postJson } from "../../../../lib/api";
 import type { PipelineRun, PipelineRunEvent, RunModelUsageReport, RunReport } from "../../../../lib/types";
 
 type ReportTab = "overview" | "files" | "review" | "training" | "ocr" | "tags" | "placement" | "models" | "logs" | "artifacts" | "diff";
@@ -34,6 +35,7 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
   const runId = Number(runIdParam);
   const [activeTab, setActiveTab] = useState<ReportTab>("overview");
   const queryClient = useQueryClient();
+  const router = useRouter();
   const report = useQuery({
     queryKey: ["run-report", runId],
     queryFn: () => fetchJson<RunReport>(`/api/admin/runs/${runId}/report`),
@@ -55,6 +57,13 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["run-report", runId] });
       await queryClient.invalidateQueries({ queryKey: ["run-events", runId] });
+    }
+  });
+  const deleteRun = useMutation({
+    mutationFn: () => deleteJson<Record<string, unknown>>(`/api/admin/runs/${runId}`),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["runs"] });
+      router.push("/runs");
     }
   });
   const data = report.data;
@@ -91,6 +100,17 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
           </button>
           <button className="secondaryButton" disabled={!running || cancelRun.isPending} onClick={() => cancelRun.mutate()}>
             {cancelRun.isPending ? "Cancelling..." : "Cancel"}
+          </button>
+          <button
+            className="secondaryButton dangerText"
+            disabled={running || deleteRun.isPending}
+            onClick={() => {
+              if (window.confirm(`Delete run ${run.run_key}? This removes dashboard DB rows and generated run artifacts, but not source corpus files.`)) {
+                deleteRun.mutate();
+              }
+            }}
+          >
+            {deleteRun.isPending ? "Deleting..." : "Delete"}
           </button>
         </div>
       </header>

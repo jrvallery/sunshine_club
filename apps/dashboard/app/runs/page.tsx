@@ -8,7 +8,7 @@ import { Button } from "../../components/ui/Button";
 import { CheckboxField, TextInput } from "../../components/ui/FormControls";
 import { KeyValue } from "../../components/ui/KeyValue";
 import { StatusBadge } from "../../components/ui/StatusBadge";
-import { fetchJson, postJson } from "../../lib/api";
+import { deleteJson, fetchJson, postJson } from "../../lib/api";
 import type { PipelineRun, PipelineRunComparison, PipelineRunEvent, PipelineRunProgress, PipelineRunResults, RunPreset } from "../../lib/types";
 
 export default function RunsPage() {
@@ -83,6 +83,16 @@ export default function RunsPage() {
       await queryClient.invalidateQueries({ queryKey: ["runs"] });
     }
   });
+  const deleteRun = useMutation({
+    mutationFn: (runId: number) => deleteJson<Record<string, unknown>>(`/api/admin/runs/${runId}`),
+    onSuccess: async (_payload, runId) => {
+      if (selectedRun?.id === runId) {
+        setSelectedRun(null);
+      }
+      await queryClient.invalidateQueries({ queryKey: ["runs"] });
+      await queryClient.invalidateQueries({ queryKey: ["run-detail", runId] });
+    }
+  });
 
   return (
     <main className="pageShell">
@@ -151,6 +161,17 @@ export default function RunsPage() {
                       </button>
                       <button className="secondaryButton" disabled={run.status !== "failed"} onClick={() => rerunFailed.mutate(run.id)}>
                         Rerun Failed
+                      </button>
+                      <button
+                        className="secondaryButton dangerText"
+                        disabled={run.status === "running" || deleteRun.isPending}
+                        onClick={() => {
+                          if (window.confirm(`Delete run ${run.run_key}? This removes dashboard DB rows and generated run artifacts, but not source corpus files.`)) {
+                            deleteRun.mutate(run.id);
+                          }
+                        }}
+                      >
+                        Delete
                       </button>
                     </div>
                   </td>

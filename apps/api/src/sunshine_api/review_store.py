@@ -12,6 +12,7 @@ import json
 import mimetypes
 import os
 import random
+import shutil
 import sqlite3
 import uuid
 from datetime import UTC, datetime
@@ -1306,6 +1307,81 @@ class ReviewStore:
             raise KeyError(f"pipeline run {run_id} not found")
         return _pipeline_run_from_row(row)
 
+    def delete_pipeline_run(self, run_id: int, *, delete_artifacts: bool = True) -> dict[str, Any]:
+        """Delete a pipeline run and all dashboard-owned rows tied to it.
+
+        Source corpus files are never deleted. Artifact deletion is limited to
+        the run output directory, and shared output directories are preserved
+        until no remaining run points at the same path.
+        """
+
+        with self._connect() as connection:
+            run_row = connection.execute(
+                """
+                select id, run_key, preset_key, status, input_root, output_dir, command_json,
+                       embedding_provider, enable_llm_tags, llm_tag_provider, ocr_fallback_provider, semantic_index_path,
+                       started_at, completed_at, processed_count, route_candidate_count,
+                       review_required_count, failed_count, summary_json, error, created_at, updated_at
+                from pipeline_runs where id = ?
+                """,
+                (run_id,),
+            ).fetchone()
+            if run_row is None:
+                raise KeyError(f"pipeline run {run_id} not found")
+            run = _pipeline_run_from_row(run_row)
+            output_dir = str(run.get("output_dir") or "")
+            source_paths = [
+                str(row["source_path"])
+                for row in connection.execute("select source_path from review_items where run_id = ?", (run_id,)).fetchall()
+                if row["source_path"]
+            ]
+            counts: dict[str, int] = {}
+            counts["review_items"] = _delete_count(connection, "delete from review_items where run_id = ?", (run_id,))
+            counts["golden_labels"] = 0
+            if source_paths:
+                placeholders = ",".join("?" for _ in source_paths)
+                counts["golden_labels"] = _delete_count(connection, f"delete from golden_labels where source_path in ({placeholders})", tuple(source_paths))
+            counts["file_index"] = _delete_count(connection, "delete from file_index where latest_run_id = ?", (run_id,))
+            counts["model_usage"] = _delete_count(connection, "delete from pipeline_run_model_usage where run_id = ?", (run_id,))
+            counts["events"] = _delete_count(connection, "delete from pipeline_run_events where run_id = ?", (run_id,))
+
+            sibling_count = 0
+            if output_dir:
+                sibling_count = int(
+                    connection.execute(
+                        "select count(*) from pipeline_runs where id != ? and output_dir = ?",
+                        (run_id, output_dir),
+                    ).fetchone()[0]
+                    or 0
+                )
+            if output_dir and sibling_count == 0:
+                counts["pipeline_results"] = _delete_count(connection, "delete from pipeline_results where output_dir = ?", (output_dir,))
+            else:
+                counts["pipeline_results"] = 0
+
+            counts["pipeline_runs"] = _delete_count(connection, "delete from pipeline_runs where id = ?", (run_id,))
+
+        artifact_result = {
+            "deleted": False,
+            "path": output_dir or None,
+            "skipped_reason": None,
+        }
+        if delete_artifacts:
+            if not output_dir:
+                artifact_result["skipped_reason"] = "run_has_no_output_dir"
+            elif sibling_count > 0:
+                artifact_result["skipped_reason"] = "output_dir_shared_by_other_runs"
+                artifact_result["shared_run_count"] = sibling_count
+            else:
+                artifact_result = _delete_run_output_dir(Path(output_dir))
+
+        return {
+            "deleted": True,
+            "run": run,
+            "deleted_counts": counts,
+            "artifacts": artifact_result,
+        }
+
     def list_pipeline_run_events(self, run_id: int, *, limit: int = 200) -> list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute(
@@ -1641,6 +1717,43 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 def _count_rows(connection: sqlite3.Connection, query: str) -> dict[str, int]:
     return {str(key or "unknown"): int(count) for key, count in connection.execute(query).fetchall()}
+
+
+def _delete_count(connection: sqlite3.Connection, query: str, params: tuple[Any, ...]) -> int:
+    cursor = connection.execute(query, params)
+    return int(cursor.rowcount if cursor.rowcount is not None and cursor.rowcount >= 0 else 0)
+
+
+def _delete_run_output_dir(output_dir: Path) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "deleted": False,
+        "path": str(output_dir),
+        "skipped_reason": None,
+    }
+    if not output_dir.exists():
+        result["skipped_reason"] = "output_dir_missing"
+        return result
+    if not output_dir.is_dir():
+        result["skipped_reason"] = "output_path_not_directory"
+        return result
+    if not _looks_like_dashboard_run_output(output_dir):
+        result["skipped_reason"] = "output_dir_not_recognized_as_dashboard_run_artifacts"
+        return result
+    shutil.rmtree(output_dir)
+    result["deleted"] = True
+    return result
+
+
+def _looks_like_dashboard_run_output(output_dir: Path) -> bool:
+    if "dashboard-runs" in output_dir.parts:
+        return True
+    known_artifacts = {
+        "sample-pipeline-summary.json",
+        "sample-pipeline-results.jsonl",
+        "graph-result.json",
+        "graph-audit-events.jsonl",
+    }
+    return any((output_dir / artifact).exists() for artifact in known_artifacts)
 
 
 def _secondary_tag_counts(connection: sqlite3.Connection) -> dict[str, int]:
