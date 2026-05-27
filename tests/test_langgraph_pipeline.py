@@ -4,7 +4,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from sunshine_extraction.embeddings import PlaceholderEmbeddingProvider
+from sunshine_extraction.embeddings import EmbeddingProviderError, PlaceholderEmbeddingProvider
 from sunshine_extraction.semantic_index import build_semantic_index
 from sunshine_extraction.langgraph_pipeline import run_document_batch, run_document_graph
 from sunshine_extraction.sample_pipeline import LLMTagInspector, OcrDocumentResult, OcrExecutor, OcrPageResult, SampleFile
@@ -23,6 +23,14 @@ class _KeywordEmbeddingProvider:
             else:
                 vectors.append([0.0, 1.0])
         return vectors
+
+
+class _FailingEmbeddingProvider:
+    model = "failing-test"
+    dimensions = 2
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        raise EmbeddingProviderError("embedding service unavailable")
 
 
 class _TeaLLMTagInspector(LLMTagInspector):
@@ -295,6 +303,40 @@ def test_langgraph_retrieves_labeled_examples_and_uses_them_as_tag_evidence(tmp_
     assert final_result["semantic_example_count"] == 1
     assert final_result["tag_assignment_source"] == "deterministic+semantic"
     assert any("semantic_example_agreement:history_archive_general" in evidence for evidence in final_result["tag_evidence"])
+
+
+def test_langgraph_embedding_failure_mode_routes_to_review_without_placeholder_fallback(tmp_path: Path) -> None:
+    source = tmp_path / "tea.txt"
+    source.write_text("Annual Sunshine Tea guest list and event notes.", encoding="utf-8")
+    output_dir = tmp_path / "graph-out"
+
+    result = run_document_graph(
+        source,
+        source_path="/source/tea.txt",
+        relative_path="Sunshine shared folders/Teas/tea.txt",
+        output_dir=output_dir,
+        embedding_provider=_FailingEmbeddingProvider(),
+        embedding_failure_mode="review",
+        llm_tag_inspector=_TeaLLMTagInspector(),
+    )
+
+    final_result = result["final_result"]
+    embedding_rows = [json.loads(line) for line in (output_dir / "sample-embeddings.jsonl").read_text().splitlines()]
+    review_rows = [json.loads(line) for line in (output_dir / "sample-review-queue.jsonl").read_text().splitlines()]
+    model_usage_rows = [json.loads(line) for line in (output_dir / "sample-model-usage.jsonl").read_text().splitlines()]
+    chunk_embedding_usage = next(row for row in model_usage_rows if row["purpose"] == "chunk_embedding")
+
+    assert embedding_rows == []
+    assert final_result["embedding_status"] == "none"
+    assert final_result["route_status"] == "review_embedding_unavailable"
+    assert final_result["review_reason"] == "embedding_quality_unavailable"
+    assert "embedding_provider_failed" in final_result["warnings"]
+    assert "embedding_quality_unavailable" in final_result["warnings"]
+    assert review_rows[0]["review_reason"] == "embedding_quality_unavailable"
+    assert chunk_embedding_usage["status"] == "failed"
+    assert chunk_embedding_usage["metadata"]["call_count"] == 1
+    assert "EmbeddingProviderError" in chunk_embedding_usage["error"]
+    assert all(row.get("status") != "placeholder" for row in model_usage_rows)
 
 
 def test_langgraph_missing_file_persists_failure_state(tmp_path: Path) -> None:
