@@ -461,6 +461,7 @@ export type PipelineEvalSummary = {
   high_confidence_primary_accuracy?: number | null;
   high_confidence_false_accepts?: number;
   low_confidence_false_accepts?: number;
+  low_confidence_accepted_count?: number;
   invalid_primary_tag_count?: number;
   tag_evidence_presence_rate?: number | null;
   embedding_success_rate?: number | null;
@@ -476,6 +477,7 @@ export type PipelineEvalSummary = {
     primary_correct: number;
     primary_accuracy: number | null;
     review_required: number;
+    accepted: number;
     review_required_rate: number | null;
     false_accepts: number;
     false_reviews: number;

@@ -139,6 +139,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert summary["high_confidence_primary_accuracy"] == 0.5
     assert summary["high_confidence_false_accepts"] == 0
     assert summary["low_confidence_false_accepts"] == 0
+    assert summary["low_confidence_accepted_count"] == 0
     assert summary["invalid_primary_tag_count"] == 0
     assert summary["tag_evidence_presence_rate"] == 1.0
     assert summary["source_file_mutations"] == 0
@@ -155,6 +156,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert summary["primary_tag_metrics"]["annual_spring_tea"]["accuracy"] == 1.0
     assert summary["primary_tag_metrics"]["history_archive_general"]["accuracy"] == 0.0
     assert summary["confidence_bucket_metrics"]["high"]["total"] == 2
+    assert summary["confidence_bucket_metrics"]["high"]["accepted"] == 0
     assert summary["confidence_bucket_metrics"]["high"]["primary_accuracy"] == 0.5
     assert summary["confidence_bucket_metrics"]["high"]["false_reviews"] == 1
     assert summary["acceptance_gate"]["status"] == "fail"
@@ -178,6 +180,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "tag_evidence_presence_rate")["status"] == "pass"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "placement_year_accuracy")["status"] == "not_evaluated"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "low_confidence_false_accepts")["status"] == "pass"
+    assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "low_confidence_accepted_count")["status"] == "pass"
     assert next(check for check in summary["acceptance_gate"]["checks"] if check["name"] == "sensitive_medium_low_confidence_accepts")["status"] == "pass"
     assert summary["production_readiness"]["status"] == "not_ready"
     assert summary["production_readiness"]["larger_batch_allowed"] is False

@@ -310,6 +310,7 @@ export default function PipelineEvalPage() {
               <KeyValue label="False reviews" value={String(summary?.review_false_reviews ?? 0)} />
               <KeyValue label="High-conf false accepts" value={String(summary?.high_confidence_false_accepts ?? 0)} />
               <KeyValue label="Low-conf false accepts" value={String(summary?.low_confidence_false_accepts ?? 0)} />
+              <KeyValue label="Low-conf accepted" value={String(summary?.low_confidence_accepted_count ?? 0)} />
               <KeyValue label="Sensitive med/low accepts" value={String(summary?.sensitive_medium_low_confidence_accepts ?? 0)} />
               <KeyValue label="Invalid primary tags" value={String(summary?.invalid_primary_tag_count ?? 0)} />
             </section>
@@ -360,7 +361,7 @@ export default function PipelineEvalPage() {
                 <KeyValue
                   key={bucket}
                   label={bucket}
-                  value={`${formatPercent(metric.primary_accuracy)} primary, ${formatPercent(metric.review_required_rate)} review, ${metric.false_accepts} false accepts (${metric.primary_correct}/${metric.total})`}
+                  value={`${formatPercent(metric.primary_accuracy)} primary, ${formatPercent(metric.review_required_rate)} review, ${metric.accepted} accepted, ${metric.false_accepts} false accepts (${metric.primary_correct}/${metric.total})`}
                 />
               ))}
             </section>
