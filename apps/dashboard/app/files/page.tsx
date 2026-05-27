@@ -1,17 +1,14 @@
 "use client";
 
-import { ColumnDef, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 
-import { VirtualDataTable } from "../../components/data-table/VirtualDataTable";
 import { ActiveFilterChips } from "../../components/dashboard/ActiveFilterChips";
 import { DashboardSearchToolbar } from "../../components/dashboard/DashboardSearchToolbar";
 import { FacetPanel, type FacetDefinition } from "../../components/dashboard/FacetPanel";
 import { InspectorPanel } from "../../components/dashboard/InspectorPanel";
-import { PathCell } from "../../components/dashboard/PathCell";
 import { ProviderConfigBadge } from "../../components/dashboard/ProviderConfigBadge";
 import { QualityBadge } from "../../components/dashboard/QualityBadge";
 import { ResultTableShell } from "../../components/dashboard/ResultTableShell";
@@ -195,72 +192,6 @@ function FilesPageContent() {
     updateFilters({}, fileId);
   }
 
-  const columns = useMemo<ColumnDef<FileSearchItem>[]>(
-    () => [
-      {
-        accessorKey: "filename",
-        header: "File",
-        size: 360,
-        cell: ({ row }) => (
-          <PathCell title={row.original.filename} subtitle={row.original.compact_path} onClick={() => selectFile(row.original.id)} />
-        )
-      },
-      {
-        id: "type",
-        header: "Type",
-        size: 150,
-        cell: ({ row }) => (
-          <div className="cellStack">
-            <strong>{row.original.extension ?? "-"}</strong>
-            <span>{row.original.content_class ?? "-"}</span>
-          </div>
-        )
-      },
-      {
-        id: "current",
-        header: "Current Result",
-        size: 270,
-        cell: ({ row }) => <ResultSummary file={row.original} />
-      },
-      {
-        id: "text",
-        header: "Text",
-        size: 120,
-        cell: ({ row }) => <TextIndicator text={row.original.text_snippet} />
-      },
-      {
-        id: "run",
-        header: "Run",
-        size: 210,
-        cell: ({ row }) => (
-          <div className="cellStack">
-            <RunContextBadge runId={row.original.latest_run_id} runKey={row.original.latest_run_key} preset={row.original.latest_run_preset_key} />
-            <ProviderConfigBadge
-              embeddingProvider={row.original.latest_embedding_provider}
-              llmEnabled={row.original.latest_enable_llm_tags}
-              llmProvider={row.original.latest_llm_tag_provider}
-              ocrProvider={row.original.latest_ocr_fallback_provider}
-            />
-          </div>
-        )
-      },
-      {
-        id: "review",
-        header: "Review",
-        size: 135,
-        cell: ({ row }) => row.original.review_status ?? "-"
-      },
-      {
-        accessorKey: "updated_at",
-        header: "Updated",
-        size: 160,
-        cell: ({ row }) => row.original.updated_at ?? "-"
-      }
-    ],
-    [] // eslint-disable-line react-hooks/exhaustive-deps
-  );
-  const table = useReactTable({ data: search.data?.items ?? [], columns, getCoreRowModel: getCoreRowModel() });
-
   return (
     <main className="pageShell">
       <header className="pageHeader">
@@ -275,14 +206,14 @@ function FilesPageContent() {
       </header>
 
       <DashboardSearchToolbar searchPlaceholder="Search filename, path, OCR text" searchValue={queryText} onSearchChange={setQueryText}>
-        <select onChange={(event) => applySavedSearch(event.target.value)} value="">
+        <select aria-label="Saved file searches" onChange={(event) => applySavedSearch(event.target.value)} value="">
           <option value="">Saved searches</option>
           {allSavedSearches.map((searchPreset) => (
             <option key={searchPreset.label} value={searchPreset.label}>{searchPreset.label}</option>
           ))}
         </select>
         <button className="secondaryButton" onClick={saveCurrentSearch}>Save Search</button>
-        <select value={filters.sort} onChange={(event) => updateFilters({ sort: event.target.value })}>
+        <select aria-label="Sort files" value={filters.sort} onChange={(event) => updateFilters({ sort: event.target.value })}>
           <option value="updated_desc">Newest first</option>
           <option value="updated_asc">Oldest first</option>
           <option value="filename">Filename</option>
@@ -302,7 +233,12 @@ function FilesPageContent() {
           onToggle={(key, value) => updateFilters({ [key]: filters[key] === value ? "" : value })}
         />
         <ResultTableShell error={search.isError ? `File search failed: ${search.error.message}` : null}>
-          <VirtualDataTable table={table} loading={search.isLoading && !search.data} emptyText="No files match these filters." />
+          <FileResultsList
+            items={search.data?.items ?? []}
+            loading={search.isLoading && !search.data}
+            selectedId={selectedId}
+            onSelect={selectFile}
+          />
         </ResultTableShell>
         <FileInspector
           inspection={inspection.data}
@@ -341,6 +277,68 @@ function FilesPageContent() {
   }
 }
 
+function FileResultsList({
+  items,
+  loading,
+  selectedId,
+  onSelect
+}: {
+  items: FileSearchItem[];
+  loading?: boolean;
+  selectedId: number | null;
+  onSelect: (fileId: number) => void;
+}) {
+  if (loading) {
+    return <div className="empty">Loading files...</div>;
+  }
+  if (!items.length) {
+    return <div className="empty">No files match these filters.</div>;
+  }
+  return (
+    <div className="fileResultsList" aria-label="File search results">
+      {items.map((file) => (
+        <button
+          aria-current={selectedId === file.id ? "true" : undefined}
+          className={selectedId === file.id ? "fileResultCard selected" : "fileResultCard"}
+          key={file.id}
+          onClick={() => onSelect(file.id)}
+        >
+          <div className="fileResultIdentity">
+            <strong title={file.filename}>{file.filename}</strong>
+            <span title={file.compact_path}>{file.compact_path}</span>
+          </div>
+          <div className="fileResultMeta">
+            <MetaBlock label="Type" value={file.extension ?? "-"} detail={file.content_class ?? "-"} />
+            <div className="fileResultBlock">
+              <span>Current result</span>
+              <ResultSummary file={file} />
+            </div>
+            <div className="fileResultBlock">
+              <span>Run</span>
+              <RunContextBadge runId={file.latest_run_id} runKey={file.latest_run_key} preset={file.latest_run_preset_key} />
+            </div>
+            <div className="fileResultBlock">
+              <span>Text</span>
+              <TextIndicator text={file.text_snippet} />
+            </div>
+            <MetaBlock label="Review" value={file.review_status ?? "-"} detail={file.updated_at ?? "-"} />
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function MetaBlock({ label, value, detail }: { label: string; value: string; detail?: string | null }) {
+  return (
+    <div className="fileResultBlock">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      {detail ? <em>{detail}</em> : null}
+    </div>
+  );
+}
+
 function ResultSummary({ file }: { file: FileSearchItem }) {
   return (
     <div className="cellStack">
@@ -358,7 +356,7 @@ function TextIndicator({ text }: { text?: string | null }) {
   }
   return (
     <span className="statusPill" title={text}>
-      Text available
+      Has text
     </span>
   );
 }
@@ -384,10 +382,10 @@ function FileInspector({
   const [llmProvider, setLlmProvider] = useState("cortex");
   const [ocrProvider, setOcrProvider] = useState("cortex");
   if (loading) {
-    return <aside className="fileInspector"><div className="empty">Loading inspection...</div></aside>;
+    return <div className="fileInspector"><div className="empty">Loading inspection...</div></div>;
   }
   if (!inspection) {
-    return <aside className="fileInspector"><div className="empty">Select a file to inspect it.</div></aside>;
+    return <div className="fileInspector"><div className="empty">Select a file to inspect it.</div></div>;
   }
   const file = inspection.file;
   const result = inspection.latest_result ?? {};

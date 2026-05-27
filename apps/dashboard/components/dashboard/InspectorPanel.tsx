@@ -16,7 +16,7 @@ export function InspectorPanel({
   className?: string;
 }) {
   return (
-    <aside className={className}>
+    <div className={className}>
       <div className="drawerHeader">
         <div>
           <p className="eyebrow">{eyebrow}</p>
@@ -25,6 +25,6 @@ export function InspectorPanel({
         {onClose ? <button className="secondaryButton" onClick={onClose}>Close</button> : null}
       </div>
       {children}
-    </aside>
+    </div>
   );
 }

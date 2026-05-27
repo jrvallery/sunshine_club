@@ -745,6 +745,79 @@ td:first-child {
   min-width: 0;
 }
 
+.fileResultsList {
+  display: grid;
+  gap: 10px;
+}
+
+.fileResultCard {
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  display: grid;
+  gap: 12px;
+  padding: 13px;
+  text-align: left;
+  width: 100%;
+}
+
+.fileResultCard:hover,
+.fileResultCard.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-border);
+}
+
+.fileResultCard.selected {
+  background: var(--accent-soft);
+}
+
+.fileResultIdentity {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.fileResultIdentity strong {
+  font-size: 15px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.fileResultIdentity span,
+.fileResultBlock em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.fileResultMeta {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.fileResultBlock {
+  align-content: start;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.fileResultBlock > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.fileResultBlock strong {
+  overflow-wrap: anywhere;
+}
+
 .dashboardSearchToolbar .tagPickerField {
   min-width: 230px;
 }
@@ -753,8 +826,13 @@ td:first-child {
   align-items: start;
   display: grid;
   gap: 14px;
-  grid-template-columns: 260px minmax(620px, 1fr) 420px;
+  grid-template-columns: 260px minmax(0, 1fr) minmax(320px, 380px);
   margin-top: 14px;
+}
+
+.fileExplorerLayout .facetPanel {
+  max-height: none;
+  position: static;
 }
 
 .reviewToolbar {
@@ -1298,10 +1376,13 @@ td:first-child {
 }
 
 @media (max-width: 1100px) {
+  .fileExplorerLayout,
   .reviewWorkspace {
     grid-template-columns: 1fr;
   }
 
+  .fileInspector,
+  .facetPanel,
   .reviewFacetPanel {
     max-height: none;
     position: static;
@@ -1523,6 +1604,10 @@ td:first-child {
   .dashboardSearchToolbar .tagPickerField,
   .secondaryButton {
     width: 100%;
+  }
+
+  .fileResultMeta {
+    grid-template-columns: 1fr;
   }
 
   .segmentedControl {
