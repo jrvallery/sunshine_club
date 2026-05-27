@@ -79,6 +79,34 @@ def test_review_store_imports_langgraph_results_and_records_decision(tmp_path: P
             },
         ],
     )
+    _write_jsonl(
+        output_dir / "sample-model-usage.jsonl",
+        [
+            {
+                "source_path": "/source/b.pdf",
+                "relative_path": "Sunshine/b.pdf",
+                "purpose": "ocr_fallback",
+                "provider": "openai",
+                "model": "gpt-4.1-mini",
+                "status": "ok",
+                "runtime_ms": 900,
+                "total_tokens": 120,
+                "estimated_cost_usd": 0.0042,
+                "cost_basis": "external",
+            },
+            {
+                "source_path": "/source/b.pdf",
+                "relative_path": "Sunshine/b.pdf",
+                "purpose": "tag_inspection",
+                "provider": "cortex",
+                "model": "gemma4-26b",
+                "status": "ok",
+                "runtime_ms": 300,
+                "total_tokens": 80,
+                "cost_basis": "local",
+            },
+        ],
+    )
     store = ReviewStore(tmp_path / "review.sqlite")
     lineage_run = store.create_pipeline_run(
         preset_key="qa_samples_fast",
@@ -168,6 +196,14 @@ def test_review_store_imports_langgraph_results_and_records_decision(tmp_path: P
     assert review_item["enable_llm_tags"] is True
     assert review_item["llm_tag_provider"] == "cortex"
     assert review_item["ocr_fallback_provider"] == "openai"
+    assert review_item["model_usage_summary"]["scope"] == "file"
+    assert review_item["model_usage_summary"]["total_calls"] == 2
+    assert review_item["model_usage_summary"]["external_calls"] == 1
+    assert review_item["model_usage_summary"]["local_calls"] == 1
+    assert review_item["model_usage_summary"]["total_runtime_ms"] == 1200
+    assert review_item["model_usage_summary"]["total_tokens"] == 200
+    assert review_item["model_usage_summary"]["estimated_external_cost_usd"] == 0.0042
+    assert review_item["model_usage_summary"]["purposes"] == ["ocr_fallback", "tag_inspection"]
     assert sampled_item["secondary_tags"] == ["event_material", "guest_list"]
     assert sampled_item["extraction_text_snippet"] == "Annual Sunshine Tea guest list with names and event notes."
     assert review_item["warnings"] == ["ocr_confidence_below_threshold"]

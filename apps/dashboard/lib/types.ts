@@ -44,6 +44,19 @@ export type ReviewItem = {
   priority?: string | null;
   assigned_reviewer?: string | null;
   notes?: string | null;
+  model_usage_summary?: {
+    scope: string;
+    total_calls: number;
+    failed_calls: number;
+    external_calls: number;
+    local_calls: number;
+    unknown_external_cost_calls: number;
+    total_runtime_ms: number;
+    total_tokens: number;
+    estimated_external_cost_usd: number;
+    purposes: string[];
+    providers: string[];
+  };
   result: PipelineResult;
 };
 

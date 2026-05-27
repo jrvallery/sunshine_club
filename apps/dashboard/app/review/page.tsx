@@ -196,6 +196,11 @@ export default function ReviewPage() {
         header: "Run Config",
         cell: ({ row }) => <RunConfig item={row.original} />
       },
+      {
+        id: "model_usage",
+        header: "Models",
+        cell: ({ row }) => <ModelUsageCell item={row.original} />
+      },
       { accessorKey: "review_reason", header: "Reason" },
       { accessorKey: "proposed_class", header: "Class" },
       { accessorKey: "proposed_tag", header: "Primary Tag" },
@@ -371,6 +376,18 @@ function ReviewDrawer({
           <KeyValue label="LLM provider" value={item.llm_tag_provider ?? "-"} />
           <KeyValue label="OCR fallback" value={item.ocr_fallback_provider ?? "-"} />
         </section>
+        <section>
+          <h3>Model Usage</h3>
+          <KeyValue label="Scope" value={item.model_usage_summary?.scope ?? "none"} />
+          <KeyValue label="Calls" value={String(item.model_usage_summary?.total_calls ?? 0)} />
+          <KeyValue label="External / local" value={`${item.model_usage_summary?.external_calls ?? 0} / ${item.model_usage_summary?.local_calls ?? 0}`} />
+          <KeyValue label="Failed" value={String(item.model_usage_summary?.failed_calls ?? 0)} />
+          <KeyValue label="Tokens" value={String(item.model_usage_summary?.total_tokens ?? 0)} />
+          <KeyValue label="Runtime" value={`${item.model_usage_summary?.total_runtime_ms ?? 0} ms`} />
+          <KeyValue label="External cost" value={`$${(item.model_usage_summary?.estimated_external_cost_usd ?? 0).toFixed(4)}`} />
+          <KeyValue label="Purposes" value={(item.model_usage_summary?.purposes ?? []).join(", ") || "-"} />
+          <KeyValue label="Providers" value={(item.model_usage_summary?.providers ?? []).join(", ") || "-"} />
+        </section>
         <section className="wideSection">
           <h3>Preview</h3>
           <EmbeddedPreview previewUrl={`/api/admin/review/items/${item.id}/file`} filename={item.relative_path || item.source_path} />
@@ -528,5 +545,19 @@ function RunConfig({ item }: { item: ReviewItem }) {
       llmProvider={item.llm_tag_provider}
       ocrProvider={item.ocr_fallback_provider}
     />
+  );
+}
+
+function ModelUsageCell({ item }: { item: ReviewItem }) {
+  const usage = item.model_usage_summary;
+  if (!usage?.total_calls) {
+    return <span className="muted">-</span>;
+  }
+  return (
+    <div className="cellStack">
+      <strong>{usage.total_calls} calls</strong>
+      <span>{usage.external_calls} external / {usage.local_calls} local</span>
+      <span>{usage.scope === "file" ? "file scoped" : "run scoped"}</span>
+    </div>
   );
 }

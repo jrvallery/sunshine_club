@@ -258,6 +258,10 @@ class ReviewStore:
                 """,
                 (limit,),
             ).fetchall()
+            missing_date_queue = [
+                _review_item_from_row(row, model_usage_summary=_review_item_model_usage_summary(connection, row))
+                for row in missing_date_rows
+            ]
         total = sum(by_placement_status.values())
         resolved = sum(count for status, count in by_placement_status.items() if status in {"resolved", "proposed", "ok"})
         return {
@@ -267,7 +271,7 @@ class ReviewStore:
             "corrected_placement_decisions": int(corrected_placement),
             "by_placement_status": by_placement_status,
             "by_privacy": by_privacy,
-            "missing_date_queue": [_review_item_from_row(row) for row in missing_date_rows],
+            "missing_date_queue": missing_date_queue,
         }
 
     def review_export_rows(self, *, status: str = "all", limit: int = 1000) -> list[dict[str, Any]]:
@@ -368,7 +372,10 @@ class ReviewStore:
         params.append(limit)
         with self._connect() as connection:
             rows = connection.execute(query, params).fetchall()
-        return [_review_item_from_row(row) for row in rows]
+            return [
+                _review_item_from_row(row, model_usage_summary=_review_item_model_usage_summary(connection, row))
+                for row in rows
+            ]
 
     def review_facets(
         self,
@@ -969,9 +976,9 @@ class ReviewStore:
                 """,
                 (item_id,),
             ).fetchone()
-        if row is None:
-            raise KeyError(f"review item {item_id} not found")
-        return _review_item_from_row(row)
+            if row is None:
+                raise KeyError(f"review item {item_id} not found")
+            return _review_item_from_row(row, model_usage_summary=_review_item_model_usage_summary(connection, row))
 
     def get_review_item(self, item_id: int) -> dict[str, Any]:
         with self._connect() as connection:
@@ -986,9 +993,9 @@ class ReviewStore:
                 """,
                 (item_id,),
             ).fetchone()
-        if row is None:
-            raise KeyError(f"review item {item_id} not found")
-        return _review_item_from_row(row)
+            if row is None:
+                raise KeyError(f"review item {item_id} not found")
+            return _review_item_from_row(row, model_usage_summary=_review_item_model_usage_summary(connection, row))
 
     def assign_review_item(
         self,
@@ -2180,7 +2187,7 @@ def _sample_routed_sources(results: list[dict[str, Any]], *, per_bucket: int, se
     return sampled
 
 
-def _review_item_from_row(row: sqlite3.Row) -> dict[str, Any]:
+def _review_item_from_row(row: sqlite3.Row, *, model_usage_summary: dict[str, Any] | None = None) -> dict[str, Any]:
     result = json.loads(row["result_json"])
     return {
         "id": row["id"],
@@ -2216,7 +2223,86 @@ def _review_item_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "notes": row["notes"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+        "model_usage_summary": model_usage_summary or _empty_review_item_model_usage_summary(),
         "result": result,
+    }
+
+
+def _review_item_model_usage_summary(connection: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
+    run_id = _row_value(row, "run_id")
+    if run_id is None:
+        return _empty_review_item_model_usage_summary()
+
+    source_path = str(row["source_path"] or "")
+    relative_path = str(row["relative_path"] or "")
+    rows = connection.execute(
+        """
+        select purpose, provider, model, status, runtime_ms, total_tokens, estimated_cost_usd, cost_basis
+        from pipeline_run_model_usage
+        where run_id = ?
+          and (
+                source_path = ?
+             or relative_path = ?
+          )
+        order by id asc
+        """,
+        (run_id, source_path, relative_path),
+    ).fetchall()
+    scope = "file"
+    if not rows:
+        rows = connection.execute(
+            """
+            select purpose, provider, model, status, runtime_ms, total_tokens, estimated_cost_usd, cost_basis
+            from pipeline_run_model_usage
+            where run_id = ?
+            order by id asc
+            """,
+            (run_id,),
+        ).fetchall()
+        scope = "run" if rows else "none"
+
+    total_calls = len(rows)
+    failed_calls = sum(1 for usage in rows if str(usage["status"] or "").lower() in {"failed", "error"})
+    external_calls = sum(1 for usage in rows if str(usage["cost_basis"] or "").lower() == "external")
+    local_calls = sum(1 for usage in rows if str(usage["cost_basis"] or "").lower() == "local")
+    unknown_external_cost_calls = sum(
+        1
+        for usage in rows
+        if str(usage["cost_basis"] or "").lower() == "external" and usage["estimated_cost_usd"] is None
+    )
+    purposes = sorted({str(usage["purpose"] or "unknown") for usage in rows})
+    providers = sorted({
+        f"{str(usage['provider'] or 'unknown')}:{str(usage['model'] or 'unknown')}"
+        for usage in rows
+    })
+    return {
+        "scope": scope,
+        "total_calls": total_calls,
+        "failed_calls": failed_calls,
+        "external_calls": external_calls,
+        "local_calls": local_calls,
+        "unknown_external_cost_calls": unknown_external_cost_calls,
+        "total_runtime_ms": sum(int(usage["runtime_ms"] or 0) for usage in rows),
+        "total_tokens": sum(int(usage["total_tokens"] or 0) for usage in rows),
+        "estimated_external_cost_usd": round(sum(float(usage["estimated_cost_usd"] or 0) for usage in rows), 6),
+        "purposes": purposes,
+        "providers": providers,
+    }
+
+
+def _empty_review_item_model_usage_summary() -> dict[str, Any]:
+    return {
+        "scope": "none",
+        "total_calls": 0,
+        "failed_calls": 0,
+        "external_calls": 0,
+        "local_calls": 0,
+        "unknown_external_cost_calls": 0,
+        "total_runtime_ms": 0,
+        "total_tokens": 0,
+        "estimated_external_cost_usd": 0.0,
+        "purposes": [],
+        "providers": [],
     }
 
 
