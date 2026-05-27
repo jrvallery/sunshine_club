@@ -350,15 +350,20 @@ def _retrieve_labeled_examples_node(state: DocumentPipelineState, deps: Document
         warnings = [*state.get("warnings", [])]
         if index_path:
             warnings.append("semantic_index_missing")
+        provider_name = str(
+            getattr(deps["embedding_provider"], "provider_name", "")
+            or deps["embedding_provider"].__class__.__name__.replace("EmbeddingProvider", "").lower()
+            or "embedding"
+        )
         usage_row = _model_usage_row(
             state,
             node="retrieve_labeled_examples",
             purpose="semantic_retrieval_embedding",
-            provider=str(getattr(deps["embedding_provider"], "provider_name", "") or deps["embedding_provider"].__class__.__name__.replace("EmbeddingProvider", "").lower() or "embedding"),
+            provider=provider_name,
             model=str(getattr(deps["embedding_provider"], "model", "unknown")),
             status="skipped",
             runtime_ms=0,
-            cost_basis=_cost_basis(str(getattr(deps["embedding_provider"], "provider_name", "") or "")),
+            cost_basis=_cost_basis(provider_name),
             metadata={
                 "call_count": 0,
                 "reason": "semantic_index_missing",
@@ -681,7 +686,10 @@ def _provider_model_from_engine(engine: str) -> tuple[str, str]:
 
 
 def _cost_basis(provider: str) -> str:
-    return "external" if provider.lower() in {"openai", "gemini", "google", "anthropic"} else "local"
+    normalized = provider.lower()
+    if normalized in {"placeholder", "local-placeholder"}:
+        return "placeholder"
+    return "external" if normalized in {"openai", "gemini", "google", "anthropic"} else "local"
 
 
 def _seconds_to_ms(value: Any) -> int | None:

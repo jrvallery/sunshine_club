@@ -605,8 +605,10 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
         "semantic_retrieval_embedding": 2,
         "tag_inspection": 2,
     }
-    assert summary["model_usage"]["local_call_count"] == 6
+    assert summary["model_usage"]["local_call_count"] == 2
     assert summary["model_usage"]["external_call_count"] == 0
+    assert summary["model_usage"]["placeholder_call_count"] == 4
+    assert summary["model_usage"]["by_cost_basis"] == {"local": 2, "placeholder": 4}
     assert summary["model_usage"]["unknown_cost_basis_count"] == 0
     assert summary["model_usage"]["embedding_attempted_calls"] == 2
     assert summary["model_usage"]["embedding_successful_calls"] == 0
