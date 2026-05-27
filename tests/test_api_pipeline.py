@@ -198,6 +198,7 @@ def test_api_pipeline_run_file_missing_file_returns_review_result(tmp_path: Path
 def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SUNSHINE_REVIEW_DB_PATH", str(tmp_path / "review.sqlite"))
     monkeypatch.setenv("SUNSHINE_EMBEDDING_PROVIDER", "placeholder")
+    monkeypatch.setenv("SUNSHINE_OCR_FALLBACK_PROVIDER", "disabled")
     output_dir = tmp_path / "langgraph-out"
     output_dir.mkdir()
     sample_file = tmp_path / "review.pdf"
@@ -521,6 +522,7 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert pipeline_eval.json()["report"]["total_golden_labels"] == 1
     assert pipeline_eval.json()["report"]["evaluated_predictions"] == 1
     assert pipeline_eval.json()["report"]["run_metadata"]["taxonomy_version"].endswith(".json")
+    assert pipeline_eval.json()["report"]["run_metadata"]["ocr_fallback_mode"] == "disabled"
     assert "git_commit" in pipeline_eval.json()["eval_run"]["run_metadata"]
     assert pipeline_eval.json()["eval_run"]["evaluated_predictions"] == 1
     assert (pipeline_eval_output_dir / "eval-summary.json").exists()

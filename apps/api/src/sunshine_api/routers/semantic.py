@@ -226,6 +226,7 @@ def pipeline_eval_run(request: PipelineEvalRequest) -> dict[str, Any]:
         limit=request.limit,
         llm_tag_inspector=llm_tag_inspector_from_env() if request.enable_llm_tags else LLMTagInspector(),
         ocr_executor=ocr_executor_from_env() if request.enable_ocr else None,
+        ocr_fallback_provider=request.ocr_fallback_provider,
         semantic_index_path=None if request.disable_semantic_index else (request.semantic_index_path or DEFAULT_INDEX_DB),
     )
     eval_run = review_store().record_pipeline_eval(report)

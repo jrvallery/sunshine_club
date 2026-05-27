@@ -104,6 +104,7 @@ def run_golden_pipeline_evaluation(
     embedding_provider: EmbeddingProvider | None = None,
     llm_tag_inspector: LLMTagInspector | None = None,
     ocr_executor: OcrExecutor | None = None,
+    ocr_fallback_provider: str | None = None,
     semantic_index_path: str | Path | None = DEFAULT_INDEX_DB,
     progress: bool = False,
 ) -> dict[str, Any]:
@@ -115,7 +116,7 @@ def run_golden_pipeline_evaluation(
     graph_runs_dir = output_path / "graph-runs"
     graph_runs_dir.mkdir(parents=True, exist_ok=True)
     active_embedding_provider, provider_warnings = _resolve_eval_embedding_provider(embedding_provider)
-    active_ocr_executor, ocr_warnings = _resolve_eval_ocr_executor(ocr_executor)
+    active_ocr_executor, ocr_warnings = _resolve_eval_ocr_executor(ocr_executor, fallback_provider_override=ocr_fallback_provider)
     run_metadata = _eval_run_metadata(
         labels_db=labels_db,
         output_dir=output_path,
@@ -1142,11 +1143,11 @@ def _resolve_eval_embedding_provider(provider: EmbeddingProvider | None) -> tupl
         return PlaceholderEmbeddingProvider(), [f"embedding_provider_configuration_failed:{error}"]
 
 
-def _resolve_eval_ocr_executor(executor: OcrExecutor | None) -> tuple[OcrExecutor, list[str]]:
+def _resolve_eval_ocr_executor(executor: OcrExecutor | None, *, fallback_provider_override: str | None = None) -> tuple[OcrExecutor, list[str]]:
     if executor is not None:
         return executor, []
-    requested_fallback = os.environ.get("SUNSHINE_OCR_FALLBACK_PROVIDER", "disabled").strip().lower()
-    active_executor = ocr_executor_from_env()
+    requested_fallback = (fallback_provider_override or os.environ.get("SUNSHINE_OCR_FALLBACK_PROVIDER", "disabled")).strip().lower()
+    active_executor = ocr_executor_from_env(fallback_provider_override=fallback_provider_override)
     warnings: list[str] = []
     if requested_fallback not in {"", "disabled", "none"} and _ocr_fallback_mode(active_executor) == "disabled":
         warnings.append(f"ocr_fallback_configuration_failed:{requested_fallback}")
@@ -1580,6 +1581,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--disable-semantic-index", action="store_true")
     parser.add_argument("--enable-llm-tags", action="store_true")
     parser.add_argument("--enable-ocr", action="store_true")
+    parser.add_argument("--ocr-fallback-provider", choices=["disabled", "openai", "cortex", "local", "openai-compatible"])
     parser.add_argument("--progress", action="store_true")
     return parser.parse_args()
 
@@ -1593,7 +1595,8 @@ def main() -> None:
         limit=args.limit,
         taxonomy_path=args.taxonomy_path,
         llm_tag_inspector=llm_tag_inspector_from_env() if args.enable_llm_tags else LLMTagInspector(),
-        ocr_executor=ocr_executor_from_env() if args.enable_ocr else None,
+        ocr_executor=ocr_executor_from_env(fallback_provider_override=args.ocr_fallback_provider) if args.enable_ocr else None,
+        ocr_fallback_provider=args.ocr_fallback_provider,
         semantic_index_path=None if args.disable_semantic_index else args.semantic_index_path,
         progress=args.progress,
     )

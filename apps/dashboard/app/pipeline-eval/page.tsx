@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
 import { Button } from "../../components/ui/Button";
-import { CheckboxField, TextInput } from "../../components/ui/FormControls";
+import { CheckboxField, SelectInput, TextInput } from "../../components/ui/FormControls";
 import { KeyValue } from "../../components/ui/KeyValue";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { fetchJson, postJson, queryString } from "../../lib/api";
@@ -21,6 +21,7 @@ export default function PipelineEvalPage() {
   const [disableSemanticIndex, setDisableSemanticIndex] = useState(false);
   const [enableLlmTags, setEnableLlmTags] = useState(false);
   const [enableOcr, setEnableOcr] = useState(false);
+  const [ocrFallbackProvider, setOcrFallbackProvider] = useState("disabled");
 
   const evalRuns = useQuery({
     queryKey: ["pipeline-eval-runs"],
@@ -56,7 +57,8 @@ export default function PipelineEvalPage() {
         limit: Number(limit) > 0 ? Number(limit) : undefined,
         disable_semantic_index: disableSemanticIndex,
         enable_llm_tags: enableLlmTags,
-        enable_ocr: enableOcr
+        enable_ocr: enableOcr,
+        ocr_fallback_provider: ocrFallbackProvider
       }),
     onSuccess: async (payload) => {
       setSelectedRun(payload.eval_run);
@@ -125,6 +127,11 @@ export default function PipelineEvalPage() {
           <CheckboxField label="Disable semantic index" checked={disableSemanticIndex} onChange={(event) => setDisableSemanticIndex(event.target.checked)} />
           <CheckboxField label="Enable LLM tags" checked={enableLlmTags} onChange={(event) => setEnableLlmTags(event.target.checked)} />
           <CheckboxField label="Enable OCR" checked={enableOcr} onChange={(event) => setEnableOcr(event.target.checked)} />
+          <SelectInput label="OCR fallback" value={ocrFallbackProvider} onChange={(event) => setOcrFallbackProvider(event.target.value)}>
+            <option value="disabled">Disabled</option>
+            <option value="cortex">Cortex</option>
+            <option value="openai">OpenAI</option>
+          </SelectInput>
           <Button variant="primary" disabled={runEval.isPending} onClick={() => runEval.mutate()}>
             {runEval.isPending ? "Running..." : "Run Eval"}
           </Button>

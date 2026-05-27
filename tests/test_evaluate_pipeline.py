@@ -43,9 +43,14 @@ class _TeaLLMTagInspector(LLMTagInspector):
 
 
 def test_pipeline_eval_cli_accepts_documented_golden_labels_alias(monkeypatch) -> None:
-    monkeypatch.setattr(sys, "argv", ["evaluate_pipeline", "--golden-labels", "/tmp/labels.sqlite"])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["evaluate_pipeline", "--golden-labels", "/tmp/labels.sqlite", "--ocr-fallback-provider", "cortex"],
+    )
     args = _parse_args()
     assert args.labels_db == "/tmp/labels.sqlite"
+    assert args.ocr_fallback_provider == "cortex"
 
 
 def test_eval_row_requires_uncertainty_evidence_for_medium_confidence(tmp_path: Path) -> None:
