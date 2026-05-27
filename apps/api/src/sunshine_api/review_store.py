@@ -1238,9 +1238,11 @@ class ReviewStore:
                 insert into pipeline_eval_runs (
                     eval_key, labels_db, output_dir, status, total_golden_labels, evaluated_predictions,
                     primary_accuracy, content_class_accuracy, secondary_precision, secondary_recall,
-                    ocr_quality_accuracy, review_routing_accuracy, failure_count, model_usage_json,
-                    summary_json, run_metadata_json, created_at, updated_at
-                ) values (?, ?, ?, 'succeeded', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                    ocr_quality_accuracy, ocr_acceptable_rate, review_routing_accuracy, review_false_accepts,
+                    embedding_success_rate, semantic_same_family_top5_rate, placement_destination_accuracy,
+                    source_file_mutations, acceptance_gate_status, production_readiness_status, failure_count,
+                    model_usage_json, summary_json, run_metadata_json, created_at, updated_at
+                ) values (?, ?, ?, 'succeeded', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
                 on conflict(output_dir) do update set
                     labels_db=excluded.labels_db,
                     status=excluded.status,
@@ -1251,7 +1253,15 @@ class ReviewStore:
                     secondary_precision=excluded.secondary_precision,
                     secondary_recall=excluded.secondary_recall,
                     ocr_quality_accuracy=excluded.ocr_quality_accuracy,
+                    ocr_acceptable_rate=excluded.ocr_acceptable_rate,
                     review_routing_accuracy=excluded.review_routing_accuracy,
+                    review_false_accepts=excluded.review_false_accepts,
+                    embedding_success_rate=excluded.embedding_success_rate,
+                    semantic_same_family_top5_rate=excluded.semantic_same_family_top5_rate,
+                    placement_destination_accuracy=excluded.placement_destination_accuracy,
+                    source_file_mutations=excluded.source_file_mutations,
+                    acceptance_gate_status=excluded.acceptance_gate_status,
+                    production_readiness_status=excluded.production_readiness_status,
                     failure_count=excluded.failure_count,
                     model_usage_json=excluded.model_usage_json,
                     summary_json=excluded.summary_json,
@@ -1270,7 +1280,15 @@ class ReviewStore:
                     summary.get("secondary_precision"),
                     summary.get("secondary_recall"),
                     summary.get("ocr_quality_accuracy"),
+                    summary.get("ocr_acceptable_rate"),
                     summary.get("review_routing_accuracy"),
+                    summary.get("review_false_accepts"),
+                    summary.get("embedding_success_rate"),
+                    summary.get("semantic_same_family_top5_rate"),
+                    summary.get("placement_destination_accuracy"),
+                    summary.get("source_file_mutations"),
+                    (summary.get("acceptance_gate") or {}).get("status") if isinstance(summary.get("acceptance_gate"), dict) else None,
+                    (summary.get("production_readiness") or {}).get("status") if isinstance(summary.get("production_readiness"), dict) else None,
                     summary.get("failure_count"),
                     json.dumps(summary.get("model_usage") or {}, sort_keys=True),
                     json.dumps(summary, sort_keys=True),
@@ -1286,7 +1304,9 @@ class ReviewStore:
                 """
                 select id, eval_key, labels_db, output_dir, status, total_golden_labels, evaluated_predictions,
                        primary_accuracy, content_class_accuracy, secondary_precision, secondary_recall,
-                       ocr_quality_accuracy, review_routing_accuracy, failure_count, model_usage_json,
+                       ocr_quality_accuracy, ocr_acceptable_rate, review_routing_accuracy, review_false_accepts,
+                       embedding_success_rate, semantic_same_family_top5_rate, placement_destination_accuracy,
+                       source_file_mutations, acceptance_gate_status, production_readiness_status, failure_count, model_usage_json,
                        summary_json, run_metadata_json, created_at, updated_at
                 from pipeline_eval_runs
                 order by updated_at desc, id desc
@@ -1302,7 +1322,9 @@ class ReviewStore:
                 """
                 select id, eval_key, labels_db, output_dir, status, total_golden_labels, evaluated_predictions,
                        primary_accuracy, content_class_accuracy, secondary_precision, secondary_recall,
-                       ocr_quality_accuracy, review_routing_accuracy, failure_count, model_usage_json,
+                       ocr_quality_accuracy, ocr_acceptable_rate, review_routing_accuracy, review_false_accepts,
+                       embedding_success_rate, semantic_same_family_top5_rate, placement_destination_accuracy,
+                       source_file_mutations, acceptance_gate_status, production_readiness_status, failure_count, model_usage_json,
                        summary_json, run_metadata_json, created_at, updated_at
                 from pipeline_eval_runs
                 where id = ?
@@ -1934,7 +1956,15 @@ class ReviewStore:
                     secondary_precision real,
                     secondary_recall real,
                     ocr_quality_accuracy real,
+                    ocr_acceptable_rate real,
                     review_routing_accuracy real,
+                    review_false_accepts integer,
+                    embedding_success_rate real,
+                    semantic_same_family_top5_rate real,
+                    placement_destination_accuracy real,
+                    source_file_mutations integer,
+                    acceptance_gate_status text,
+                    production_readiness_status text,
                     failure_count integer,
                     model_usage_json text not null default '{}',
                     summary_json text not null default '{}',
@@ -1975,6 +2005,14 @@ class ReviewStore:
             _ensure_column(connection, "pipeline_runs", "embedding_provider", "embedding_provider text")
             _ensure_column(connection, "pipeline_runs", "run_metadata_json", "run_metadata_json text not null default '{}'")
             _ensure_column(connection, "pipeline_eval_runs", "run_metadata_json", "run_metadata_json text not null default '{}'")
+            _ensure_column(connection, "pipeline_eval_runs", "ocr_acceptable_rate", "ocr_acceptable_rate real")
+            _ensure_column(connection, "pipeline_eval_runs", "review_false_accepts", "review_false_accepts integer")
+            _ensure_column(connection, "pipeline_eval_runs", "embedding_success_rate", "embedding_success_rate real")
+            _ensure_column(connection, "pipeline_eval_runs", "semantic_same_family_top5_rate", "semantic_same_family_top5_rate real")
+            _ensure_column(connection, "pipeline_eval_runs", "placement_destination_accuracy", "placement_destination_accuracy real")
+            _ensure_column(connection, "pipeline_eval_runs", "source_file_mutations", "source_file_mutations integer")
+            _ensure_column(connection, "pipeline_eval_runs", "acceptance_gate_status", "acceptance_gate_status text")
+            _ensure_column(connection, "pipeline_eval_runs", "production_readiness_status", "production_readiness_status text")
             _ensure_column(connection, "golden_labels", "content_class", "content_class text")
             _ensure_column(connection, "golden_labels", "ocr_quality_label", "ocr_quality_label text")
             _ensure_column(connection, "golden_labels", "expected_review_required", "expected_review_required integer")
@@ -2947,7 +2985,15 @@ def _pipeline_eval_run_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "secondary_precision": row["secondary_precision"],
         "secondary_recall": row["secondary_recall"],
         "ocr_quality_accuracy": row["ocr_quality_accuracy"],
+        "ocr_acceptable_rate": row["ocr_acceptable_rate"],
         "review_routing_accuracy": row["review_routing_accuracy"],
+        "review_false_accepts": row["review_false_accepts"],
+        "embedding_success_rate": row["embedding_success_rate"],
+        "semantic_same_family_top5_rate": row["semantic_same_family_top5_rate"],
+        "placement_destination_accuracy": row["placement_destination_accuracy"],
+        "source_file_mutations": row["source_file_mutations"],
+        "acceptance_gate_status": row["acceptance_gate_status"],
+        "production_readiness_status": row["production_readiness_status"],
         "failure_count": row["failure_count"],
         "model_usage": _json_object(row["model_usage_json"]),
         "summary": _json_object(row["summary_json"]),

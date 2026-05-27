@@ -429,6 +429,13 @@ export type PipelineEvalRun = {
   ocr_quality_accuracy?: number | null;
   ocr_acceptable_rate?: number | null;
   review_routing_accuracy?: number | null;
+  review_false_accepts?: number | null;
+  embedding_success_rate?: number | null;
+  semantic_same_family_top5_rate?: number | null;
+  placement_destination_accuracy?: number | null;
+  source_file_mutations?: number | null;
+  acceptance_gate_status?: string | null;
+  production_readiness_status?: string | null;
   failure_count?: number | null;
   model_usage: Record<string, unknown>;
   summary: PipelineEvalSummary;

@@ -167,7 +167,15 @@ def test_review_store_imports_langgraph_results_and_records_decision(tmp_path: P
             "secondary_precision": 1.0,
             "secondary_recall": 1.0,
             "ocr_quality_accuracy": 1.0,
+            "ocr_acceptable_rate": 1.0,
             "review_routing_accuracy": 1.0,
+            "review_false_accepts": 0,
+            "embedding_success_rate": 1.0,
+            "semantic_same_family_top5_rate": 1.0,
+            "placement_destination_accuracy": 1.0,
+            "source_file_mutations": 0,
+            "acceptance_gate": {"status": "pass"},
+            "production_readiness": {"status": "ready_for_larger_batch"},
             "failure_count": 0,
             "model_usage": {"total_model_usage_rows": 3},
         }
@@ -256,6 +264,14 @@ def test_review_store_imports_langgraph_results_and_records_decision(tmp_path: P
     assert golden_summary["primary_coverage_rate"] is not None
     assert eval_record["evaluated_predictions"] == 1
     assert eval_record["primary_accuracy"] == 1.0
+    assert eval_record["ocr_acceptable_rate"] == 1.0
+    assert eval_record["embedding_success_rate"] == 1.0
+    assert eval_record["semantic_same_family_top5_rate"] == 1.0
+    assert eval_record["placement_destination_accuracy"] == 1.0
+    assert eval_record["review_false_accepts"] == 0
+    assert eval_record["source_file_mutations"] == 0
+    assert eval_record["acceptance_gate_status"] == "pass"
+    assert eval_record["production_readiness_status"] == "ready_for_larger_batch"
     assert eval_record["model_usage"]["total_model_usage_rows"] == 3
     assert eval_runs[0]["id"] == eval_record["id"]
     assert store.file_path_for_review_item(review_item["id"]) == sample_file
