@@ -113,6 +113,10 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert summary["primary_accuracy"] == 0.5
     assert summary["content_class_accuracy"] == 1.0
     assert summary["ocr_quality_accuracy"] == 1.0
+    assert summary["ocr_fallback_rate"] == 0.0
+    assert summary["review_routing_precision"] == 0.5
+    assert summary["review_routing_recall"] == 1.0
+    assert summary["review_false_accepts"] == 0
     assert summary["placement_destination_accuracy"] == 0.5
     assert summary["privacy_accuracy"] == 0.5
     assert summary["secondary_precision"] == 0.5
@@ -164,6 +168,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     model_usage = [json.loads(line) for line in (output_dir / "eval-model-usage.jsonl").read_text(encoding="utf-8").splitlines()]
 
     assert sorted(row["primary_correct"] for row in results) == [False, True]
+    assert {row["ocr_fallback_used"] for row in results} == {False}
     assert failures[0]["correct_primary_tag"] == "history_archive_general"
     assert {row["golden_label_id"] for row in model_usage} == {1, 2}
     assert (output_dir / "graph-runs" / "00001" / "graph-result.json").exists()

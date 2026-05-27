@@ -413,6 +413,10 @@ export type PipelineEvalSummary = {
   secondary_recall?: number | null;
   ocr_quality_accuracy?: number | null;
   review_routing_accuracy?: number | null;
+  review_routing_precision?: number | null;
+  review_routing_recall?: number | null;
+  review_false_accepts?: number;
+  ocr_fallback_rate?: number | null;
   placement_destination_accuracy?: number | null;
   placement_year_accuracy?: number | null;
   privacy_accuracy?: number | null;

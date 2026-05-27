@@ -57,6 +57,7 @@ export default function PipelineEvalPage() {
       ["Primary", summary?.primary_accuracy],
       ["Content class", summary?.content_class_accuracy],
       ["OCR quality", summary?.ocr_quality_accuracy],
+      ["OCR fallback", summary?.ocr_fallback_rate],
       ["Embedding success", summary?.embedding_success_rate],
       ["Semantic top 5", summary?.semantic_same_family_top5_rate],
       ["High-risk min", summary?.high_risk_primary_accuracy_min],
@@ -169,6 +170,13 @@ export default function PipelineEvalPage() {
                 <KeyValue key={check.name} label={check.name} value={`${check.status} ${formatPercent(check.value)} ${check.operator} ${formatPercent(check.threshold)}`} />
               ))}
               <KeyValue label="Source mutations" value={String(summary?.source_file_mutations ?? 0)} />
+            </section>
+            <section>
+              <h3>Review Routing</h3>
+              <KeyValue label="Accuracy" value={formatPercent(summary?.review_routing_accuracy)} />
+              <KeyValue label="Precision" value={formatPercent(summary?.review_routing_precision)} />
+              <KeyValue label="Recall" value={formatPercent(summary?.review_routing_recall)} />
+              <KeyValue label="False accepts" value={String(summary?.review_false_accepts ?? 0)} />
             </section>
             <section>
               <h3>Failure Reasons</h3>

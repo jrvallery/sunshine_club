@@ -231,6 +231,7 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
     review_routing_correct = None
     if label.expected_review_required is not None:
         review_routing_correct = review_required == label.expected_review_required
+    ocr_fallback_used = _has_warning_prefix(final_result.get("warnings", []), "ocr_fallback_used:")
     placement_destination_correct = None
     if label.correct_destination_path:
         placement_destination_correct = final_result.get("destination_path") == label.correct_destination_path
@@ -284,6 +285,7 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
         "expected_review_required": label.expected_review_required,
         "predicted_review_required": review_required,
         "review_routing_correct": review_routing_correct,
+        "ocr_fallback_used": ocr_fallback_used,
         "expected_destination_path": label.correct_destination_path,
         "predicted_destination_path": final_result.get("destination_path"),
         "placement_destination_correct": placement_destination_correct,
@@ -336,6 +338,10 @@ def _summary(
         "secondary_recall": _safe_divide(totals["secondary_true_positive"], totals["secondary_true_positive"] + totals["secondary_false_negative"]),
         "ocr_quality_accuracy": _safe_divide(totals["ocr_quality_correct"], totals["ocr_quality_labeled"]),
         "review_routing_accuracy": _safe_divide(totals["review_routing_correct"], totals["review_routing_labeled"]),
+        "review_routing_precision": _safe_divide(totals["review_true_positive"], totals["review_true_positive"] + totals["review_false_positive"]),
+        "review_routing_recall": _safe_divide(totals["review_true_positive"], totals["review_true_positive"] + totals["review_false_negative"]),
+        "review_false_accepts": totals["review_false_negative"],
+        "ocr_fallback_rate": _safe_divide(totals["ocr_fallback_used"], total),
         "placement_destination_accuracy": _safe_divide(totals["placement_destination_correct"], totals["placement_destination_labeled"]),
         "placement_year_accuracy": _safe_divide(totals["placement_year_correct"], totals["placement_year_labeled"]),
         "privacy_accuracy": _safe_divide(totals["privacy_correct"], totals["privacy_labeled"]),
@@ -439,6 +445,16 @@ def _update_totals(totals: Counter, row: dict[str, Any], label: GoldenEvalLabel)
         totals["review_routing_labeled"] += 1
         if row["review_routing_correct"]:
             totals["review_routing_correct"] += 1
+        if row["expected_review_required"] and row["predicted_review_required"]:
+            totals["review_true_positive"] += 1
+        elif not row["expected_review_required"] and row["predicted_review_required"]:
+            totals["review_false_positive"] += 1
+        elif row["expected_review_required"] and not row["predicted_review_required"]:
+            totals["review_false_negative"] += 1
+        elif not row["expected_review_required"] and not row["predicted_review_required"]:
+            totals["review_true_negative"] += 1
+    if row.get("ocr_fallback_used"):
+        totals["ocr_fallback_used"] += 1
     if row["placement_destination_correct"] is not None:
         totals["placement_destination_labeled"] += 1
         if row["placement_destination_correct"]:
@@ -716,6 +732,10 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value if str(item).strip()]
+
+
+def _has_warning_prefix(warnings: Any, prefix: str) -> bool:
+    return any(warning.startswith(prefix) for warning in _string_list(warnings))
 
 
 def _semantic_examples(value: Any) -> list[dict[str, Any]]:
