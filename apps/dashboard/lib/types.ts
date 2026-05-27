@@ -419,9 +419,12 @@ export type PipelineEvalSummary = {
   sensitive_false_accepts?: number;
   embedding_success_rate?: number | null;
   semantic_same_family_top5_rate?: number | null;
+  high_risk_primary_accuracy_min?: number | null;
   failure_count?: number;
   review_required_count?: number;
   route_candidate_count?: number;
+  primary_tag_metrics?: Record<string, { total: number; correct: number; accuracy: number | null; review_required: number; review_required_rate: number | null }>;
+  high_risk_primary_tag_metrics?: Record<string, { total: number; correct: number; accuracy: number | null; review_required: number; review_required_rate: number | null }>;
   by_failure_reason?: Record<string, number>;
   model_usage?: Record<string, unknown>;
   acceptance_gate?: {

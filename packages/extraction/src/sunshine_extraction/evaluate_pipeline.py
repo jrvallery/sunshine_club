@@ -28,11 +28,22 @@ DEFAULT_EVAL_OUTPUT_DIR = ".local/pipeline-eval"
 DEFAULT_ACCEPTANCE_THRESHOLDS = {
     "content_class_accuracy": 0.95,
     "primary_accuracy": 0.88,
+    "high_risk_primary_accuracy": 0.80,
     "ocr_quality_accuracy": 0.90,
     "placement_destination_accuracy": 0.90,
     "privacy_accuracy": 1.0,
     "external_model_usage_tracked": 1.0,
     "sensitive_false_accepts": 0,
+}
+HIGH_RISK_PRIMARY_TAGS = {
+    "meeting_records",
+    "finance_treasurer_records",
+    "donations_receipts_fundraising",
+    "membership_rosters_yearbooks",
+    "dental_program",
+    "senior_smiles",
+    "scholarships",
+    "legal_insurance_compliance",
 }
 
 
@@ -310,6 +321,13 @@ def _summary(
 ) -> dict[str, Any]:
     total = len(evaluated)
     model_usage = _model_usage_summary(model_usage_rows)
+    primary_tag_metrics = _primary_tag_metrics(evaluated)
+    high_risk_metrics = {
+        tag: metric
+        for tag, metric in primary_tag_metrics.items()
+        if tag in HIGH_RISK_PRIMARY_TAGS
+    }
+    high_risk_min_accuracy = min((metric["accuracy"] for metric in high_risk_metrics.values()), default=None)
     metrics = {
         "primary_accuracy": _safe_divide(totals["primary_correct"], total),
         "content_class_accuracy": _safe_divide(totals["content_class_correct"], totals["content_class_labeled"]),
@@ -326,6 +344,7 @@ def _summary(
             model_usage.get("embedding_attempted_calls", 0),
         ),
         "semantic_same_family_top5_rate": _safe_divide(totals["semantic_same_family_top5"], total),
+        "high_risk_primary_accuracy_min": high_risk_min_accuracy,
     }
     return {
         "labels_db": str(labels_db),
@@ -338,6 +357,8 @@ def _summary(
         "review_required_count": totals["review_required"],
         "route_candidate_count": totals["route_candidate"],
         "confusion": confusion,
+        "primary_tag_metrics": primary_tag_metrics,
+        "high_risk_primary_tag_metrics": high_risk_metrics,
         "by_route_status": dict(sorted(counters["by_route_status"].items())),
         "by_quality": dict(sorted(counters["by_quality"].items())),
         "by_embedding_status": dict(sorted(counters["by_embedding_status"].items())),
@@ -359,6 +380,7 @@ def _acceptance_gate(metrics: dict[str, Any], model_usage: dict[str, Any]) -> di
     checks = [
         _minimum_check("content_class_accuracy", metrics.get("content_class_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["content_class_accuracy"]),
         _minimum_check("primary_accuracy", metrics.get("primary_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["primary_accuracy"]),
+        _minimum_check("high_risk_primary_accuracy", metrics.get("high_risk_primary_accuracy_min"), DEFAULT_ACCEPTANCE_THRESHOLDS["high_risk_primary_accuracy"]),
         _minimum_check("ocr_quality_accuracy", metrics.get("ocr_quality_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["ocr_quality_accuracy"]),
         _minimum_check("placement_destination_accuracy", metrics.get("placement_destination_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["placement_destination_accuracy"]),
         _minimum_check("privacy_accuracy", metrics.get("privacy_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["privacy_accuracy"]),
@@ -434,6 +456,28 @@ def _update_totals(totals: Counter, row: dict[str, Any], label: GoldenEvalLabel)
         totals["semantic_same_family_top5"] += 1
     if label.sensitive_record and not row["predicted_review_required"] and not row["primary_correct"]:
         totals["sensitive_false_accepts"] += 1
+
+
+def _primary_tag_metrics(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    by_tag: dict[str, Counter[str]] = {}
+    for row in rows:
+        tag = str(row.get("correct_primary_tag") or "unknown")
+        by_tag.setdefault(tag, Counter())
+        by_tag[tag]["total"] += 1
+        if row.get("primary_correct"):
+            by_tag[tag]["correct"] += 1
+        if row.get("predicted_review_required"):
+            by_tag[tag]["review_required"] += 1
+    return {
+        tag: {
+            "total": int(counts["total"]),
+            "correct": int(counts["correct"]),
+            "accuracy": _safe_divide(counts["correct"], counts["total"]),
+            "review_required": int(counts["review_required"]),
+            "review_required_rate": _safe_divide(counts["review_required"], counts["total"]),
+        }
+        for tag, counts in sorted(by_tag.items())
+    }
 
 
 def _update_eval_counters(counters: dict[str, Counter[str]], final_result: dict[str, Any]) -> None:

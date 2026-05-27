@@ -59,6 +59,7 @@ export default function PipelineEvalPage() {
       ["OCR quality", summary?.ocr_quality_accuracy],
       ["Embedding success", summary?.embedding_success_rate],
       ["Semantic top 5", summary?.semantic_same_family_top5_rate],
+      ["High-risk min", summary?.high_risk_primary_accuracy_min],
       ["Placement", summary?.placement_destination_accuracy],
       ["Privacy", summary?.privacy_accuracy],
       ["Review route", summary?.review_routing_accuracy]
@@ -190,6 +191,13 @@ export default function PipelineEvalPage() {
               <h3>Retrieval</h3>
               <KeyValue label="Same-family top 5" value={formatPercent(summary?.semantic_same_family_top5_rate)} />
               <KeyValue label="Embedding success" value={formatPercent(summary?.embedding_success_rate)} />
+            </section>
+            <section>
+              <h3>Category Reliability</h3>
+              <KeyValue label="High-risk min" value={formatPercent(summary?.high_risk_primary_accuracy_min)} />
+              {Object.entries(summary?.high_risk_primary_tag_metrics ?? {}).map(([tag, metric]) => (
+                <KeyValue key={tag} label={tag} value={`${formatPercent(metric.accuracy)} (${metric.correct}/${metric.total})`} />
+              ))}
             </section>
           </div>
           <div className="buttonRow">

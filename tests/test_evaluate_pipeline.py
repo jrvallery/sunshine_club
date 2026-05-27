@@ -120,9 +120,13 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert summary["failure_count"] == 2
     assert summary["embedding_success_rate"] == 0.0
     assert summary["semantic_same_family_top5_rate"] == 0.0
+    assert summary["high_risk_primary_accuracy_min"] is None
+    assert summary["primary_tag_metrics"]["annual_spring_tea"]["accuracy"] == 1.0
+    assert summary["primary_tag_metrics"]["history_archive_general"]["accuracy"] == 0.0
     assert summary["acceptance_gate"]["status"] == "fail"
     assert {check["name"] for check in summary["acceptance_gate"]["blocking_checks"]} == {
         "embedding_placeholder_calls",
+        "high_risk_primary_accuracy",
         "primary_accuracy",
         "placement_destination_accuracy",
         "privacy_accuracy",
