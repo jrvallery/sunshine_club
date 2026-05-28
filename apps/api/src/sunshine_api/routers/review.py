@@ -14,7 +14,12 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 
 from sunshine_api.dependencies import review_store
-from sunshine_api.services.imports import get_postgres_review_item, list_postgres_review_items, record_postgres_review_decision
+from sunshine_api.services.imports import (
+    get_postgres_review_item,
+    list_postgres_review_items,
+    postgres_review_summary,
+    record_postgres_review_decision,
+)
 from sunshine_api.schemas import (
     DocumentPipelineRunRequest,
     DocumentPipelineRunResponse,
@@ -34,7 +39,14 @@ router = APIRouter()
 
 
 @router.get("/admin/review/summary")
-def review_summary() -> dict[str, Any]:
+def review_summary(source: str = "sqlite") -> dict[str, Any]:
+    if source == "postgres":
+        try:
+            return postgres_review_summary()
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+    if source != "sqlite":
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
     return review_store().summary()
 
 

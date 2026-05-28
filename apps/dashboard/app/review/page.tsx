@@ -158,8 +158,8 @@ export default function ReviewPage() {
   const reviewPath = `/api/admin/review/items${queryString({ ...filters, limit: 200 })}`;
   const facetsPath = `/api/admin/review/facets${queryString(filters)}`;
   const summary = useQuery({
-    queryKey: ["review-summary"],
-    queryFn: () => fetchJson<ReviewSummary>("/api/admin/review/summary")
+    queryKey: ["review-summary", filters.source],
+    queryFn: () => fetchJson<ReviewSummary>(`/api/admin/review/summary${queryString({ source: filters.source })}`)
   });
   const items = useQuery({
     queryKey: ["review-items", filters],

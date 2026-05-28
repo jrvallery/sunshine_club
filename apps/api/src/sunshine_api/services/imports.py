@@ -74,6 +74,15 @@ def postgres_runtime_summary(
     return store.runtime_summary()
 
 
+def postgres_review_summary(
+    *,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> dict[str, Any]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.review_summary()
+
+
 def list_postgres_pipeline_runs(
     *,
     limit: int = 100,
@@ -158,5 +167,6 @@ __all__ = [
     "list_postgres_pipeline_runs",
     "list_postgres_review_items",
     "postgres_runtime_summary",
+    "postgres_review_summary",
     "record_postgres_review_decision",
 ]

@@ -346,6 +346,32 @@ def test_review_items_can_read_postgres_v2_source(monkeypatch) -> None:
     assert facets.json()["review_status"]["accepted"] == 1
 
 
+def test_review_summary_can_read_postgres_v2_source(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "sunshine_api.routers.review.postgres_review_summary",
+        lambda: {
+            "db_path": "postgresql://local/test",
+            "source": "postgres",
+            "total_results": 4,
+            "total_review_items": 3,
+            "total_golden_labels": 0,
+            "review_by_status": {"open": 1, "accepted": 1, "changed": 1, "resolved": 2},
+            "results_by_route_status": {"route_candidate": 2, "review_required": 2},
+            "results_by_quality": {"ok": 3, "poor": 1},
+            "results_by_primary_tag": {"scrapbooks": 2},
+            "results_by_secondary_tag": {},
+        },
+    )
+
+    response = TestClient(app).get("/admin/review/summary", params={"source": "postgres"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "postgres"
+    assert payload["total_review_items"] == 3
+    assert payload["review_by_status"]["resolved"] == 2
+
+
 def test_review_decision_can_write_postgres_v2_source(monkeypatch) -> None:
     captured = {}
 

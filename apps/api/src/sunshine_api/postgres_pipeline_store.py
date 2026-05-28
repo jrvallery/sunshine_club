@@ -77,6 +77,37 @@ class PostgresPipelineStore:
         finally:
             connection.close()
 
+    def review_summary(self) -> dict[str, Any]:
+        connection = self._connect_factory(self.database_url)
+        try:
+            by_status = _postgres_count_rows(
+                connection,
+                "select coalesce(status, 'open') as key, count(*) as count from review_items_v2 group by coalesce(status, 'open')",
+            )
+            return {
+                "db_path": str(self.database_url),
+                "source": "postgres",
+                "total_results": _scalar_count(connection, "select count(*) from pipeline_results"),
+                "total_review_items": _scalar_count(connection, "select count(*) from review_items_v2"),
+                "total_golden_labels": 0,
+                "review_by_status": {**by_status, "resolved": sum(count for status, count in by_status.items() if status != "open")},
+                "results_by_route_status": _postgres_count_rows(
+                    connection,
+                    "select coalesce(route_status, 'unknown') as key, count(*) as count from pipeline_results group by coalesce(route_status, 'unknown')",
+                ),
+                "results_by_quality": _postgres_count_rows(
+                    connection,
+                    "select coalesce(quality, 'unknown') as key, count(*) as count from pipeline_results group by coalesce(quality, 'unknown')",
+                ),
+                "results_by_primary_tag": _postgres_count_rows(
+                    connection,
+                    "select coalesce(top_tag_candidate, 'none') as key, count(*) as count from pipeline_results group by coalesce(top_tag_candidate, 'none')",
+                ),
+                "results_by_secondary_tag": {},
+            }
+        finally:
+            connection.close()
+
     def list_pipeline_runs(self, *, limit: int = 100) -> list[dict[str, Any]]:
         connection = self._connect_factory(self.database_url)
         try:
@@ -855,6 +886,23 @@ def _scalar_count(connection: PostgresConnection, query: str) -> int:
         values = [row[key] for key in row.keys()]
         return int(values[0] or 0) if values else 0
     return int(row or 0)
+
+
+def _postgres_count_rows(connection: PostgresConnection, query: str) -> dict[str, int]:
+    rows = connection.execute(query).fetchall()
+    counts: dict[str, int] = {}
+    for row in rows:
+        if isinstance(row, dict):
+            key = row.get("key")
+            count = row.get("count")
+        elif isinstance(row, tuple):
+            key, count = row
+        else:
+            row_dict = _row_to_dict(row)
+            key = row_dict.get("key")
+            count = row_dict.get("count")
+        counts[str(key or "unknown")] = _int_value(count)
+    return dict(sorted(counts.items()))
 
 
 def _row_to_dict(row: Any) -> dict[str, Any]:

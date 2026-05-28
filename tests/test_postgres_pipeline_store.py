@@ -637,6 +637,48 @@ def test_postgres_pipeline_store_gets_review_item() -> None:
     assert connection.closed is True
 
 
+def test_postgres_pipeline_store_reports_review_summary() -> None:
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.closed = False
+            self.executed: list[tuple[str, tuple[Any, ...]]] = []
+
+        def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
+            self.executed.append((query, params))
+            normalized = " ".join(query.lower().split())
+            if "count(*)" in normalized and "group by" not in normalized:
+                if "from pipeline_results" in normalized:
+                    return _Cursor({"count": 4})
+                if "from review_items_v2" in normalized:
+                    return _Cursor({"count": 3})
+            if "from review_items_v2" in normalized and "group by" in normalized:
+                return _Cursor(rows=[{"key": "open", "count": 1}, {"key": "accepted", "count": 1}, {"key": "changed", "count": 1}])
+            if "route_status" in normalized:
+                return _Cursor(rows=[{"key": "route_candidate", "count": 2}, {"key": "review_required", "count": 2}])
+            if "quality" in normalized:
+                return _Cursor(rows=[{"key": "ok", "count": 3}, {"key": "poor", "count": 1}])
+            if "top_tag_candidate" in normalized:
+                return _Cursor(rows=[{"key": "scrapbooks", "count": 2}, {"key": "meeting_records", "count": 2}])
+            return _Cursor()
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+    store = PostgresPipelineStore("postgresql://local/test", connect_factory=lambda _url: connection)
+
+    summary = store.review_summary()
+
+    assert summary["source"] == "postgres"
+    assert summary["total_results"] == 4
+    assert summary["total_review_items"] == 3
+    assert summary["total_golden_labels"] == 0
+    assert summary["review_by_status"]["open"] == 1
+    assert summary["review_by_status"]["resolved"] == 2
+    assert summary["results_by_primary_tag"]["scrapbooks"] == 2
+    assert connection.closed is True
+
+
 def test_rebuild_qdrant_from_postgres_replays_semantic_embeddings() -> None:
     class FakeConnection:
         def __init__(self) -> None:
