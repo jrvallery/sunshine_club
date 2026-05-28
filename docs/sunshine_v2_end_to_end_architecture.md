@@ -1262,6 +1262,7 @@ Current implementation:
 - Chunking now writes `sample-chunking-results.jsonl`, so future provider swaps can be audited separately from final chunk rows.
 - `services/artifacts/writers.py` owns normalized sample input, extraction result, and pipeline result row construction; `services/artifacts/manifest.py` exposes manifest generation through the V2 package path.
 - `PostgresPipelineStore` imports run-owned chunks and chunk embeddings from graph artifacts into the Postgres V2 runtime schema.
+- `PostgresPipelineStore` exposes read-only runtime summary and recent-run listing methods so dashboard/API migration can inspect V2 Postgres state without using SQLite.
 
 ### 24. `import_run_results`
 
@@ -1295,6 +1296,7 @@ Current implementation:
 - An opt-in SQLite review-store importer can be enabled through `SUNSHINE_GRAPH_IMPORT_RESULTS=sqlite` or injected graph deps.
 - Run reports expose import status rows, while the existing dashboard runner can continue importing completed subprocess output with its known dashboard run ID.
 - `apps/api/src/sunshine_api/services/imports.py` exposes the Postgres artifact import service facade so API routes can call a service boundary instead of the raw store class.
+- `GET /admin/system/postgres-runtime` returns Postgres runtime counts and recent imported runs for dashboard readiness checks.
 - `config/defaults.py` owns shared default paths/provider constants and `config/__init__.py` preserves the existing `sunshine_extraction.config` import API.
 - `config/models.py` and `config/provider_registry.py` define provider capabilities, local-only/hosted policy flags, package hints, and validation that blocks enabled hosted providers and checks required capability coverage.
 - The local-infrastructure API exposes provider-registry validation and provider rows so the dashboard can show local-only readiness from one endpoint.
@@ -1518,7 +1520,7 @@ Python/package dependencies from `pyproject.toml`:
 - FastAPI: API server.
 - Uvicorn: ASGI runtime.
 - Pydantic: schemas/config validation.
-- psycopg: Postgres client. Postgres server still needs to be provisioned.
+- psycopg: Postgres client. The local Postgres/pgvector service is provisioned in `compose.yaml`.
 - Temporal SDK: future durable workflow orchestration.
 - LangGraph: deterministic graph runtime.
 - LangGraph SQLite checkpoint: current checkpoint option, not V2 production DB.
@@ -1552,7 +1554,7 @@ Important missing V2 dependencies:
 - Docling is declared as an optional Python extra and has a local provider boundary; the actual local dependency install/runtime benchmark still needs to be performed.
 - MinerU, RAGFlow DeepDoc, and Unstructured have local provider boundaries for benchmarking, but are not declared as installed dependencies yet.
 - Qdrant client, Compose service, readiness metadata, and a Settings-page provider health/provisioning surface exist for inspecting local infrastructure and triggering Qdrant rebuilds.
-- Postgres client and Compose service exist; V2 migrations now include run/results/model/provider/segment/chunk/embedding tables, but dashboard runtime still needs to move from SQLite to Postgres as the authoritative store.
+- Postgres client and Compose service exist; V2 migrations now include run/results/model/provider/segment/chunk/embedding tables, and the API exposes a read-only Postgres runtime summary/listing surface. Dashboard runtime still needs to move from SQLite to Postgres as the authoritative store.
 - Local embedding/vector indexing stack is wired through providers, optional Qdrant indexing, and a Postgres-to-Qdrant rebuild service; production still needs a reviewed canonical collection policy.
 - Provider benchmark tooling exists for extraction providers and emits promotion recommendations; dashboard benchmark review and real Docling/MinerU/RAGFlow dependency benchmarking still need to be finished.
 - The provider benchmark API returns summary, result rows, and promotion recommendations from benchmark artifacts so the dashboard can present provider-comparison decisions without re-deriving them client-side.

@@ -20,4 +20,23 @@ def import_langgraph_output_to_postgres(
     return store.import_langgraph_output(output_dir, run_key=run_key, preset_key=preset_key)
 
 
-__all__ = ["import_langgraph_output_to_postgres"]
+def postgres_runtime_summary(
+    *,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> dict[str, Any]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.runtime_summary()
+
+
+def list_postgres_pipeline_runs(
+    *,
+    limit: int = 100,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> list[dict[str, Any]]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.list_pipeline_runs(limit=limit)
+
+
+__all__ = ["import_langgraph_output_to_postgres", "list_postgres_pipeline_runs", "postgres_runtime_summary"]

@@ -56,6 +56,65 @@ class PostgresPipelineStore:
             connection.close()
         return {"run_id": run_id, "run_key": run_key, "output_dir": str(output_path), "imported": counts}
 
+    def runtime_summary(self) -> dict[str, Any]:
+        """Return V2 runtime counts from Postgres for dashboard readiness checks."""
+
+        connection = self._connect_factory(self.database_url)
+        try:
+            return {
+                "pipeline_runs": _scalar_count(connection, "select count(*) from pipeline_runs"),
+                "pipeline_results": _scalar_count(connection, "select count(*) from pipeline_results"),
+                "review_items": _scalar_count(connection, "select count(*) from review_items_v2"),
+                "model_usage": _scalar_count(connection, "select count(*) from model_usage"),
+                "provider_attempts": _scalar_count(connection, "select count(*) from provider_attempts"),
+                "document_segments": _scalar_count(connection, "select count(*) from document_segments"),
+                "pipeline_chunks": _scalar_count(connection, "select count(*) from pipeline_chunks"),
+                "pipeline_chunk_embeddings": _scalar_count(connection, "select count(*) from pipeline_chunk_embeddings"),
+                "recent_runs": self._list_pipeline_runs(connection, limit=5),
+            }
+        finally:
+            connection.close()
+
+    def list_pipeline_runs(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        connection = self._connect_factory(self.database_url)
+        try:
+            return self._list_pipeline_runs(connection, limit=limit)
+        finally:
+            connection.close()
+
+    def _list_pipeline_runs(self, connection: PostgresConnection, *, limit: int) -> list[dict[str, Any]]:
+        rows = connection.execute(
+            """
+            select
+                r.id,
+                r.run_key,
+                r.preset_key,
+                r.output_dir,
+                r.status,
+                r.local_only,
+                r.embedding_provider,
+                r.llm_provider,
+                r.extraction_provider,
+                r.vector_store_provider,
+                r.vector_store_collection,
+                r.started_at,
+                r.finished_at,
+                r.created_at,
+                r.updated_at,
+                r.summary,
+                (select count(*) from pipeline_results pr where pr.run_id = r.id) as result_count,
+                (select count(*) from pipeline_results pr where pr.run_id = r.id and pr.route_status <> 'route_candidate') as review_required_count,
+                (select count(*) from model_usage mu where mu.run_id = r.id) as model_usage_count,
+                (select count(*) from provider_attempts pa where pa.run_id = r.id) as provider_attempt_count,
+                (select count(*) from document_segments ds where ds.run_id = r.id) as document_segment_count
+            from pipeline_runs r
+            order by r.created_at desc
+            limit %s
+            """,
+            (max(1, min(int(limit), 500)),),
+        ).fetchall()
+        return [_json_safe_row(_row_to_dict(row)) for row in rows]
+
     def _upsert_run(self, connection: PostgresConnection, *, run_key: str, preset_key: str | None, output_dir: Path) -> str:
         row = connection.execute(
             """
@@ -245,8 +304,9 @@ class PostgresPipelineStore:
 
 def _connect_with_psycopg(database_url: str) -> PostgresConnection:
     import psycopg
+    from psycopg.rows import dict_row
 
-    return psycopg.connect(database_url)
+    return psycopg.connect(database_url, row_factory=dict_row)
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -258,6 +318,38 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
             if line.strip():
                 rows.append(json.loads(line))
     return rows
+
+
+def _scalar_count(connection: PostgresConnection, query: str) -> int:
+    row = connection.execute(query).fetchone()
+    if row is None:
+        return 0
+    if isinstance(row, dict):
+        return int(next(iter(row.values())) or 0)
+    if isinstance(row, tuple):
+        return int(row[0] or 0)
+    if hasattr(row, "keys"):
+        values = [row[key] for key in row.keys()]
+        return int(values[0] or 0) if values else 0
+    return int(row or 0)
+
+
+def _row_to_dict(row: Any) -> dict[str, Any]:
+    if isinstance(row, dict):
+        return row
+    if hasattr(row, "keys"):
+        return {key: row[key] for key in row.keys()}
+    raise TypeError(f"Unsupported Postgres row type: {type(row).__name__}")
+
+
+def _json_safe_row(row: dict[str, Any]) -> dict[str, Any]:
+    safe: dict[str, Any] = {}
+    for key, value in row.items():
+        if hasattr(value, "isoformat"):
+            safe[key] = value.isoformat()
+        else:
+            safe[key] = value
+    return safe
 
 
 def _call_count(row: dict[str, Any]) -> int:

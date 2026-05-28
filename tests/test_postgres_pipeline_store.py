@@ -91,6 +91,75 @@ def test_postgres_import_service_wraps_store(tmp_path: Path) -> None:
     assert connection.committed is True
 
 
+def test_postgres_pipeline_store_reports_runtime_summary() -> None:
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.closed = False
+            self.executed: list[tuple[str, tuple[Any, ...]]] = []
+
+        def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
+            self.executed.append((query, params))
+            normalized = " ".join(query.lower().split())
+            if normalized.startswith("select count(*)"):
+                table_counts = {
+                    "pipeline_runs": 2,
+                    "pipeline_results": 7,
+                    "review_items_v2": 1,
+                    "model_usage": 3,
+                    "provider_attempts": 4,
+                    "document_segments": 5,
+                    "pipeline_chunks": 6,
+                    "pipeline_chunk_embeddings": 6,
+                }
+                for table, count in table_counts.items():
+                    if f"from {table}" in normalized:
+                        return _Cursor((count,))
+            if "from pipeline_runs r" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "run-id",
+                            "run_key": "run-1",
+                            "preset_key": "qa",
+                            "output_dir": "/tmp/run",
+                            "status": "succeeded",
+                            "local_only": True,
+                            "embedding_provider": "cortex",
+                            "llm_provider": "cortex",
+                            "extraction_provider": "docling",
+                            "vector_store_provider": "qdrant",
+                            "vector_store_collection": "sunshine_chunks",
+                            "started_at": None,
+                            "finished_at": None,
+                            "created_at": None,
+                            "updated_at": None,
+                            "summary": {"ok": True},
+                            "result_count": 7,
+                            "review_required_count": 1,
+                            "model_usage_count": 3,
+                            "provider_attempt_count": 4,
+                            "document_segment_count": 5,
+                        }
+                    ]
+                )
+            return _Cursor()
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+    store = PostgresPipelineStore("postgresql://local/test", connect_factory=lambda _url: connection)
+
+    summary = store.runtime_summary()
+
+    assert summary["pipeline_runs"] == 2
+    assert summary["pipeline_results"] == 7
+    assert summary["pipeline_chunk_embeddings"] == 6
+    assert summary["recent_runs"][0]["run_key"] == "run-1"
+    assert summary["recent_runs"][0]["result_count"] == 7
+    assert connection.closed is True
+
+
 def test_rebuild_qdrant_from_postgres_replays_semantic_embeddings() -> None:
     class FakeConnection:
         def __init__(self) -> None:
