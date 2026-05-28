@@ -1561,6 +1561,7 @@ Important missing V2 dependencies:
 - Local embedding/vector indexing stack is wired through providers, optional Qdrant indexing, and a Postgres-to-Qdrant rebuild service; production still needs a reviewed canonical collection policy.
 - Provider benchmark tooling exists for extraction providers and emits promotion recommendations; real Docling/MinerU/RAGFlow dependency benchmarking still needs to be finished.
 - The provider benchmark API returns summary, result rows, and promotion recommendations from benchmark artifacts, and the Pipeline Quality Eval dashboard now has a Provider Benchmarks panel for running and reviewing those artifacts.
+- The local-infrastructure API and Settings dashboard expose parser candidate dependency status for Docling, MinerU, RAGFlow DeepDoc, and Unstructured, so missing local packages are visible before running provider benchmarks.
 - Provider benchmarks can now run from a JSON sample manifest, and `docs/provider_benchmark_canonical_samples.example.json` defines the intended canonical local sample categories.
 
 ## Local-Only Infrastructure Decision

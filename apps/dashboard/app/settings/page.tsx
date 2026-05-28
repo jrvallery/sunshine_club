@@ -20,6 +20,7 @@ type LocalInfrastructure = {
   qdrant: Record<string, unknown>;
   qdrant_retrieval: Record<string, unknown>;
   docling: Record<string, unknown>;
+  parser_providers: Record<string, Record<string, unknown>>;
   cortex: Record<string, unknown>;
   model_call_cache: Record<string, unknown>;
   temporal: Record<string, unknown>;
@@ -120,6 +121,17 @@ export default function SettingsPage() {
           <ProviderStatus title="Model cache" status={infrastructure.data?.model_call_cache} />
           <ProviderStatus title="Temporal" status={infrastructure.data?.temporal} />
           <ProviderStatus title="Observability" status={infrastructure.data?.observability} />
+        </div>
+      </section>
+      <section className="panel">
+        <div className="sectionHeader">
+          <h2>Parser Candidate Dependencies</h2>
+          <span>{Object.keys(infrastructure.data?.parser_providers ?? {}).length} checked</span>
+        </div>
+        <div className="settingsGrid">
+          {Object.entries(infrastructure.data?.parser_providers ?? {}).map(([name, status]) => (
+            <ProviderStatus key={name} title={name} status={status} />
+          ))}
         </div>
       </section>
       <section className="panel">

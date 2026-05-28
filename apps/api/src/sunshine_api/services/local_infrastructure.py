@@ -7,7 +7,12 @@ from pathlib import Path
 from typing import Any
 
 from sunshine_extraction.config import provider_registry_rows, validate_provider_registry
-from sunshine_extraction.providers.extraction import DoclingExtractionProvider
+from sunshine_extraction.providers.extraction import (
+    DoclingExtractionProvider,
+    MinerUExtractionProvider,
+    RAGFlowDeepDocExtractionProvider,
+    UnstructuredExtractionProvider,
+)
 from sunshine_extraction.providers.observability import observability_provider_from_env
 from sunshine_extraction.providers.retrieval import QdrantSemanticRetrievalProvider
 from sunshine_extraction.providers.vectorstores import QdrantVectorStoreProvider
@@ -17,7 +22,12 @@ def local_infrastructure_status() -> dict[str, Any]:
     postgres_url = os.environ.get("DATABASE_URL") or os.environ.get("SUNSHINE_DATABASE_URL")
     qdrant = QdrantVectorStoreProvider()
     qdrant_retrieval = QdrantSemanticRetrievalProvider()
-    docling = DoclingExtractionProvider()
+    parser_providers = {
+        "docling": DoclingExtractionProvider(),
+        "mineru": MinerUExtractionProvider(),
+        "ragflow_deepdoc": RAGFlowDeepDocExtractionProvider(),
+        "unstructured": UnstructuredExtractionProvider(),
+    }
     observability = observability_provider_from_env()
     cortex_base = os.environ.get("CORTEX_OPENAI_BASE_URL") or os.environ.get("CORTEX_BASE_URL")
     return {
@@ -31,7 +41,8 @@ def local_infrastructure_status() -> dict[str, Any]:
         },
         "qdrant": _qdrant_status(qdrant),
         "qdrant_retrieval": qdrant_retrieval.dependency_status(),
-        "docling": docling.dependency_status(),
+        "docling": parser_providers["docling"].dependency_status(),
+        "parser_providers": {name: provider.dependency_status() for name, provider in parser_providers.items()},
         "cortex": {
             "configured": bool(cortex_base),
             "base_url_present": bool(cortex_base),
