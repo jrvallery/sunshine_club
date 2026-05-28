@@ -55,6 +55,7 @@ class PostgresPipelineStore:
                 "pipeline_provider_selections": self._import_provider_selections(connection, run_id, output_path),
                 "pipeline_quality_checks": self._import_quality_checks(connection, run_id, output_path),
                 "pipeline_tagging_evidence": self._import_tagging_evidence(connection, run_id, output_path),
+                "pipeline_file_metadata": self._import_file_metadata(connection, run_id, output_path),
                 "pipeline_parser_results": self._import_parser_results(connection, run_id, output_path),
                 "document_segments": self._import_document_segments(connection, run_id, output_path),
                 "review_items": self._import_review_items(connection, run_id, output_path),
@@ -78,6 +79,7 @@ class PostgresPipelineStore:
                 "pipeline_provider_selections": _scalar_count(connection, "select count(*) from pipeline_provider_selections"),
                 "pipeline_quality_checks": _scalar_count(connection, "select count(*) from pipeline_quality_checks"),
                 "pipeline_tagging_evidence": _scalar_count(connection, "select count(*) from pipeline_tagging_evidence"),
+                "pipeline_file_metadata": _scalar_count(connection, "select count(*) from pipeline_file_metadata"),
                 "pipeline_parser_results": _scalar_count(connection, "select count(*) from pipeline_parser_results"),
                 "pipeline_run_events": _scalar_count(connection, "select count(*) from pipeline_run_events"),
                 "document_segments": _scalar_count(connection, "select count(*) from document_segments"),
@@ -233,6 +235,7 @@ class PostgresPipelineStore:
                     (select count(*) from pipeline_provider_selections pps where pps.run_id = r.id) as pipeline_provider_selections,
                     (select count(*) from pipeline_quality_checks pqc where pqc.run_id = r.id) as pipeline_quality_checks,
                     (select count(*) from pipeline_tagging_evidence pte where pte.run_id = r.id) as pipeline_tagging_evidence,
+                    (select count(*) from pipeline_file_metadata pfm where pfm.run_id = r.id) as pipeline_file_metadata,
                     (select count(*) from pipeline_parser_results ppr where ppr.run_id = r.id) as pipeline_parser_results,
                     (select count(*) from document_segments ds where ds.run_id = r.id) as document_segments,
                     (select count(*) from review_items_v2 ri where ri.run_id = r.id) as review_items
@@ -261,6 +264,7 @@ class PostgresPipelineStore:
                     "pipeline_provider_selections": _int_value(run_row.get("pipeline_provider_selections")),
                     "pipeline_quality_checks": _int_value(run_row.get("pipeline_quality_checks")),
                     "pipeline_tagging_evidence": _int_value(run_row.get("pipeline_tagging_evidence")),
+                    "pipeline_file_metadata": _int_value(run_row.get("pipeline_file_metadata")),
                     "pipeline_parser_results": _int_value(run_row.get("pipeline_parser_results")),
                     "document_segments": _int_value(run_row.get("document_segments")),
                     "review_items": _int_value(run_row.get("review_items")),
@@ -292,6 +296,7 @@ class PostgresPipelineStore:
             provider_selections = self._list_provider_selections(connection, run_key=run_key, limit=capped_limit)
             quality_checks = self._list_quality_checks(connection, run_key=run_key, limit=capped_limit)
             tagging_evidence = self._list_tagging_evidence(connection, run_key=run_key, limit=capped_limit)
+            file_metadata = self._list_file_metadata(connection, run_key=run_key, limit=capped_limit)
             parser_results = self._list_parser_results(connection, run_key=run_key, limit=capped_limit)
             document_segments = self._list_document_segments(connection, run_key=run_key, limit=capped_limit)
             chunks = self._list_chunks(connection, run_key=run_key, limit=capped_limit)
@@ -307,6 +312,7 @@ class PostgresPipelineStore:
                     provider_selections=provider_selections,
                     quality_checks=quality_checks,
                     tagging_evidence=tagging_evidence,
+                    file_metadata=file_metadata,
                     parser_results=parser_results,
                     document_segments=document_segments,
                     chunks=chunks,
@@ -320,6 +326,7 @@ class PostgresPipelineStore:
                 "provider_selections": provider_selections,
                 "quality_checks": quality_checks,
                 "tagging_evidence": tagging_evidence,
+                "file_metadata": file_metadata,
                 "parser_results": parser_results,
                 "document_segments": document_segments,
                 "chunks": chunks,
@@ -1598,6 +1605,7 @@ class PostgresPipelineStore:
                 (select count(*) from pipeline_provider_selections pps where pps.run_id = r.id) as provider_selection_count,
                 (select count(*) from pipeline_quality_checks pqc where pqc.run_id = r.id) as quality_check_count,
                 (select count(*) from pipeline_tagging_evidence pte where pte.run_id = r.id) as tagging_evidence_count,
+                (select count(*) from pipeline_file_metadata pfm where pfm.run_id = r.id) as file_metadata_count,
                 (select count(*) from pipeline_parser_results ppr where ppr.run_id = r.id) as parser_result_count,
                 (select count(*) from document_segments ds where ds.run_id = r.id) as document_segment_count
             from pipeline_runs r
@@ -1849,6 +1857,45 @@ class PostgresPipelineStore:
             join pipeline_runs r on r.id = pte.run_id
             where r.run_key = %s
             order by pte.created_at asc, pte.source_path asc nulls last, pte.evidence_type asc
+            limit %s
+            """,
+            (run_key, max(1, min(int(limit), 1000))),
+        ).fetchall()
+        return [_json_safe_row(_row_to_dict(row)) for row in rows]
+
+    def _list_file_metadata(self, connection: PostgresConnection, *, run_key: str, limit: int) -> list[dict[str, Any]]:
+        rows = connection.execute(
+            """
+            select
+                pfm.id,
+                pfm.run_id,
+                r.run_key,
+                pfm.source_path,
+                pfm.relative_path,
+                pfm.sample_path,
+                pfm.metadata_type,
+                pfm.file_id,
+                pfm.content_sha256,
+                pfm.size_bytes,
+                pfm.extension,
+                pfm.mime_type,
+                pfm.media_type,
+                pfm.status,
+                pfm.provider,
+                pfm.page_count,
+                pfm.text_length,
+                pfm.sample_group,
+                pfm.sample_number,
+                pfm.final_class,
+                pfm.extraction_strategy,
+                pfm.import_status,
+                pfm.warnings,
+                pfm.result,
+                pfm.created_at
+            from pipeline_file_metadata pfm
+            join pipeline_runs r on r.id = pfm.run_id
+            where r.run_key = %s
+            order by pfm.created_at asc, pfm.source_path asc nulls last, pfm.metadata_type asc
             limit %s
             """,
             (run_key, max(1, min(int(limit), 1000))),
@@ -2515,6 +2562,56 @@ class PostgresPipelineStore:
                 imported += 1
         return imported
 
+    def _import_file_metadata(self, connection: PostgresConnection, run_id: str, output_path: Path) -> int:
+        artifacts = [
+            ("source_identity", output_path / "sample-source-identity.jsonl"),
+            ("file_probe", output_path / "sample-file-probes.jsonl"),
+            ("sample_input", output_path / "sample-inputs.jsonl"),
+            ("document_structure", output_path / "sample-structure.jsonl"),
+            ("import_result", output_path / "sample-import-results.jsonl"),
+        ]
+        connection.execute("delete from pipeline_file_metadata where run_id = %s", (run_id,))
+        imported = 0
+        for metadata_type, path in artifacts:
+            for row in _read_jsonl(path):
+                normalized = _file_metadata_row(metadata_type, row)
+                connection.execute(
+                    """
+                    insert into pipeline_file_metadata (
+                        run_id, source_path, relative_path, sample_path, metadata_type, file_id,
+                        content_sha256, size_bytes, extension, mime_type, media_type, status,
+                        provider, page_count, text_length, sample_group, sample_number, final_class,
+                        extraction_strategy, import_status, warnings, result
+                    ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb)
+                    """,
+                    (
+                        run_id,
+                        normalized["source_path"],
+                        normalized["relative_path"],
+                        normalized["sample_path"],
+                        metadata_type,
+                        normalized["file_id"],
+                        normalized["content_sha256"],
+                        normalized["size_bytes"],
+                        normalized["extension"],
+                        normalized["mime_type"],
+                        normalized["media_type"],
+                        normalized["status"],
+                        normalized["provider"],
+                        normalized["page_count"],
+                        normalized["text_length"],
+                        normalized["sample_group"],
+                        normalized["sample_number"],
+                        normalized["final_class"],
+                        normalized["extraction_strategy"],
+                        normalized["import_status"],
+                        json.dumps(normalized["warnings"]),
+                        json.dumps(row, sort_keys=True),
+                    ),
+                )
+                imported += 1
+        return imported
+
     def _import_parser_results(self, connection: PostgresConnection, run_id: str, output_path: Path) -> int:
         rows = _read_jsonl(output_path / "sample-parser-results.jsonl")
         connection.execute("delete from pipeline_parser_results where run_id = %s", (run_id,))
@@ -2653,6 +2750,13 @@ def _run_summary_from_artifacts(output_path: Path) -> dict[str, Any]:
         *_read_jsonl(output_path / "sample-placement-proposals.jsonl"),
         *_read_jsonl(output_path / "sample-route-decisions.jsonl"),
     ]
+    file_metadata_rows = [
+        *_read_jsonl(output_path / "sample-source-identity.jsonl"),
+        *_read_jsonl(output_path / "sample-file-probes.jsonl"),
+        *_read_jsonl(output_path / "sample-inputs.jsonl"),
+        *_read_jsonl(output_path / "sample-structure.jsonl"),
+        *_read_jsonl(output_path / "sample-import-results.jsonl"),
+    ]
     parser_result_rows = _read_jsonl(output_path / "sample-parser-results.jsonl")
     indexing_rows = _read_jsonl(output_path / "sample-indexing.jsonl")
     manifest = _read_json(output_path / "artifact-manifest.json")
@@ -2672,6 +2776,7 @@ def _run_summary_from_artifacts(output_path: Path) -> dict[str, Any]:
             "provider_selections": len(provider_selection_rows),
             "quality_checks": len(quality_check_rows),
             "tagging_evidence": len(tagging_evidence_rows),
+            "file_metadata": len(file_metadata_rows),
             "parser_results": len(parser_result_rows),
             "indexing": len(indexing_rows),
         },
@@ -3102,6 +3207,7 @@ def _run_report_summary(
     provider_selections: list[dict[str, Any]],
     quality_checks: list[dict[str, Any]],
     tagging_evidence: list[dict[str, Any]],
+    file_metadata: list[dict[str, Any]],
     parser_results: list[dict[str, Any]],
     document_segments: list[dict[str, Any]],
     chunks: list[dict[str, Any]],
@@ -3123,6 +3229,7 @@ def _run_report_summary(
         "quality_check_count": len(quality_checks),
         "quality_review_required_count": sum(1 for row in quality_checks if row.get("requires_review") is True),
         "tagging_evidence_count": len(tagging_evidence),
+        "file_metadata_count": len(file_metadata),
         "parser_result_count": len(parser_results),
         "parser_review_required_count": sum(1 for row in parser_results if row.get("requires_review") is True),
         "run_event_count": len(run_events),
@@ -3152,6 +3259,10 @@ def _run_report_summary(
         "tagging_assignment_source": _count_values(tagging_evidence, "assignment_source"),
         "tagging_route_status": _count_values(tagging_evidence, "route_status"),
         "tagging_placement_status": _count_values(tagging_evidence, "placement_status"),
+        "file_metadata_type": _count_values(file_metadata, "metadata_type"),
+        "file_media_type": _count_values(file_metadata, "media_type"),
+        "file_probe_status": _count_values([row for row in file_metadata if row.get("metadata_type") == "file_probe"], "status"),
+        "import_status": _count_values([row for row in file_metadata if row.get("metadata_type") == "import_result"], "import_status"),
         "parser_status": _count_values(parser_results, "status"),
         "parser_quality": _count_values(parser_results, "quality"),
         "parser_provider": _count_values(parser_results, "provider"),
@@ -3209,6 +3320,30 @@ def _tagging_confidence(evidence_type: str, row: dict[str, Any]) -> Any:
     if evidence_type == "confidence_calibration":
         return row.get("calibrated_confidence")
     return row.get("confidence") or row.get("score") or row.get("tag_confidence") or row.get("llm_confidence")
+
+
+def _file_metadata_row(metadata_type: str, row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "source_path": row.get("source_path") or row.get("sample_path"),
+        "relative_path": row.get("relative_path"),
+        "sample_path": row.get("sample_path"),
+        "file_id": row.get("file_id"),
+        "content_sha256": row.get("content_sha256"),
+        "size_bytes": row.get("size_bytes"),
+        "extension": row.get("extension"),
+        "mime_type": row.get("mime_type"),
+        "media_type": row.get("media_type"),
+        "status": row.get("status"),
+        "provider": row.get("provider"),
+        "page_count": row.get("page_count"),
+        "text_length": row.get("text_length"),
+        "sample_group": row.get("sample_group"),
+        "sample_number": row.get("sample_number"),
+        "final_class": row.get("final_class"),
+        "extraction_strategy": row.get("extraction_strategy"),
+        "import_status": (row.get("import_status") or row.get("status")) if metadata_type == "import_result" else None,
+        "warnings": row.get("warnings") if isinstance(row.get("warnings"), list) else [],
+    }
 
 
 def _call_count(row: dict[str, Any]) -> int:

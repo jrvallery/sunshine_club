@@ -14,11 +14,12 @@ import { StatusBadge } from "../../../../components/ui/StatusBadge";
 import { deleteJson, fetchJson, postJson } from "../../../../lib/api";
 import type { PipelineRun, PipelineRunEvent, PostgresRunReport, RunModelUsageReport, RunReport } from "../../../../lib/types";
 
-type ReportTab = "overview" | "files" | "review" | "segments" | "training" | "ocr" | "extraction" | "indexing" | "tags" | "placement" | "models" | "providers" | "logs" | "artifacts" | "diff";
+type ReportTab = "overview" | "files" | "metadata" | "review" | "segments" | "training" | "ocr" | "extraction" | "indexing" | "tags" | "placement" | "models" | "providers" | "logs" | "artifacts" | "diff";
 
 const tabs: Array<{ key: ReportTab; label: string }> = [
   { key: "overview", label: "Overview" },
   { key: "files", label: "Files" },
+  { key: "metadata", label: "Metadata" },
   { key: "review", label: "Review Queue" },
   { key: "segments", label: "Segments" },
   { key: "training", label: "Training Cycle" },
@@ -266,7 +267,7 @@ function PostgresRunReportView({
   const runKey = String(report.run.run_key ?? "");
   const status = String(report.run.status ?? "-");
   const modelCalls = Number(report.summary.model_call_count ?? 0);
-  const postgresTabs = tabs.filter((tab) => ["overview", "files", "review", "segments", "ocr", "extraction", "indexing", "tags", "models", "providers", "logs"].includes(tab.key));
+  const postgresTabs = tabs.filter((tab) => ["overview", "files", "metadata", "review", "segments", "ocr", "extraction", "indexing", "tags", "models", "providers", "logs"].includes(tab.key));
   const activePostgresTab = postgresTabs.some((tab) => tab.key === activeTab) ? activeTab : "overview";
   return (
     <main className="pageShell">
@@ -315,6 +316,7 @@ function PostgresRunReportView({
         <Metric label="Provider selections" value={String(report.summary.provider_selection_count ?? report.provider_selections?.length ?? 0)} />
         <Metric label="Quality checks" value={String(report.summary.quality_check_count ?? report.quality_checks?.length ?? 0)} />
         <Metric label="Tag evidence" value={String(report.summary.tagging_evidence_count ?? report.tagging_evidence?.length ?? 0)} />
+        <Metric label="Metadata rows" value={String(report.summary.file_metadata_count ?? report.file_metadata?.length ?? 0)} />
         <Metric label="Graph events" value={String(report.summary.run_event_count ?? 0)} />
       </section>
 
@@ -328,6 +330,7 @@ function PostgresRunReportView({
 
       {activePostgresTab === "overview" ? <PostgresOverviewTab report={report} /> : null}
       {activePostgresTab === "files" ? <FilesTab rows={report.results ?? []} /> : null}
+      {activePostgresTab === "metadata" ? <PostgresMetadataTab report={report} /> : null}
       {activePostgresTab === "review" ? <PostgresReviewQueueTab report={report} /> : null}
       {activePostgresTab === "segments" ? <SegmentsTab postgresReport={report} /> : null}
       {activePostgresTab === "ocr" ? <PostgresParserTab report={report} /> : null}
@@ -358,6 +361,7 @@ function PostgresOverviewTab({ report }: { report: PostgresRunReport }) {
         <Breakdown title="Quality Check Status" values={report.summary.quality_check_status ?? {}} />
         <Breakdown title="Quality Gate Labels" values={report.summary.quality_check_quality ?? {}} />
         <Breakdown title="Tag Evidence" values={report.summary.tagging_evidence_type ?? {}} />
+        <Breakdown title="File Metadata" values={report.summary.file_metadata_type ?? {}} />
         <Breakdown title="Parser Quality" values={report.summary.parser_quality ?? {}} />
         <Breakdown title="Parser Providers" values={report.summary.parser_provider ?? {}} />
         <Breakdown title="Graph Events" values={report.summary.run_event_status ?? {}} />
@@ -386,6 +390,30 @@ function PostgresParserTab({ report }: { report: PostgresRunReport }) {
         <Breakdown title="Parser Provider" values={report.summary.parser_provider ?? {}} />
       </div>
       <JsonTable title="Parser Rows" rows={rows} />
+    </section>
+  );
+}
+
+function PostgresMetadataTab({ report }: { report: PostgresRunReport }) {
+  const rows = report.file_metadata ?? [];
+  return (
+    <section className="panel">
+      <div className="sectionHeader">
+        <div>
+          <h2>File Metadata</h2>
+          <span>{rows.length} source identity, probe, input, structure, and import rows</span>
+        </div>
+      </div>
+      <div className="metrics compactMetrics">
+        <Metric label="Rows" value={String(report.summary.file_metadata_count ?? rows.length)} />
+      </div>
+      <div className="reportGrid">
+        <Breakdown title="Metadata Type" values={report.summary.file_metadata_type ?? {}} />
+        <Breakdown title="Media Type" values={report.summary.file_media_type ?? {}} />
+        <Breakdown title="Probe Status" values={report.summary.file_probe_status ?? {}} />
+        <Breakdown title="Import Status" values={report.summary.import_status ?? {}} />
+      </div>
+      <JsonTable title="Metadata Rows" rows={rows} />
     </section>
   );
 }

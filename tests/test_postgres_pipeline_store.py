@@ -70,6 +70,7 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
         "pipeline_provider_selections": 1,
         "pipeline_quality_checks": 4,
         "pipeline_tagging_evidence": 8,
+        "pipeline_file_metadata": 5,
         "pipeline_parser_results": 1,
         "document_segments": 1,
         "review_items": 1,
@@ -87,6 +88,7 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
     assert "insert into pipeline_provider_selections" in executed_sql
     assert "insert into pipeline_quality_checks" in executed_sql
     assert "insert into pipeline_tagging_evidence" in executed_sql
+    assert "insert into pipeline_file_metadata" in executed_sql
     assert "insert into pipeline_parser_results" in executed_sql
     assert "insert into document_segments" in executed_sql
     assert "insert into review_items_v2" in executed_sql
@@ -110,6 +112,8 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
     assert quality_check_params[1:6] == ("/source/a.pdf", "Sunshine/a.pdf", "extraction_validation", "valid", None)
     tagging_evidence_params = next(params for query, params in connection.executed if "insert into pipeline_tagging_evidence" in query)
     assert tagging_evidence_params[1:6] == ("/source/a.pdf", "Sunshine/a.pdf", "retrieval_result", "ok", "qdrant")
+    file_metadata_params = next(params for query, params in connection.executed if "insert into pipeline_file_metadata" in query)
+    assert file_metadata_params[1:6] == ("/source/a.pdf", "Sunshine/a.pdf", "/sample/a.pdf", "source_identity", "file-a")
     parser_params = next(params for query, params in connection.executed if "insert into pipeline_parser_results" in query)
     assert parser_params[1:9] == (
         "/source/a.pdf",
@@ -693,6 +697,7 @@ def test_postgres_pipeline_store_deletes_run_with_cascade_counts() -> None:
                         "pipeline_provider_selections": 6,
                         "pipeline_quality_checks": 10,
                         "pipeline_tagging_evidence": 11,
+                        "pipeline_file_metadata": 12,
                         "pipeline_parser_results": 9,
                         "document_segments": 6,
                         "review_items": 7,
@@ -723,6 +728,7 @@ def test_postgres_pipeline_store_deletes_run_with_cascade_counts() -> None:
         "pipeline_provider_selections": 6,
         "pipeline_quality_checks": 10,
         "pipeline_tagging_evidence": 11,
+        "pipeline_file_metadata": 12,
         "pipeline_parser_results": 9,
         "document_segments": 6,
         "review_items": 7,
@@ -769,6 +775,7 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
                             "provider_selection_count": 1,
                             "quality_check_count": 1,
                             "tagging_evidence_count": 1,
+                            "file_metadata_count": 1,
                             "parser_result_count": 1,
                             "document_segment_count": 1,
                         }
@@ -941,6 +948,38 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
                         }
                     ]
                 )
+            if "from pipeline_file_metadata pfm" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "file-metadata-id",
+                            "run_id": "run-id",
+                            "run_key": "run-report",
+                            "source_path": "/source/scrapbook.pdf",
+                            "relative_path": "History/scrapbook.pdf",
+                            "sample_path": "/sample/scrapbook.pdf",
+                            "metadata_type": "file_probe",
+                            "file_id": "file-id",
+                            "content_sha256": None,
+                            "size_bytes": 1234,
+                            "extension": ".pdf",
+                            "mime_type": "application/pdf",
+                            "media_type": "pdf",
+                            "status": "probed",
+                            "provider": "native",
+                            "page_count": 4,
+                            "text_length": None,
+                            "sample_group": None,
+                            "sample_number": None,
+                            "final_class": None,
+                            "extraction_strategy": None,
+                            "import_status": None,
+                            "warnings": [],
+                            "result": {"media_type": "pdf"},
+                            "created_at": None,
+                        }
+                    ]
+                )
             if "from pipeline_parser_results ppr" in normalized:
                 return _Cursor(
                     rows=[
@@ -1070,6 +1109,7 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     assert report["summary"]["quality_check_count"] == 1
     assert report["summary"]["quality_review_required_count"] == 0
     assert report["summary"]["tagging_evidence_count"] == 1
+    assert report["summary"]["file_metadata_count"] == 1
     assert report["summary"]["parser_result_count"] == 1
     assert report["summary"]["parser_status"] == {"extracted": 1}
     assert report["summary"]["parser_quality"] == {"ok": 1}
@@ -1090,6 +1130,8 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     assert report["summary"]["quality_check_status"] == {"ok": 1}
     assert report["summary"]["tagging_evidence_type"] == {"tag_candidate": 1}
     assert report["summary"]["tagging_primary_tag"] == {"scrapbooks": 1}
+    assert report["summary"]["file_metadata_type"] == {"file_probe": 1}
+    assert report["summary"]["file_media_type"] == {"pdf": 1}
     assert report["results"][0]["top_tag_candidate"] == "scrapbooks"
     assert report["review_items"][0]["segment_id"] == "scrapbook:segment-001"
     assert report["model_usage"][0]["provider"] == "cortex"
@@ -1099,6 +1141,7 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     assert report["provider_selections"][0]["provider_chain"] == ["docling", "current", "cortex_ocr"]
     assert report["quality_checks"][0]["check_type"] == "quality_gate"
     assert report["tagging_evidence"][0]["primary_tag"] == "scrapbooks"
+    assert report["file_metadata"][0]["metadata_type"] == "file_probe"
     assert report["parser_results"][0]["provider"] == "docling"
     assert report["parser_results"][0]["page_text_coverage_rate"] == 0.92
     assert report["chunks"][0]["chunk_kind"] == "segment_text"
@@ -1901,6 +1944,89 @@ def test_rebuild_qdrant_from_postgres_accepts_collection_override(monkeypatch) -
 def _postgres_import_artifacts(tmp_path: Path) -> Path:
     output_dir = tmp_path / "run"
     output_dir.mkdir()
+    _write_jsonl(
+        output_dir / "sample-source-identity.jsonl",
+        [
+            {
+                "file_id": "file-a",
+                "content_sha256": "a" * 64,
+                "size_bytes": 123,
+                "modified_at_ns": 1000,
+                "extension": ".pdf",
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "sample_path": "/sample/a.pdf",
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-file-probes.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "sample_path": "/sample/a.pdf",
+                "provider": "native",
+                "status": "probed",
+                "mime_type": "application/pdf",
+                "extension": ".pdf",
+                "media_type": "pdf",
+                "size_bytes": 123,
+                "page_count": 1,
+                "embedded_text_chars": 37,
+                "image_only_pdf_likelihood": 0.0,
+                "encrypted": False,
+                "width": None,
+                "height": None,
+                "warnings": [],
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-inputs.jsonl",
+        [
+            {
+                "sample_path": "/sample/a.pdf",
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "sample_group": "qa",
+                "sample_number": 1,
+                "final_class": "document",
+                "final_status": "accepted",
+                "extraction_strategy": "text_extraction",
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-structure.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "sample_path": "/sample/a.pdf",
+                "provider": "current",
+                "page_count": 1,
+                "text_length": 37,
+                "sections": [],
+                "pages": [{"page_number": 1, "text": "Meeting minutes"}],
+                "tables": [],
+                "figures": [],
+                "metadata": {},
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-import-results.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "import_status": "skipped",
+                "status": "skipped",
+                "importer": "noop",
+            }
+        ],
+    )
     _write_jsonl(
         output_dir / "sample-pipeline-results.jsonl",
         [
