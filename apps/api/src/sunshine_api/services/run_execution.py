@@ -77,6 +77,14 @@ def _record_postgres_run_state(run: dict[str, Any], *, status: str, summary: dic
         return
 
 
+def _record_postgres_run_progress(store: ReviewStore, run_id: int, summary: dict[str, Any]) -> None:
+    try:
+        run = store.get_pipeline_run(run_id)
+    except Exception:  # noqa: BLE001 - live progress mirroring must not break stream capture.
+        return
+    _record_postgres_run_state(run, status="running", summary=summary)
+
+
 def _import_success_outputs(store: ReviewStore, run_id: int, output_dir: str) -> None:
     run = store.get_pipeline_run(run_id)
     sqlite_result = store.import_langgraph_output(output_dir, sample_routed_per_bucket=0, run_id=run_id)
@@ -141,6 +149,7 @@ def _stream_run_output(store: ReviewStore, run_id: int, process: subprocess.Pope
                         "progress_ratio": payload["current"] / payload["total"] if payload["total"] else None,
                     }
                     store.update_pipeline_run_progress(run_id, summary)
+                    _record_postgres_run_progress(store, run_id, summary)
             if process.poll() is not None:
                 for key in list(selector.get_map().values()):
                     line = key.fileobj.readline()
@@ -158,6 +167,7 @@ def _stream_run_output(store: ReviewStore, run_id: int, process: subprocess.Pope
                 summary = _read_live_run_summary(output_dir, store.get_pipeline_run(run_id).get("summary") or {})
                 if summary:
                     store.update_pipeline_run_progress(run_id, summary)
+                    _record_postgres_run_progress(store, run_id, summary)
                 with store._connect() as connection:
                     store.add_pipeline_run_event(connection, run_id, level="info", message="Run still active.", payload=summary)
                 last_heartbeat = time.monotonic()

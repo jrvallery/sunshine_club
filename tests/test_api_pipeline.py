@@ -314,6 +314,42 @@ def test_run_creation_records_queued_state_to_postgres_when_configured(tmp_path:
     assert captured["output_dir"] == str(tmp_path / "output")
 
 
+def test_live_run_progress_records_running_state_to_postgres(monkeypatch) -> None:
+    from sunshine_api.services import run_execution
+
+    captured: dict[str, Any] = {}
+
+    class FakeStore:
+        def get_pipeline_run(self, run_id: int) -> dict[str, Any]:
+            assert run_id == 42
+            return {
+                "id": run_id,
+                "run_key": "qa-run-progress",
+                "preset_key": "qa_samples_fast",
+                "status": "running",
+                "input_root": "/mnt/sunshine/qa samples",
+                "output_dir": "/mnt/sunshine/dashboard-runs/qa-run-progress",
+                "summary": {"processed_count": 1},
+            }
+
+    def fake_record(run: dict[str, Any], *, status: str, summary: dict[str, Any], error: str | None = None) -> None:
+        captured["run_key"] = run["run_key"]
+        captured["status"] = status
+        captured["summary"] = summary
+        captured["error"] = error
+
+    monkeypatch.setattr(run_execution, "_record_postgres_run_state", fake_record)
+
+    run_execution._record_postgres_run_progress(FakeStore(), 42, {"processed_count": 4, "selected_sample_count": 10})
+
+    assert captured == {
+        "run_key": "qa-run-progress",
+        "status": "running",
+        "summary": {"processed_count": 4, "selected_sample_count": 10},
+        "error": None,
+    }
+
+
 def test_provider_benchmark_api_runs_current_provider(tmp_path: Path) -> None:
     source = tmp_path / "minutes.txt"
     source.write_text("Meeting minutes and Sunshine Club notes.", encoding="utf-8")
