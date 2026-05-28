@@ -5,7 +5,37 @@ from __future__ import annotations
 from typing import Any
 
 from sunshine_extraction.services.content import SampleFile
-from sunshine_extraction.sample_pipeline import resolve_route_or_review
+
+
+def resolve_route_or_review(tag_candidates: list[dict[str, Any]], quality: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
+    """Resolve whether a file can be routed or needs human/technical review."""
+
+    if plan["strategy"] == "deferred_technical":
+        return {"route_status": "technical_followup", "review_reason": plan.get("defer_reason")}
+    if quality["quality"] == "deferred":
+        return {"route_status": "review_or_extraction_deferred", "review_reason": "extractor_deferred"}
+    if quality["quality"] == "failed":
+        return {"route_status": "review_failed_extraction", "review_reason": "extraction_failed"}
+    if quality["quality"] == "poor":
+        if plan.get("strategy") != "ocr_page_level":
+            return {"route_status": "review_text_quality", "review_reason": "text_quality_not_trusted"}
+        return {"route_status": "review_ocr_quality", "review_reason": "ocr_quality_not_trusted"}
+    if plan["strategy"] == "ocr_page_level" and quality["quality"] == "metadata_only":
+        return {"route_status": "review_ocr_no_text", "review_reason": "ocr_text_empty"}
+    if not tag_candidates:
+        return {"route_status": "review_no_tag_candidate", "review_reason": "no_tag_candidate"}
+
+    top = tag_candidates[0]
+    if top.get("requires_review"):
+        return {
+            "route_status": "review_tag_confidence_calibration",
+            "review_reason": top.get("calibrated_review_reason") or "confidence_calibration_requires_review",
+        }
+    if top["confidence"] >= 0.85:
+        return {"route_status": "route_candidate", "review_reason": None}
+    if quality["quality"] == "metadata_only" and top["confidence"] >= 0.8:
+        return {"route_status": "route_candidate", "review_reason": None}
+    return {"route_status": "review_low_confidence_tag", "review_reason": "tag_confidence_below_threshold"}
 
 
 def resolve_route_decision(
