@@ -383,6 +383,144 @@ class PostgresPipelineStore:
             "latest_run": _facet_count_postgres(rows, "latest_run_id"),
         }
 
+    def get_file_result(self, result_id: str) -> dict[str, Any]:
+        connection = self._connect_factory(self.database_url)
+        try:
+            row = connection.execute(
+                """
+                select
+                    pr.id,
+                    pr.run_id,
+                    r.run_key,
+                    r.preset_key,
+                    r.embedding_provider,
+                    r.llm_provider,
+                    r.extraction_provider,
+                    pr.source_path,
+                    pr.relative_path,
+                    pr.sample_path,
+                    pr.route_status,
+                    pr.review_reason,
+                    pr.final_class,
+                    pr.extraction_strategy,
+                    pr.extraction_status,
+                    pr.quality,
+                    pr.top_tag_candidate,
+                    pr.secondary_tags,
+                    pr.tag_confidence,
+                    pr.result,
+                    pr.created_at,
+                    pr.updated_at,
+                    (
+                        select ri.status
+                        from review_items_v2 ri
+                        where ri.source_path = pr.source_path
+                          and (ri.segment_id is null or ri.segment_id = '')
+                        order by ri.updated_at desc, ri.created_at desc
+                        limit 1
+                    ) as review_status
+                from pipeline_results pr
+                left join pipeline_runs r on r.id = pr.run_id
+                where pr.id = %s
+                """,
+                (result_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Postgres file result not found: {result_id}")
+            raw = _json_safe_row(_row_to_dict(row))
+            item = _postgres_file_search_item(raw)
+            item["latest_result"] = raw.get("result") if isinstance(raw.get("result"), dict) else {}
+            item["tag_confidence"] = raw.get("tag_confidence")
+            item["extraction_strategy"] = raw.get("extraction_strategy")
+            item["extraction_status"] = raw.get("extraction_status")
+            item["review_reason"] = raw.get("review_reason")
+            return item
+        finally:
+            connection.close()
+
+    def file_path_for_file_result(self, result_id: str) -> Path:
+        item = self.get_file_result(result_id)
+        result = item.get("latest_result") if isinstance(item.get("latest_result"), dict) else {}
+        for candidate in (item.get("sample_path"), result.get("sample_path"), item.get("source_path")):
+            if not candidate:
+                continue
+            path = Path(str(candidate))
+            if path.exists() and path.is_file():
+                return path
+        raise FileNotFoundError(f"No readable file found for Postgres file result {result_id}")
+
+    def file_text_for_file_result(self, result_id: str) -> dict[str, Any]:
+        item = self.get_file_result(result_id)
+        connection = self._connect_factory(self.database_url)
+        try:
+            rows = connection.execute(
+                """
+                select content
+                from pipeline_chunks
+                where run_id = %s
+                  and source_path = %s
+                order by chunk_index asc, id asc
+                limit %s
+                """,
+                (item.get("latest_run_id"), item.get("source_path"), 1000),
+            ).fetchall()
+        finally:
+            connection.close()
+        chunk_text = "\n\n".join(str(_row_to_dict(row).get("content") or "") for row in rows).strip()
+        result = item.get("latest_result") if isinstance(item.get("latest_result"), dict) else {}
+        fallback = item.get("text_snippet") or result.get("extraction_text_snippet") or result.get("text") or ""
+        return {
+            "file_id": result_id,
+            "source": "postgres",
+            "source_path": item.get("source_path"),
+            "relative_path": item.get("relative_path"),
+            "text": chunk_text or str(fallback or ""),
+        }
+
+    def file_inspection_for_file_result(self, result_id: str) -> dict[str, Any]:
+        item = self.get_file_result(result_id)
+        text = self.file_text_for_file_result(result_id)
+        result = item.get("latest_result") if isinstance(item.get("latest_result"), dict) else {}
+        return {
+            "file": {key: value for key, value in item.items() if key != "latest_result"},
+            "latest_result": result,
+            "review_item": None,
+            "golden_label": None,
+            "ocr": {
+                "quality": item.get("quality") or result.get("quality"),
+                "ocr_status": result.get("ocr_status"),
+                "mean_confidence": result.get("mean_confidence"),
+                "fallback_provider": item.get("latest_ocr_fallback_provider"),
+                "evidence": result.get("ocr_evidence") or result.get("warnings") or [],
+                "warnings": result.get("warnings") or [],
+            },
+            "text": {
+                "snippet": item.get("text_snippet"),
+                "text": text.get("text"),
+                "length": len(str(text.get("text") or "")),
+            },
+            "runs": [
+                {
+                    "id": item.get("latest_run_id"),
+                    "run_key": item.get("latest_run_key"),
+                    "preset_key": item.get("latest_run_preset_key"),
+                    "embedding_provider": item.get("latest_embedding_provider"),
+                    "llm_tag_provider": item.get("latest_llm_tag_provider"),
+                    "ocr_fallback_provider": item.get("latest_ocr_fallback_provider"),
+                }
+            ]
+            if item.get("latest_run_id")
+            else [],
+            "actions": {
+                "preview_url": f"/api/admin/files/{result_id}/preview?source=postgres",
+                "text_url": f"/api/admin/files/{result_id}/text?source=postgres",
+                "run_url": None,
+                "review_url": None,
+                "latest_run_report_url": f"/runs/{item['latest_run_key']}/report" if item.get("latest_run_key") else None,
+            },
+            "raw": {"file": item, "latest_result": result},
+        }
+
     def list_golden_labels(self, *, limit: int = 100) -> list[dict[str, Any]]:
         connection = self._connect_factory(self.database_url)
         try:

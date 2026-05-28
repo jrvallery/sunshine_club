@@ -455,6 +455,66 @@ def test_file_search_can_read_postgres_v2_source(monkeypatch) -> None:
     assert captured["primary_tag"] == "history_archive_general"
 
 
+def test_file_detail_text_and_preview_can_read_postgres_v2_source(tmp_path: Path, monkeypatch) -> None:
+    source_file = tmp_path / "history.pdf"
+    source_file.write_text("source pdf bytes", encoding="utf-8")
+    captured: dict[str, Any] = {}
+
+    def fake_detail(result_id: str) -> dict[str, Any]:
+        captured["detail"] = result_id
+        return {
+            "id": result_id,
+            "source": "postgres",
+            "filename": "history.pdf",
+            "source_path": str(source_file),
+            "relative_path": "Sunshine/history.pdf",
+            "latest_result": {"quality": "ok"},
+        }
+
+    def fake_text(result_id: str) -> dict[str, Any]:
+        captured["text"] = result_id
+        return {
+            "file_id": result_id,
+            "source": "postgres",
+            "source_path": str(source_file),
+            "relative_path": "Sunshine/history.pdf",
+            "text": "Founders history text from chunks.",
+        }
+
+    def fake_inspection(result_id: str) -> dict[str, Any]:
+        captured["inspection"] = result_id
+        return {
+            "file": {"id": result_id, "source": "postgres"},
+            "latest_result": {"quality": "ok"},
+            "text": {"text": "Founders history text from chunks.", "length": 27},
+        }
+
+    def fake_path(result_id: str) -> Path:
+        captured["path"] = result_id
+        return source_file
+
+    monkeypatch.setattr("sunshine_api.routers.files.get_postgres_file_result", fake_detail)
+    monkeypatch.setattr("sunshine_api.routers.files.postgres_file_result_text", fake_text)
+    monkeypatch.setattr("sunshine_api.routers.files.postgres_file_result_inspection", fake_inspection)
+    monkeypatch.setattr("sunshine_api.routers.files.file_path_for_postgres_file_result", fake_path)
+
+    client = TestClient(app)
+    detail = client.get("/admin/files/result-1", params={"source": "postgres"})
+    text = client.get("/admin/files/result-1/text", params={"source": "postgres"})
+    inspection = client.get("/admin/files/result-1/inspection", params={"source": "postgres"})
+    preview = client.get("/admin/files/result-1/preview", params={"source": "postgres"})
+
+    assert detail.status_code == 200
+    assert detail.json()["source"] == "postgres"
+    assert text.status_code == 200
+    assert text.json()["text"] == "Founders history text from chunks."
+    assert inspection.status_code == 200
+    assert inspection.json()["file"]["source"] == "postgres"
+    assert preview.status_code == 200
+    assert preview.text == "source pdf bytes"
+    assert captured == {"detail": "result-1", "text": "result-1", "inspection": "result-1", "path": "result-1"}
+
+
 def test_golden_labels_can_read_postgres_v2_source(monkeypatch) -> None:
     monkeypatch.setattr(
         "sunshine_api.routers.review.list_postgres_golden_labels",

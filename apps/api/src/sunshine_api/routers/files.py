@@ -14,7 +14,14 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 
 from sunshine_api.dependencies import review_store
-from sunshine_api.services.imports import postgres_file_facets, search_postgres_files
+from sunshine_api.services.imports import (
+    file_path_for_postgres_file_result,
+    get_postgres_file_result,
+    postgres_file_facets,
+    postgres_file_result_inspection,
+    postgres_file_result_text,
+    search_postgres_files,
+)
 from sunshine_api.schemas import (
     DocumentPipelineRunRequest,
     DocumentPipelineRunResponse,
@@ -193,25 +200,47 @@ def file_facets(
 
 
 @router.get("/admin/files/{file_id}")
-def file_detail(file_id: int) -> dict[str, Any]:
+def file_detail(file_id: str, source: str = "sqlite") -> dict[str, Any]:
+    if source == "postgres":
+        try:
+            return get_postgres_file_result(file_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+    if source != "sqlite":
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
     try:
-        return review_store().get_file(file_id)
+        return review_store().get_file(_sqlite_file_id(file_id))
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @router.get("/admin/files/{file_id}/inspection")
-def file_inspection(file_id: int) -> dict[str, Any]:
+def file_inspection(file_id: str, source: str = "sqlite") -> dict[str, Any]:
+    if source == "postgres":
+        try:
+            return postgres_file_result_inspection(file_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+    if source != "sqlite":
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
     try:
-        return review_store().file_inspection(file_id)
+        return review_store().file_inspection(_sqlite_file_id(file_id))
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @router.get("/admin/files/{file_id}/preview")
-def file_preview(file_id: int) -> FileResponse:
+def file_preview(file_id: str, source: str = "sqlite") -> FileResponse:
+    if source == "postgres":
+        return _postgres_file_response(file_id, content_disposition_type="inline")
+    if source != "sqlite":
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
     try:
-        path = review_store().file_path_for_file(file_id)
+        path = review_store().file_path_for_file(_sqlite_file_id(file_id))
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except FileNotFoundError as error:
@@ -220,9 +249,13 @@ def file_preview(file_id: int) -> FileResponse:
 
 
 @router.get("/admin/files/{file_id}/download")
-def file_download(file_id: int) -> FileResponse:
+def file_download(file_id: str, source: str = "sqlite") -> FileResponse:
+    if source == "postgres":
+        return _postgres_file_response(file_id, content_disposition_type="attachment")
+    if source != "sqlite":
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
     try:
-        path = review_store().file_path_for_file(file_id)
+        path = review_store().file_path_for_file(_sqlite_file_id(file_id))
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except FileNotFoundError as error:
@@ -231,9 +264,18 @@ def file_download(file_id: int) -> FileResponse:
 
 
 @router.get("/admin/files/{file_id}/text")
-def file_text(file_id: int) -> dict[str, Any]:
+def file_text(file_id: str, source: str = "sqlite") -> dict[str, Any]:
+    if source == "postgres":
+        try:
+            return postgres_file_result_text(file_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+    if source != "sqlite":
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
     try:
-        return review_store().file_text(file_id)
+        return review_store().file_text(_sqlite_file_id(file_id))
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
@@ -284,3 +326,20 @@ def run_file_from_browser(file_id: int, request: FileRunRequest) -> dict[str, An
         thread = threading.Thread(target=_execute_run, args=(run["id"], command, output_dir, request.import_on_success), daemon=True)
         thread.start()
     return run
+
+
+def _sqlite_file_id(value: str) -> int:
+    try:
+        return int(value)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="file id must be an integer for sqlite source") from error
+
+
+def _postgres_file_response(result_id: str, *, content_disposition_type: str) -> FileResponse:
+    try:
+        path = file_path_for_postgres_file_result(result_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    return FileResponse(path, filename=path.name, content_disposition_type=content_disposition_type)

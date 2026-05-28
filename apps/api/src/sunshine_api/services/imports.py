@@ -199,6 +199,46 @@ def postgres_file_facets(
     )
 
 
+def get_postgres_file_result(
+    result_id: str,
+    *,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> dict[str, Any]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.get_file_result(result_id)
+
+
+def postgres_file_result_text(
+    result_id: str,
+    *,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> dict[str, Any]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.file_text_for_file_result(result_id)
+
+
+def postgres_file_result_inspection(
+    result_id: str,
+    *,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> dict[str, Any]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.file_inspection_for_file_result(result_id)
+
+
+def file_path_for_postgres_file_result(
+    result_id: str,
+    *,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> Path:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.file_path_for_file_result(result_id)
+
+
 def list_postgres_golden_labels(
     *,
     limit: int = 100,
@@ -347,7 +387,9 @@ __all__ = [
     "delete_postgres_pipeline_run_if_configured",
     "delete_postgres_golden_label",
     "export_postgres_golden_labels_sqlite",
+    "file_path_for_postgres_file_result",
     "file_path_for_postgres_golden_label",
+    "get_postgres_file_result",
     "get_postgres_golden_label",
     "get_postgres_pipeline_run",
     "get_postgres_review_item",
@@ -357,6 +399,8 @@ __all__ = [
     "list_postgres_review_items",
     "postgres_golden_label_summary",
     "postgres_file_facets",
+    "postgres_file_result_inspection",
+    "postgres_file_result_text",
     "postgres_runtime_summary",
     "postgres_review_summary",
     "record_postgres_review_decision",
