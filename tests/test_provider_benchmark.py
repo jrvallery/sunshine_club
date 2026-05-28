@@ -132,8 +132,47 @@ def test_provider_benchmark_filters_manifest_samples_and_writes_incremental_rows
     assert len(rows) == 1
     assert len(parser_rows) == 1
     assert result["summary"]["sample_count"] == 1
-    assert result["summary"]["sample_filter"] == {"categories": ["born_digital_text"], "limit": 1}
+    assert result["summary"]["sample_filter"] == {
+        "categories": ["born_digital_text"],
+        "limit": 1,
+        "max_megabytes": None,
+        "skipped_count": 0,
+        "skipped": [],
+    }
     assert json.loads(rows[0])["sample_path"] == str(source_a)
+
+
+def test_provider_benchmark_skips_manifest_samples_over_size_limit(tmp_path: Path) -> None:
+    small = tmp_path / "small.txt"
+    large = tmp_path / "large.txt"
+    small.write_text("Meeting minutes.", encoding="utf-8")
+    large.write_bytes(b"x" * 2048)
+    manifest = tmp_path / "provider-benchmark-samples.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "samples": [
+                    {"path": small.name, "category": "born_digital_text", "label": "small sample"},
+                    {"path": large.name, "category": "born_digital_text", "label": "large sample"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmark_extraction_providers(
+        [],
+        provider_names=["current"],
+        sample_manifest=manifest,
+        sample_categories=["born_digital_text"],
+        sample_max_megabytes=0.001,
+    )
+
+    assert result["summary"]["sample_count"] == 1
+    assert result["results"][0]["sample_label"] == "small sample"
+    assert result["summary"]["sample_filter"]["skipped_count"] == 1
+    assert result["summary"]["sample_filter"]["skipped"][0]["label"] == "large sample"
+    assert result["summary"]["sample_filter"]["skipped"][0]["reason"] == "sample_exceeds_max_megabytes"
 
 
 def test_provider_benchmark_resets_stale_complete_artifacts_before_incremental_run(tmp_path: Path) -> None:

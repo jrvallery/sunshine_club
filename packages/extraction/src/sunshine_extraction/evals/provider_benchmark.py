@@ -36,14 +36,17 @@ def benchmark_extraction_providers(
     sample_root: str | Path | None = None,
     sample_categories: list[str] | None = None,
     sample_limit: int | None = None,
+    sample_max_megabytes: float | None = None,
     max_average_seconds: float | None = 30.0,
     _provider_instances: list[ExtractionProvider] | None = None,
 ) -> dict[str, Any]:
-    samples = _filter_samples(
+    filter_result = _filter_samples(
         _benchmark_samples(input_paths or [], sample_manifest=sample_manifest, sample_root=sample_root),
         sample_categories=sample_categories,
         sample_limit=sample_limit,
+        sample_max_megabytes=sample_max_megabytes,
     )
+    samples = filter_result["samples"]
     providers = _provider_instances or _providers(provider_names)
     output_path = Path(output_dir) if output_dir is not None else None
     if output_path is not None:
@@ -69,6 +72,9 @@ def benchmark_extraction_providers(
     summary["sample_filter"] = {
         "categories": sorted({category.strip() for category in sample_categories or [] if category.strip()}),
         "limit": sample_limit,
+        "max_megabytes": sample_max_megabytes,
+        "skipped_count": len(filter_result["skipped"]),
+        "skipped": filter_result["skipped"],
     }
     summary["runtime_policy"] = {"max_average_seconds": max_average_seconds}
     recommendations = _provider_recommendations(rows, max_average_seconds=max_average_seconds)
@@ -377,14 +383,48 @@ def _filter_samples(
     *,
     sample_categories: list[str] | None,
     sample_limit: int | None,
-) -> list[dict[str, Any]]:
+    sample_max_megabytes: float | None,
+) -> dict[str, Any]:
     filtered = samples
     categories = {category.strip() for category in sample_categories or [] if category.strip()}
     if categories:
         filtered = [sample for sample in filtered if str(sample.get("category") or "uncategorized") in categories]
+    skipped: list[dict[str, Any]] = []
+    max_bytes = _max_sample_bytes(sample_max_megabytes)
+    if max_bytes is not None:
+        sized: list[dict[str, Any]] = []
+        for sample in filtered:
+            path = Path(str(sample.get("path") or ""))
+            size_bytes = path.stat().st_size if path.exists() else None
+            if size_bytes is not None and size_bytes > max_bytes:
+                skipped.append(
+                    {
+                        "path": str(path),
+                        "category": sample.get("category") or "uncategorized",
+                        "label": sample.get("label") or path.name,
+                        "reason": "sample_exceeds_max_megabytes",
+                        "size_megabytes": round(size_bytes / (1024 * 1024), 4),
+                        "max_megabytes": sample_max_megabytes,
+                    }
+                )
+                continue
+            sized.append(sample)
+        filtered = sized
     if sample_limit is not None:
         filtered = filtered[: max(0, int(sample_limit))]
-    return filtered
+    return {"samples": filtered, "skipped": skipped}
+
+
+def _max_sample_bytes(sample_max_megabytes: float | None) -> int | None:
+    if sample_max_megabytes is None:
+        return None
+    try:
+        megabytes = float(sample_max_megabytes)
+    except (TypeError, ValueError):
+        return None
+    if megabytes <= 0:
+        return None
+    return int(megabytes * 1024 * 1024)
 
 
 def _providers(provider_names: list[str] | None) -> list[ExtractionProvider]:

@@ -187,6 +187,7 @@ def provider_benchmark_run(request: ProviderBenchmarkRequest) -> dict[str, Any]:
             sample_root=request.sample_root,
             sample_categories=request.sample_categories,
             sample_limit=request.sample_limit,
+            sample_max_megabytes=request.sample_max_megabytes,
             max_average_seconds=request.max_average_seconds,
         )
     except ValueError as error:
@@ -205,6 +206,7 @@ def _run_provider_benchmark_background(request: ProviderBenchmarkRequest) -> Non
             sample_root=request.sample_root,
             sample_categories=request.sample_categories,
             sample_limit=request.sample_limit,
+            sample_max_megabytes=request.sample_max_megabytes,
             max_average_seconds=request.max_average_seconds,
         )
         _write_provider_benchmark_postgres_import_status(
@@ -221,6 +223,7 @@ def _run_provider_benchmark_background(request: ProviderBenchmarkRequest) -> Non
             "providers": list(request.providers),
             "sample_manifest": request.sample_manifest,
             "sample_categories": request.sample_categories or [],
+            "sample_max_megabytes": request.sample_max_megabytes,
         }
         (output_path / "provider-benchmark-background-error.json").write_text(json.dumps(error_row, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         _write_provider_benchmark_postgres_import_status(
