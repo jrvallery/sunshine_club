@@ -21,6 +21,7 @@ type LocalInfrastructure = {
   runtime_policy: Record<string, unknown>;
   qdrant: Record<string, unknown>;
   qdrant_retrieval: Record<string, unknown>;
+  cortex_rerank: Record<string, unknown>;
   docling: Record<string, unknown>;
   parser_providers: Record<string, Record<string, unknown>>;
   parser_policy: Record<string, unknown>;
@@ -165,6 +166,7 @@ export default function SettingsPage() {
           <ProviderStatus title="Postgres" status={infrastructure.data?.postgres} />
           <ProviderStatus title="Qdrant" status={infrastructure.data?.qdrant} />
           <ProviderStatus title="Qdrant retrieval" status={infrastructure.data?.qdrant_retrieval} />
+          <ProviderStatus title="Cortex rerank" status={infrastructure.data?.cortex_rerank} />
           <ProviderStatus title="Docling" status={infrastructure.data?.docling} />
           <ProviderStatus title="Cortex" status={infrastructure.data?.cortex} />
           <ProviderStatus title="Model cache" status={infrastructure.data?.model_call_cache} />

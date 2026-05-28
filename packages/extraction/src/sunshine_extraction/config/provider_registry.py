@@ -21,6 +21,7 @@ DEFAULT_PROVIDER_REGISTRY = {
     "vectorstore.sqlite_golden": ProviderConfig(name="sqlite_golden", capability="vectorstore"),
     "retrieval.sqlite_semantic_index": ProviderConfig(name="sqlite_semantic_index", capability="retrieval"),
     "retrieval.qdrant": ProviderConfig(name="qdrant", capability="retrieval", package="qdrant-client"),
+    "reranking.cortex": ProviderConfig(name="cortex", capability="reranking"),
     "llm.disabled": ProviderConfig(name="disabled", capability="llm", enabled=False),
     "llm.cortex": ProviderConfig(name="cortex", capability="llm"),
     "embedding.placeholder": ProviderConfig(name="placeholder", capability="embedding"),
@@ -37,6 +38,7 @@ REQUIRED_CAPABILITIES = {
     "observability",
     "ocr",
     "retrieval",
+    "reranking",
     "vectorstore",
 }
 

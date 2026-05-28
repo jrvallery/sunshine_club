@@ -16,6 +16,7 @@ from sunshine_extraction.providers.extraction import (
     UnstructuredExtractionProvider,
 )
 from sunshine_extraction.providers.observability import observability_provider_from_env
+from sunshine_extraction.providers.reranking import CortexRerankProvider
 from sunshine_extraction.providers.retrieval import QdrantSemanticRetrievalProvider
 from sunshine_extraction.providers.vectorstores import QdrantVectorStoreProvider
 from sunshine_extraction.services.vector_policy import vector_store_policy_from_env
@@ -26,6 +27,11 @@ def local_infrastructure_status() -> dict[str, Any]:
     postgres_url = os.environ.get("DATABASE_URL") or os.environ.get("SUNSHINE_DATABASE_URL")
     qdrant = QdrantVectorStoreProvider()
     qdrant_retrieval = QdrantSemanticRetrievalProvider()
+    cortex_rerank = CortexRerankProvider(
+        api_key=os.environ.get("CORTEX_API_KEY") or os.environ.get("CORTEX_OPENAI_API_KEY", ""),
+        base_url=os.environ.get("CORTEX_BASE_URL") or os.environ.get("CORTEX_OPENAI_BASE_URL") or "https://cortex.vallery.net",
+        model=os.environ.get("SUNSHINE_RERANK_MODEL", "cortex-lexical-rerank"),
+    )
     parser_providers = {
         "docling": DoclingExtractionProvider(),
         "mineru": MinerUExtractionProvider(),
@@ -48,6 +54,11 @@ def local_infrastructure_status() -> dict[str, Any]:
         "runtime_policy": pipeline_runtime_policy_from_env(),
         "qdrant": _qdrant_status(qdrant),
         "qdrant_retrieval": qdrant_retrieval.dependency_status(),
+        "cortex_rerank": {
+            **cortex_rerank.dependency_status(),
+            "configured": (os.environ.get("SUNSHINE_RERANK_PROVIDER", "").strip().lower() == "cortex"),
+            "env_provider": os.environ.get("SUNSHINE_RERANK_PROVIDER") or "disabled",
+        },
         "docling": parser_providers["docling"].dependency_status(),
         "parser_providers": {name: provider.dependency_status() for name, provider in parser_providers.items()},
         "parser_policy": {

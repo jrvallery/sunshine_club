@@ -382,6 +382,9 @@ def test_local_infrastructure_status_is_local_only(monkeypatch) -> None:
     monkeypatch.setenv("SUNSHINE_QDRANT_URL", "http://127.0.0.1:6333")
     monkeypatch.setenv("CORTEX_OPENAI_BASE_URL", "http://127.0.0.1:11434/v1")
     monkeypatch.setenv("CORTEX_MODEL", "gemma4-26b")
+    monkeypatch.setenv("CORTEX_API_KEY", "local")
+    monkeypatch.setenv("SUNSHINE_RERANK_PROVIDER", "cortex")
+    monkeypatch.setenv("SUNSHINE_RERANK_MODEL", "rerank-local")
     monkeypatch.setenv("TEMPORAL_ADDRESS", "localhost:7233")
     monkeypatch.setenv("SUNSHINE_MODEL_CACHE_PATH", "/tmp/sunshine-model-cache.sqlite")
 
@@ -413,6 +416,11 @@ def test_local_infrastructure_status_is_local_only(monkeypatch) -> None:
     assert payload["runtime_policy"]["raw_provider_storage"] == "artifact_file_by_run"
     assert payload["runtime_policy"]["source_files_mutable"] is False
     assert payload["qdrant_retrieval"]["provider"] == "qdrant"
+    assert payload["cortex_rerank"]["provider"] == "cortex"
+    assert payload["cortex_rerank"]["configured"] is True
+    assert payload["cortex_rerank"]["available"] is True
+    assert payload["cortex_rerank"]["model"] == "rerank-local"
+    assert payload["cortex_rerank"]["local_only"] is True
     assert payload["docling"]["provider"] == "docling"
     assert payload["docling"]["local_only"] is True
     assert set(payload["parser_providers"]) == {"docling", "mineru", "ragflow_deepdoc", "unstructured"}
@@ -428,6 +436,7 @@ def test_local_infrastructure_status_is_local_only(monkeypatch) -> None:
     assert payload["temporal"]["worker_registered"] is True
     assert payload["observability"]["local_only"] is True
     assert payload["provider_registry"]["validation"]["ok"] is True
+    assert any(provider["key"] == "reranking.cortex" and provider["enabled"] is True for provider in payload["provider_registry"]["providers"])
     assert any(provider["key"] == "ocr.openai" and provider["enabled"] is False for provider in payload["provider_registry"]["providers"])
 
 
