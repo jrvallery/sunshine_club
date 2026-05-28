@@ -1,0 +1,1788 @@
+# Sunshine Club V2 End-to-End Architecture
+
+## Status
+
+Design proposal. Do not implement until reviewed.
+
+Branch:
+
+```text
+feature/v2-end-to-end-design
+```
+
+## Executive Summary
+
+V1 proved the shape of the product:
+
+- classify files.
+- extract/OCR content.
+- chunk and embed content.
+- retrieve similar reviewed examples.
+- assign primary/secondary tags.
+- calibrate confidence.
+- route to accepted/review/deferred/failed.
+- write artifacts.
+- inspect and correct results in a dashboard.
+
+V2 should keep the same product goal but rebuild the codebase around clearer boundaries:
+
+- **LangGraph remains the deterministic control plane.**
+- **Open-source/provider tools become replaceable node providers.**
+- **Sunshine-specific policy stays in-house.**
+- **Dashboard remains the operational/review surface.**
+- **Temporal becomes the later durable batch execution layer, not the per-file intelligence graph.**
+
+The implementation should be incremental, but the target architecture should be clean enough that we can build toward it without continuing to grow `sample_pipeline.py` and API route files into large mixed-responsibility modules.
+
+## Product Goal
+
+Build a production-ready document intelligence and archival organization pipeline for Sunshine Club that can process single files and batches through deterministic, auditable workflows.
+
+The system must:
+
+- never silently lose data.
+- clearly mark uncertain files for review.
+- preserve source-file provenance.
+- support local-first model execution through Cortex.
+- keep documents and model calls inside local infrastructure.
+- expose progress, provider usage, model usage, costs, quality, and review decisions in the dashboard.
+- support continuous improvement through golden labels and provider benchmarks.
+
+## Non-Goals
+
+- Do not replace LangGraph with RAGFlow, Dify, Langflow, Haystack, or another workflow/runtime.
+- Do not replace the dashboard with an external RAG app.
+- Do not make a full production Temporal migration in the same slice as provider cleanup.
+- Do not call third-party APIs for customer documents.
+- Do not trust parser/provider confidence without Sunshine validation gates.
+- Do not modify customer source files.
+- Do not attempt to implement every provider at once.
+
+## Design Principles
+
+1. **Deterministic graph, pluggable tools**
+   - LangGraph owns node order, state, routing, and audit.
+   - Providers own specialized work: parsing, OCR, chunking, embeddings, retrieval, reranking, LLM calls.
+
+2. **Fail closed**
+   - Provider failures route to review or technical follow-up.
+   - Bad OCR/text never becomes accepted solely because a provider returned a confident answer.
+
+3. **Artifacts are contracts**
+   - Dashboard, eval, review import, and run reports consume normalized artifacts.
+   - Provider-specific raw output can be saved separately, but normalized artifacts remain stable.
+
+4. **Model calls are visible**
+   - Every local model call writes usage rows with provider, model, purpose, runtime, token counts when available, host, and error.
+   - Production policy is local-only. Third-party API integrations may exist only as disabled development adapters and must not be part of accepted production routing.
+
+5. **Use open source where it removes real complexity**
+   - Use Docling/MinerU/RAGFlow DeepDoc/Unstructured for parsing benchmarks.
+   - Use Qdrant for vector storage.
+   - Use Onyx/LlamaIndex selectively for connectors.
+   - Keep routing, confidence, review, taxonomy, and placement policy in-house.
+
+## Target System View
+
+```text
+External Sources
+  filesystem / future connectors
+      |
+      v
+FastAPI + Dashboard
+  start run / inspect file / review decisions / golden labels
+      |
+      v
+Run Executor
+  V2 now: subprocess or local worker
+  V2 later: Temporal workflow
+      |
+      v
+LangGraph Document Pipeline
+  deterministic state graph
+  provider-backed nodes
+  normalized artifacts
+      |
+      +--> Postgres dashboard/run database
+      +--> File artifacts JSONL/JSON
+      +--> Local vector database
+      +--> Observability traces
+```
+
+## V2 LangGraph
+
+### Full Node List
+
+```text
+START
+  load_source_document
+  identify_file
+  probe_file
+  classify_content_type
+  plan_extraction
+  select_extraction_provider
+  extract_document
+  validate_extraction
+  repair_or_escalate_extraction
+  quality_gate
+  normalize_document_structure
+  propose_document_segments
+  chunk_document
+  embed_chunks
+  index_chunks
+  retrieve_labeled_examples
+  assign_rule_tags
+  inspect_tags_with_llm
+  combine_tag_evidence
+  calibrate_confidence
+  propose_placement
+  route_or_review
+  persist_artifacts
+  import_run_results
+END
+```
+
+### Graph Flow
+
+```mermaid
+flowchart TD
+    START([START]) --> load_source_document
+    load_source_document --> identify_file
+    identify_file --> probe_file
+    probe_file --> classify_content_type
+    classify_content_type --> plan_extraction
+    plan_extraction --> select_extraction_provider
+    select_extraction_provider --> extract_document
+    extract_document --> validate_extraction
+    validate_extraction --> repair_or_escalate_extraction
+    repair_or_escalate_extraction --> quality_gate
+
+    quality_gate -->|can_process_text| normalize_document_structure
+    quality_gate -->|metadata_only_or_failed| assign_rule_tags
+
+    normalize_document_structure --> propose_document_segments
+    propose_document_segments --> chunk_document
+    chunk_document --> embed_chunks
+    embed_chunks --> index_chunks
+    index_chunks --> retrieve_labeled_examples
+    retrieve_labeled_examples --> assign_rule_tags
+
+    assign_rule_tags --> inspect_tags_with_llm
+    inspect_tags_with_llm --> combine_tag_evidence
+    combine_tag_evidence --> calibrate_confidence
+    calibrate_confidence --> propose_placement
+    propose_placement --> route_or_review
+    route_or_review --> persist_artifacts
+    persist_artifacts --> import_run_results
+    import_run_results --> END([END])
+```
+
+### Conditional Edges
+
+| From | Condition | To |
+| --- | --- | --- |
+| `load_source_document` | source missing | `persist_artifacts` with failed review route |
+| `quality_gate` | text can be processed | `normalize_document_structure` |
+| `propose_document_segments` | long PDF/page collection has separable items | `chunk_document` with segment metadata |
+| `propose_document_segments` | no safe split available | `chunk_document` with original document boundary |
+| `quality_gate` | text unavailable but metadata exists | `assign_rule_tags` |
+| `quality_gate` | unrecoverable failure | `assign_rule_tags`, then review route |
+| `validate_extraction` | extraction valid | `quality_gate` |
+| `validate_extraction` | extraction invalid and escalation available | `repair_or_escalate_extraction` |
+| `repair_or_escalate_extraction` | repair attempted | `quality_gate` |
+| `inspect_tags_with_llm` | LLM disabled | `combine_tag_evidence` with skipped inspection |
+
+## Node Design
+
+### 1. `load_source_document`
+
+Purpose:
+
+- Resolve input file/source document into a graph state object.
+
+Code source:
+
+- Existing useful code:
+  - `graph/nodes/loading.py`
+  - `SampleFile` construction from `sample_pipeline.py`
+- V2 target:
+  - `packages/extraction/src/sunshine_extraction/domain/documents.py`
+  - `packages/extraction/src/sunshine_extraction/graph/nodes/loading.py`
+
+Provider:
+
+- In-house.
+
+Outputs:
+
+- `source_document`
+- `input_path`
+- `source_path`
+- `relative_path`
+- `source_collection`
+- `source_metadata`
+
+Success criteria:
+
+- Missing files route to review, not crash.
+- Source files are never modified.
+- Same file gets stable identity across runs.
+
+### 2. `identify_file`
+
+Purpose:
+
+- Compute stable identity and immutable source facts.
+
+Code source:
+
+- Existing useful code:
+  - source hash logic from eval/source snapshot work.
+  - review store file identity fields.
+- V2 target:
+  - `domain/identity.py`
+  - `services/identity.py`
+
+Provider:
+
+- In-house.
+
+Outputs:
+
+- `file_id`
+- `content_sha256`
+- `size_bytes`
+- `modified_at`
+- `extension`
+
+Success criteria:
+
+- Idempotent file IDs.
+- Content changes are detectable.
+- Dashboard can group run results by same source file.
+
+### 3. `probe_file`
+
+Purpose:
+
+- Gather file-level technical signals before classification and extraction.
+
+Code source:
+
+- Existing useful code:
+  - `probe.py`
+  - PDF/page-count and sparse-text detection logic.
+- V2 target:
+  - `providers/probe/base.py`
+  - `providers/probe/native.py`
+  - optional `providers/probe/tika.py`
+
+Recommended provider:
+
+- In-house native probe first.
+- Add libmagic/Tika/Extractous signals later if needed.
+
+Outputs:
+
+- MIME type.
+- page count.
+- PDF encrypted/locked.
+- embedded text presence.
+- image-only PDF likelihood.
+- media type.
+
+Success criteria:
+
+- Better PDF image-only detection before extraction.
+- Unknowns route safely.
+- Probe is fast and does not call external models.
+
+### 4. `classify_content_type`
+
+Purpose:
+
+- Assign broad Sunshine content class.
+
+Code source:
+
+- Existing useful code:
+  - `graph/nodes/classification.py`
+  - corrected content classes from review decisions.
+- V2 target:
+  - `services/classification/content_type.py`
+  - `domain/content_classes.py`
+
+Recommended provider:
+
+- In-house rules with probe signals.
+
+Why:
+
+- Sunshine classes are policy categories, not generic MIME categories.
+
+Outputs:
+
+- `content_class`
+- `content_class_confidence`
+- `classification_evidence`
+- `classification_needs_review`
+
+Success criteria:
+
+- No technical/unknown file is dropped.
+- Corrected human labels override heuristic classification.
+- Ambiguous class routes to review or safe extraction plan.
+
+### 5. `plan_extraction`
+
+Purpose:
+
+- Determine extraction objective and allowed provider chain.
+
+Code source:
+
+- Existing useful code:
+  - extraction planning JSONL.
+  - `planning.py`
+  - `graph/nodes/classification.py` planning logic.
+- V2 target:
+  - `services/extraction/planning.py`
+  - `domain/extraction_plan.py`
+
+Recommended provider:
+
+- In-house.
+
+Outputs:
+
+- `extraction_plan`
+- `allowed_providers`
+- `local_only_required`
+- `page_limit`
+- `fallback_policy`
+
+Success criteria:
+
+- Provider chain is visible before execution.
+- No third-party API calls.
+- Technical/deferred formats remain safely deferred.
+
+### 6. `select_extraction_provider`
+
+Purpose:
+
+- Select parser/OCR provider from run config and file plan.
+
+Code source:
+
+- New V2 code.
+- Existing useful code:
+  - current `ocr_executor_from_env`.
+  - provider strategy doc.
+
+V2 target:
+
+```text
+packages/extraction/src/sunshine_extraction/providers/extraction/router.py
+packages/extraction/src/sunshine_extraction/providers/extraction/base.py
+```
+
+Recommended default:
+
+- Native text for known born-digital text.
+- Docling for scanned/image-only/PDF layout parsing.
+- Cortex/local OCR chain as fallback.
+
+Outputs:
+
+- `selected_extraction_provider`
+- `provider_chain`
+- `provider_selection_reason`
+
+Success criteria:
+
+- Same state/config always chooses same provider.
+- Provider selection is visible in run report.
+- Fallback chain is auditable.
+
+### 7. `extract_document`
+
+Purpose:
+
+- Convert source file into normalized text/structure artifacts.
+
+Code source:
+
+- Existing useful code:
+  - `extract_content`
+  - `_extract_text`
+  - `CortexNativeOcrExecutor`
+  - spreadsheet metadata extraction.
+- V2 target:
+  - `providers/extraction/native_text.py`
+  - `providers/extraction/docling_provider.py`
+  - `providers/extraction/cortex_ocr.py`
+  - `providers/extraction/spreadsheet.py`
+
+Recommended provider:
+
+- Docling as first OSS provider for document parsing/OCR.
+
+Benchmark providers:
+
+- Docling.
+- MinerU.
+- RAGFlow DeepDoc.
+- Unstructured.
+- current.
+
+Outputs:
+
+- `extraction_result`
+- `document_structure`
+- OCR pages/documents.
+- parser raw artifact references.
+- provider model usage.
+
+Success criteria:
+
+- Extracted text is no worse than current baseline.
+- Table-heavy PDFs improve.
+- Scanned/image-only documents improve.
+- Provider failures are captured, not thrown away.
+
+### 8. `validate_extraction`
+
+Purpose:
+
+- Determine whether extracted text is usable.
+
+Code source:
+
+- Existing useful code:
+  - `validate_extracted_text`
+  - `_looks_like_gibberish`
+  - `extraction_quality_gate`
+- V2 target:
+  - `services/quality/text_validation.py`
+  - `services/quality/ocr_quality.py`
+
+Recommended provider:
+
+- In-house.
+
+Outputs:
+
+- `extraction_validation`
+- `validation_failures`
+- `repair_recommended`
+
+Success criteria:
+
+- Known bad OCR is caught.
+- Known good text is not over-flagged.
+- Validation reasons are visible in dashboard.
+
+### 9. `repair_or_escalate_extraction`
+
+Purpose:
+
+- If extraction is poor/empty/gibberish, attempt the next allowed provider.
+
+Code source:
+
+- Existing useful code:
+  - `validate_and_repair_extraction`
+  - `EscalatingOcrExecutor`
+- V2 target:
+  - `services/extraction/escalation.py`
+  - `providers/extraction/router.py`
+
+Recommended provider chain:
+
+```text
+Native text failed -> Docling
+Docling failed/poor -> Cortex/local vision OCR
+Cortex/local OCR failed/poor -> review or local provider benchmark queue
+```
+
+Outputs:
+
+- repaired `extraction_result`
+- `escalation_events`
+- `provider_attempts`
+
+Success criteria:
+
+- No provider failure hides original extraction.
+- Original and repaired snippets are saved.
+- No repair path calls third-party APIs.
+
+### 10. `quality_gate`
+
+Purpose:
+
+- Convert extraction validation into graph routing flags.
+
+Code source:
+
+- Existing useful code:
+  - `extraction_quality_gate`
+- V2 target:
+  - `services/quality/gates.py`
+
+Recommended provider:
+
+- In-house.
+
+Outputs:
+
+- `quality`
+- `can_chunk`
+- `can_embed`
+- `requires_review`
+- `quality_evidence`
+
+Success criteria:
+
+- Fail-closed behavior.
+- Stable quality labels.
+- Per-provider quality breakdowns in reports.
+
+### 11. `normalize_document_structure`
+
+Purpose:
+
+- Normalize parser-specific structure into Sunshine document sections.
+
+Code source:
+
+- New V2 code.
+- Existing useful code:
+  - chunk rows/artifact shape.
+
+V2 target:
+
+```text
+domain/document_structure.py
+services/extraction/normalization.py
+```
+
+Recommended provider:
+
+- In-house normalization over provider outputs.
+
+Inputs:
+
+- Docling JSON/Markdown.
+- Unstructured elements.
+- MinerU output.
+- RAGFlow/DeepDoc chunks.
+- native text pages.
+
+Outputs:
+
+- normalized pages.
+- sections.
+- tables.
+- figures/images references.
+- text spans.
+
+Success criteria:
+
+- Chunking can be provider-agnostic.
+- Tables/pages survive parser swaps.
+- Raw provider output remains inspectable.
+
+### 12. `propose_document_segments`
+
+Purpose:
+
+- Detect candidate document boundaries inside long scanned PDFs, scrapbook scans, newspaper packets, and mixed page collections.
+- Preserve the original source file while creating logical child-document proposals for review, tagging, retrieval, and eventual export.
+
+Code source:
+
+- New V2 code.
+- Existing useful code:
+  - page-level OCR/document rows.
+  - source path/page metadata.
+  - scrapbook/newspaper corrected review labels.
+
+V2 target:
+
+```text
+domain/document_segments.py
+services/segmentation/page_grouping.py
+services/segmentation/scrapbook.py
+graph/nodes/segmentation.py
+```
+
+Recommended provider:
+
+- In-house conservative segmentation policy over Docling/page/OCR structure.
+
+Provider inputs:
+
+- Docling pages/sections/tables/images.
+- OCR page text and quality.
+- page image hashes/thumbnails.
+- headings/dates/names/newspaper mastheads.
+- blank/separator pages.
+- source path/name signals such as scrapbook, newspaper, yearbook, minutes, guest list.
+
+Outputs:
+
+- `document_segments`
+- `segment_id`
+- `parent_file_id`
+- `page_start`
+- `page_end`
+- `segment_title`
+- `segment_type`
+- `segment_confidence`
+- `segment_boundary_evidence`
+- `requires_segment_review`
+
+Initial segment types:
+
+- `single_document`
+- `scrapbook_page`
+- `scrapbook_article`
+- `newspaper_article`
+- `photo_caption_group`
+- `meeting_packet_section`
+- `financial_packet_section`
+- `unknown_page_group`
+
+Success criteria:
+
+- The original PDF remains immutable and fully recoverable.
+- Low-confidence splits are proposals, not accepted child documents.
+- Child segments carry parent source path, page range, extraction provider, and OCR quality.
+- Long scrapbook/newspaper PDFs become inspectable as page ranges in the dashboard.
+- Segment proposals can be promoted to accepted child documents by review decisions.
+
+Implementation note:
+
+- This is worth designing into V2 now.
+- Full automatic splitting should be gated behind provider benchmarks and review because bad splitting can be as damaging as bad classification.
+- The first implementation pass should create the data model, artifact shape, and conservative “one segment per PDF unless strong boundary evidence exists” behavior.
+- If Docling produces reliable page/section boundaries during the spike, the first pass can also emit candidate page groups for dashboard review.
+
+### 13. `chunk_document`
+
+Purpose:
+
+- Create retrieval/tagging chunks from normalized structure.
+
+Code source:
+
+- Existing useful code:
+  - `chunk_content`
+- V2 target:
+  - `providers/chunking/base.py`
+  - `providers/chunking/structure_aware.py`
+  - `providers/chunking/legacy.py`
+  - `providers/chunking/llamaindex.py` optional benchmark.
+
+Recommended provider:
+
+- Structure-aware in-house chunker using Docling/Unstructured structure when available.
+
+Benchmark:
+
+- current chunker.
+- Docling-derived chunks.
+- Unstructured chunks.
+- LlamaIndex markdown/node parser.
+
+Outputs:
+
+- `chunks`
+- chunk source spans.
+- page/table/section metadata.
+- optional parent `segment_id`.
+
+Success criteria:
+
+- Chunks keep citations.
+- Tables are not shredded.
+- Scrapbook/newspaper pages keep context.
+- Retrieval top-k improves against golden labels.
+
+### 14. `embed_chunks`
+
+Purpose:
+
+- Embed chunks for semantic retrieval/indexing.
+
+Code source:
+
+- Existing useful code:
+  - `embeddings.py`
+  - `graph/nodes/embeddings.py`
+  - model usage rows.
+- V2 target:
+  - `providers/embeddings/base.py`
+  - `providers/embeddings/cortex.py`
+  - `providers/embeddings/openai.py`
+  - `services/cache/embedding_cache.py`
+
+Recommended provider:
+
+- Cortex embeddings.
+
+Fallback:
+
+- Placeholder only for tests/dev, never production accepted routing.
+- Another local embedding provider only after provider benchmark approval.
+
+Outputs:
+
+- `embeddings`
+- `embedding_usage`
+- cache hit/miss metrics.
+
+Success criteria:
+
+- No duplicate calls for unchanged text/model.
+- Embedding failures fail closed in eval/production.
+- Provider/model/dimensions are visible.
+
+### 15. `index_chunks`
+
+Purpose:
+
+- Persist chunks and vectors into search/retrieval index.
+
+Code source:
+
+- Existing useful code:
+  - `semantic_index.py` for golden-label style retrieval.
+- V2 target:
+  - `providers/vectorstores/base.py`
+  - `providers/vectorstores/qdrant.py`
+  - `services/indexing/chunk_indexer.py`
+
+Recommended provider:
+
+- Qdrant.
+
+Outputs:
+
+- `index_status`
+- indexed chunk IDs.
+
+Success criteria:
+
+- Idempotent indexing.
+- Metadata filters work.
+- Search results include citations.
+- Dashboard can rebuild index per run or collection.
+
+### 16. `retrieve_labeled_examples`
+
+Purpose:
+
+- Retrieve reviewed/golden examples to guide tag assignment.
+
+Code source:
+
+- Existing useful code:
+  - `semantic_index.py`
+  - `graph/nodes/embeddings.py`
+- V2 target:
+  - `providers/retrieval/base.py`
+  - `providers/retrieval/qdrant.py`
+  - `providers/reranking/cortex.py`
+
+Recommended provider:
+
+- Qdrant retrieval plus Cortex reranker.
+
+Outputs:
+
+- `semantic_examples`
+- retrieval scores.
+- rerank scores.
+
+Success criteria:
+
+- Golden example top-k relevance improves.
+- Retrieval rows are explainable.
+- Missing index warns but does not crash.
+
+### 17. `assign_rule_tags`
+
+Purpose:
+
+- Produce deterministic tag candidates.
+
+Code source:
+
+- Existing useful code:
+  - `assign_tag_candidates`
+  - taxonomy files.
+  - placement/tag mapping.
+- V2 target:
+  - `services/tagging/rules.py`
+  - `domain/taxonomy.py`
+  - `config/tag_rules.yaml` or JSON.
+
+Recommended provider:
+
+- In-house.
+
+Outputs:
+
+- `deterministic_tag_candidates`
+- rule IDs.
+- evidence spans.
+
+Success criteria:
+
+- Every rule candidate has auditable evidence.
+- Rules are data-driven, not buried in long Python functions.
+- Golden label tests cover high-risk tags.
+
+### 18. `inspect_tags_with_llm`
+
+Purpose:
+
+- Ask configured LLM to inspect tag candidates and text context.
+
+Code source:
+
+- Existing useful code:
+  - `LLMTagInspector`
+  - OpenAI-compatible local Cortex client shape.
+  - structured prompt/schema.
+- V2 target:
+  - `providers/llm/base.py`
+  - `providers/llm/cortex.py`
+  - `providers/llm/openai.py`
+  - `services/tagging/llm_inspection.py`
+
+Recommended provider:
+
+- Cortex by default.
+- local OpenAI-compatible vLLM endpoint only.
+- no hosted third-party LLM APIs.
+
+Outputs:
+
+- `llm_tag_inspection`
+- `llm_usage`
+- structured validation status.
+
+Success criteria:
+
+- Invalid outputs route to review.
+- LLM failures do not erase deterministic evidence.
+- Prompt/model versions are stored.
+- Calls are cached by input hash.
+
+### 19. `combine_tag_evidence`
+
+Purpose:
+
+- Merge deterministic, semantic, and LLM evidence.
+
+Code source:
+
+- Existing useful code:
+  - `combine_tag_candidates`
+- V2 target:
+  - `services/tagging/evidence.py`
+
+Recommended provider:
+
+- In-house.
+
+Outputs:
+
+- `tag_candidates`
+- evidence graph.
+- conflicts.
+
+Success criteria:
+
+- Review UI can show why a tag won.
+- Conflicts are explicit.
+- No accepted route without evidence.
+
+### 20. `calibrate_confidence`
+
+Purpose:
+
+- Convert evidence and quality into calibrated confidence/review requirement.
+
+Code source:
+
+- Existing useful code:
+  - `calibrate_tag_confidence`
+- V2 target:
+  - `services/confidence/calibration.py`
+
+Recommended provider:
+
+- In-house.
+
+Outputs:
+
+- calibrated tag candidates.
+- calibration factors.
+- review reason.
+
+Success criteria:
+
+- False accepts are minimized.
+- Calibration reasons are visible.
+- Golden eval gates enforce high-confidence accuracy.
+
+### 21. `propose_placement`
+
+Purpose:
+
+- Map accepted tag/date/privacy to destination proposal.
+
+Code source:
+
+- Existing useful code:
+  - `placement.py`
+  - corpus taxonomy report.
+- V2 target:
+  - `services/placement/rules.py`
+  - `config/placement_rules.yaml`
+
+Recommended provider:
+
+- In-house.
+
+Outputs:
+
+- destination path proposal.
+- privacy class.
+- placement rule.
+- placement review reason.
+
+Success criteria:
+
+- Placement never physically moves source files during classification.
+- Unknown/missing date routes to review.
+- Rules are table-driven from taxonomy.
+
+### 22. `route_or_review`
+
+Purpose:
+
+- Final decision: accepted, review required, failed, deferred.
+
+Code source:
+
+- Existing useful code:
+  - `resolve_route_or_review`
+  - review queue artifact generation.
+- V2 target:
+  - `services/routing/decision.py`
+
+Recommended provider:
+
+- In-house.
+
+Outputs:
+
+- route status.
+- review reason.
+- priority.
+- review stage.
+
+Success criteria:
+
+- Every non-accepted file has a human-understandable reason.
+- No low-quality extraction is accepted.
+- No unsupported file is lost.
+
+### 23. `persist_artifacts`
+
+Purpose:
+
+- Write normalized file/run artifacts.
+
+Code source:
+
+- Existing useful code:
+  - `graph/nodes/persistence.py`
+  - artifact writers.
+  - run report artifact manifest.
+- V2 target:
+  - `services/artifacts/writers.py`
+  - `services/artifacts/manifest.py`
+
+Recommended provider:
+
+- In-house.
+
+Artifacts:
+
+- `graph-result.json`
+- `graph-audit-events.jsonl`
+- `sample-pipeline-results.jsonl`
+- `sample-review-queue.jsonl`
+- `sample-inputs.jsonl`
+- `sample-extraction-results.jsonl`
+- `sample-parser-results.jsonl`
+- `sample-ocr-pages.jsonl`
+- `sample-ocr-documents.jsonl`
+- `sample-structure.jsonl`
+- `sample-document-segments.jsonl`
+- `sample-chunks.jsonl`
+- `sample-embeddings.jsonl`
+- `sample-indexing.jsonl`
+- `sample-semantic-examples.jsonl`
+- `sample-llm-tag-inspections.jsonl`
+- `sample-tag-candidates.jsonl`
+- `sample-placement-proposals.jsonl`
+- `sample-model-usage.jsonl`
+- `artifact-manifest.json`
+
+Success criteria:
+
+- Artifacts are backward-compatible where possible.
+- New artifacts are documented.
+- Raw provider artifacts are linked, not mixed into normalized rows.
+
+### 24. `import_run_results`
+
+Purpose:
+
+- Import artifacts into dashboard DB.
+
+Code source:
+
+- Existing useful code:
+  - `review_store.py` import logic.
+  - API import endpoint.
+- V2 target:
+  - `apps/api/src/sunshine_api/services/imports/`
+  - `apps/api/src/sunshine_api/services/runs/`
+
+Recommended provider:
+
+- In-house.
+
+Success criteria:
+
+- Dashboard updates while run is active.
+- Imported rows preserve run ID/provider configuration.
+- Delete run removes only run-owned dashboard state/artifacts, never source files.
+
+## Target Folder Structure
+
+### Python
+
+```text
+packages/extraction/src/sunshine_extraction/
+  cli/
+    langgraph_pipeline.py
+    provider_benchmark.py
+  config/
+    defaults.py
+    models.py
+    provider_registry.py
+  domain/
+    documents.py
+    extraction.py
+    chunks.py
+    taxonomy.py
+    tags.py
+    routing.py
+    artifacts.py
+    model_usage.py
+  graph/
+    build.py
+    runtime.py
+    batch.py
+    state.py
+    deps.py
+    nodes/
+      loading.py
+      classification.py
+      extraction.py
+      quality.py
+      segmentation.py
+      chunking.py
+      embeddings.py
+      indexing.py
+      retrieval.py
+      tagging.py
+      placement.py
+      routing.py
+      persistence.py
+  providers/
+    probe/
+      base.py
+      native.py
+    extraction/
+      base.py
+      native_text.py
+      docling_provider.py
+      mineru_provider.py
+      ragflow_deepdoc_provider.py
+      unstructured_provider.py
+      cortex_ocr.py
+      openai_ocr.py
+      spreadsheet.py
+      router.py
+    chunking/
+      base.py
+      structure_aware.py
+      legacy.py
+      llamaindex_provider.py
+    embeddings/
+      base.py
+      cortex.py
+      openai.py
+      placeholder.py
+      cache.py
+    vectorstores/
+      base.py
+      qdrant.py
+      sqlite_golden.py
+    retrieval/
+      base.py
+      qdrant.py
+      golden_examples.py
+    reranking/
+      base.py
+      cortex.py
+    llm/
+      base.py
+      cortex.py
+      openai.py
+      cache.py
+    observability/
+      base.py
+      langfuse.py
+      noop.py
+  services/
+    classification/
+    extraction/
+    quality/
+    segmentation/
+    tagging/
+    confidence/
+    placement/
+    routing/
+    artifacts/
+    evaluation/
+  evals/
+    provider_benchmark.py
+    golden_pipeline_eval.py
+    reports.py
+```
+
+### API
+
+```text
+apps/api/src/sunshine_api/
+  main.py
+  dependencies.py
+  schemas/
+    runs.py
+    files.py
+    review.py
+    evals.py
+    providers.py
+  routers/
+    runs.py
+    files.py
+    review.py
+    golden_labels.py
+    pipeline_eval.py
+    providers.py
+    search.py
+    settings.py
+  services/
+    runs/
+      commands.py
+      execution.py
+      reports.py
+      deletion.py
+      import_results.py
+    files/
+      browser.py
+      inspection.py
+      preview.py
+    review/
+      queue.py
+      decisions.py
+      golden_labels.py
+    evals/
+      pipeline_eval.py
+      provider_benchmark.py
+    providers/
+      registry.py
+      health.py
+    persistence/
+      review_store.py
+      migrations.py
+```
+
+### Dashboard
+
+```text
+apps/dashboard/
+  app/
+    runs/
+    review/
+    files/
+    golden-labels/
+    pipeline-eval/
+    provider-benchmarks/
+    search/
+    settings/
+  components/
+    app-shell/
+    dashboard/
+    data-table/
+    file-preview/
+    run-report/
+    provider-benchmark/
+    review/
+    charts/
+    ui/
+  lib/
+    api.ts
+    types.ts
+    taxonomy.ts
+    providers.ts
+```
+
+## Provider Defaults
+
+| Capability | V2 Default | Alternatives | Notes |
+| --- | --- | --- | --- |
+| Workflow | LangGraph | none | Keep deterministic graph. |
+| Batch durability | subprocess now, Temporal later | none | Temporal after provider cleanup. |
+| Filesystem ingestion | in-house | LlamaIndex readers | Current corpus is mounted filesystem. |
+| Connectors | in-house filesystem first | Onyx/LlamaIndex local/self-hosted evaluation | Customer documents remain local. |
+| File probing | in-house native | Tika/Extractous | Add only if needed. |
+| Parsing/OCR | Docling | MinerU, RAGFlow DeepDoc, Unstructured, Cortex/local OCR | Benchmark before default switch. All must run locally. |
+| Text validation | in-house | parser confidence, LLM critique | Safety policy stays in-house. |
+| Chunking | structure-aware in-house over parser structure | Unstructured, LlamaIndex | Preserve tables/pages. |
+| Embeddings | Cortex/local embedding model | local sentence-transformers, local BGE/E5, local vLLM-compatible embedding endpoint | Add cache. No hosted APIs. |
+| Vector store | Qdrant | pgvector, LanceDB, OpenSearch | Must be local. Postgres remains system DB. |
+| Retrieval | Qdrant + Cortex reranker | Haystack | Providerize. |
+| LLM calls | Cortex | another local OpenAI-compatible endpoint | No Gemini, no hosted OpenAI. |
+| Tagging rules | in-house | none | Taxonomy-specific. |
+| Confidence | in-house | statistical later | Requires golden labels. |
+| Placement | in-house | none | Customer-specific. |
+| Review UI | current dashboard baseline | Label Studio, Argilla, OpenReplay-style traces, Refine/React Admin patterns | Evaluate before large custom UI rebuild. |
+| Observability | self-hosted Langfuse | Phoenix later | Trace/runtime/model usage. Must be local/self-hosted. |
+| Eval | in-house gates | Ragas/DeepEval later | RAG answer eval later. |
+
+## Current Open-Source Packages In Repo
+
+These are the open-source dependencies currently declared in the repo. This list is not the full V2 target; it shows what is actually wired into dependency files today.
+
+Python/package dependencies from `pyproject.toml`:
+
+- FastAPI: API server.
+- Uvicorn: ASGI runtime.
+- Pydantic: schemas/config validation.
+- psycopg: Postgres client. Postgres server still needs to be provisioned.
+- Temporal SDK: future durable workflow orchestration.
+- LangGraph: deterministic graph runtime.
+- LangGraph SQLite checkpoint: current checkpoint option, not V2 production DB.
+- LangChain OpenAI: OpenAI-compatible client shape currently useful for local Cortex/vLLM endpoints.
+- python-dotenv: local environment loading.
+- OpenTelemetry API: tracing foundation.
+- Langfuse: observability, only acceptable as self-hosted/local in V2.
+- Pillow: image handling.
+- pypdf: PDF text/metadata extraction.
+- pypdfium2: PDF rendering/page conversion.
+- pytesseract: local CPU OCR wrapper.
+- pytest: tests.
+
+JavaScript/dashboard dependencies:
+
+- Next.js: dashboard framework.
+- React / React DOM: dashboard UI runtime.
+- TanStack Query: API data fetching/cache.
+- TanStack Table: data table state.
+- TanStack Virtual: virtualized long lists/tables.
+- React PDF Viewer: PDF preview.
+- React Hook Form and Hookform Resolvers: forms.
+- Zod: validation.
+- Lucide React: icons.
+- class-variance-authority, clsx, tailwind-merge: component styling helpers.
+- TypeScript: dashboard type system.
+- Playwright and axe-core Playwright: browser/accessibility tests.
+
+Important missing V2 dependencies:
+
+- Docling is recommended but not installed or implemented yet.
+- Qdrant client/server is recommended but not installed/provisioned yet.
+- Postgres client exists, but the local Postgres database/service/migrations need to be made first-class.
+- Local embedding/vector indexing stack is not fully wired yet.
+- Provider benchmark tooling is not implemented yet.
+
+## Local-Only Infrastructure Decision
+
+Customer documents must not leave local infrastructure.
+
+V2 production deployment therefore requires:
+
+- Postgres as the authoritative dashboard/run/review database.
+- A local vector database, with Qdrant as the recommended default.
+- Local parser/OCR providers.
+- Local embedding model/provider.
+- Local LLM/tagging provider through Cortex or another local OpenAI-compatible endpoint.
+- Self-hosted observability only.
+
+Hosted OpenAI/Gemini/Anthropic or other third-party APIs must not be called by production graph nodes. If legacy adapters remain in the codebase during migration, they must be disabled by default, excluded from production provider registries, and blocked by tests that assert local-only policy.
+
+## Open-Source Dashboard Evaluation
+
+The current dashboard remains the product baseline, but V2 should not assume every dashboard surface must be custom-built.
+
+Evaluate open-source UI/admin/review frameworks for:
+
+- dense data table filtering/sorting/faceting.
+- review queues with keyboard-driven decisions.
+- file preview panes.
+- run reports and operational logs.
+- provider benchmark comparisons.
+- annotation/golden-label workflows.
+- self-hosted deployment.
+
+Candidate directions:
+
+- keep Next.js but adopt stronger open-source building blocks for tables, forms, command palettes, split panes, and virtualized file browsing.
+- evaluate Refine or React Admin patterns for CRUD-heavy admin surfaces.
+- evaluate Label Studio or Argilla-style review workflows for annotation/review ergonomics.
+- keep custom Sunshine screens where the workflow is domain-specific: run report, file provenance, tag evidence, placement proposal, and provider attempts.
+
+Dashboard success criteria:
+
+- UI feels like one product, not separate experimental pages.
+- every review item links to its run report and provider attempts.
+- every file view shows source, extraction, chunks, tag evidence, review decision, and placement proposal.
+- dashboard can compare local providers side by side without leaving the app.
+
+## Dashboard V2
+
+### Keep And Improve
+
+Use the current dashboard as baseline:
+
+- Runs page.
+- Run report.
+- Files browser.
+- File viewer.
+- Review queue.
+- Review detail.
+- Golden labels.
+- Pipeline evals.
+- Provider badges/model usage.
+
+### Add
+
+Provider benchmark UI:
+
+- compare current vs Docling vs MinerU vs RAGFlow vs Unstructured.
+- side-by-side extracted text snippets.
+- quality/gibberish/empty rates.
+- route status deltas.
+- tag deltas.
+- runtime/cost/model usage deltas.
+- source preview next to extraction output.
+
+Provider health/settings:
+
+- Cortex status.
+- Docling available.
+- Qdrant available.
+- Postgres available.
+- local model endpoints available.
+- parser model/cache status.
+
+Search/RAG UI:
+
+- verified-content search.
+- citation-first results.
+- filter by review status/tag/class/date/provider.
+- eventually grounded Q&A over accepted/reviewed content.
+
+Run report additions:
+
+- provider chain per file.
+- parser artifacts.
+- extraction provider distribution.
+- chunk provider distribution.
+- vector index status.
+- cache hit/miss rates.
+- trace IDs.
+
+### Dashboard Success Criteria
+
+- Reviewer can answer: “why did this file route to review?”
+- Reviewer can compare providers without leaving dashboard.
+- Operator can see local model usage, runtime, and provider attempts.
+- Operator can delete test runs safely.
+- Dashboard never implies unreviewed/bad content is trusted.
+
+## API V2
+
+### Goals
+
+- Break large route/service files into focused routers and services.
+- Make provider and run metadata first-class.
+- Keep endpoints stable where dashboard already depends on them.
+
+### Main API Surfaces
+
+Runs:
+
+- create run.
+- cancel run.
+- delete run.
+- rerun files.
+- run report.
+- run events/logs.
+- run artifacts.
+- run model usage.
+
+Files:
+
+- search/browse.
+- inspect.
+- preview.
+- run single file.
+- text extraction view.
+
+Review:
+
+- queue.
+- filters/facets.
+- decisions.
+- OCR quality labels.
+- golden label promotion.
+
+Provider benchmarks:
+
+- create benchmark.
+- compare benchmark outputs.
+- promote provider config.
+
+Settings/providers:
+
+- provider registry.
+- provider health.
+- model config.
+- local-only policy.
+
+## Data Model V2
+
+Core tables/records:
+
+- `pipeline_runs`
+- `pipeline_run_events`
+- `pipeline_results`
+- `review_items`
+- `golden_labels`
+- `file_index`
+- `model_usage`
+- `provider_attempts`
+- `extraction_results`
+- `document_segments`
+- `chunk_index`
+- `provider_benchmark_runs`
+- `provider_benchmark_results`
+- `artifact_manifests`
+
+Use Postgres as the V2 system database.
+
+Recommended split:
+
+- Postgres stores runs, files, review decisions, model usage, provider attempts, artifact manifests, and relational reporting data.
+- Qdrant stores chunk embeddings and vector search metadata.
+- File artifacts store large normalized/raw provider outputs by run ID.
+
+Do not use SQLite as the production system database for V2. SQLite can remain only for tests, local throwaway demos, or legacy migration compatibility.
+
+## Docling Provider Shape
+
+Docling is still the recommended first OSS parsing/OCR provider. It was not shown as code in this design because this file is intentionally pre-implementation, but the V2 provider should look roughly like this:
+
+```python
+from docling.document_converter import DocumentConverter
+
+from sunshine_extraction.domain.extraction import ExtractionResult
+from sunshine_extraction.providers.extraction.base import ExtractionProvider
+
+
+class DoclingExtractionProvider(ExtractionProvider):
+    provider_name = "docling"
+
+    def __init__(self, converter: DocumentConverter | None = None) -> None:
+        self.converter = converter or DocumentConverter()
+
+    def extract(self, path: str) -> ExtractionResult:
+        result = self.converter.convert(path)
+        document = result.document
+        markdown = document.export_to_markdown()
+        return ExtractionResult(
+            provider="docling",
+            text=markdown,
+            structure=normalize_docling_document(document),
+            raw_artifact_ref=write_raw_docling_artifact(result),
+        )
+```
+
+Initial Docling acceptance criteria:
+
+- runs locally without third-party API calls.
+- extracts better text than current local OCR for at least one known bad scanned/PDF sample.
+- preserves page/table/section structure enough for structure-aware chunking.
+- records provider attempts and raw artifact references.
+- fails closed into review when output is poor, empty, or gibberish.
+
+## Artifact Contract V2
+
+Required artifacts:
+
+- `graph-result.json`
+- `graph-audit-events.jsonl`
+- `artifact-manifest.json`
+- `sample-pipeline-results.jsonl`
+- `sample-review-queue.jsonl`
+- `sample-inputs.jsonl`
+- `sample-extraction-results.jsonl`
+- `sample-parser-results.jsonl`
+- `sample-ocr-pages.jsonl`
+- `sample-ocr-documents.jsonl`
+- `sample-structure.jsonl`
+- `sample-document-segments.jsonl`
+- `sample-chunks.jsonl`
+- `sample-embeddings.jsonl`
+- `sample-indexing.jsonl`
+- `sample-semantic-examples.jsonl`
+- `sample-llm-tag-inspections.jsonl`
+- `sample-tag-candidates.jsonl`
+- `sample-placement-proposals.jsonl`
+- `sample-model-usage.jsonl`
+- `sample-provider-attempts.jsonl`
+
+Rules:
+
+- Normalized artifacts are stable.
+- Raw provider output is linked by path/hash.
+- Every JSONL row has `run_id` or enough context to attach to a run.
+- Every row has `source_path` and `relative_path` where relevant.
+
+## Test Suite V2
+
+### Unit Tests
+
+Provider contracts:
+
+- extraction provider returns normalized result.
+- chunk provider preserves metadata.
+- embedding provider cache behavior.
+- vector store provider idempotent upsert.
+- LLM provider validates schema.
+- routing provider fails closed.
+
+Services:
+
+- content classification.
+- extraction planning.
+- text validation.
+- quality gate.
+- tag rules.
+- confidence calibration.
+- placement.
+
+### Integration Tests
+
+Single-file graph:
+
+- born-digital text PDF.
+- scanned/image PDF.
+- image with text.
+- bad OCR/gibberish.
+- spreadsheet.
+- missing file.
+- technical deferred file.
+
+Batch graph:
+
+- aggregate per-file artifacts.
+- live artifact report while running.
+- import results to dashboard DB.
+- delete run cleans run-owned state only.
+
+Provider benchmarks:
+
+- current vs mocked Docling.
+- provider failure fallback.
+- third-party API blocked behavior.
+
+Dashboard/API:
+
+- run creation.
+- run report.
+- review queue filters.
+- file browser.
+- provider benchmark report.
+- golden label editing.
+- model usage summary.
+
+### Eval Tests
+
+Golden-label gates:
+
+- high-confidence accuracy.
+- false accept rate.
+- OCR acceptable rate.
+- invalid LLM output rate.
+- retrieval top-k relevance.
+- placement accuracy.
+- model usage/runtime completeness.
+
+### End-to-End Smoke Tests
+
+CLI:
+
+```bash
+python -m sunshine_extraction.langgraph_pipeline --input-file ...
+python -m sunshine_extraction.provider_benchmark --input-root ...
+```
+
+API/dashboard:
+
+- start run.
+- observe progress.
+- inspect run report.
+- mark review decision.
+- promote golden label.
+
+### Test Success Criteria
+
+- Current tests stay green throughout migration.
+- Provider interfaces have mock tests before real provider code.
+- Real heavy providers are optional/integration-marked.
+- CI can run without Docling/MinerU/RAGFlow installed.
+- Local eval can run provider benchmarks when dependencies are installed.
+- Production policy tests prove graph nodes cannot call hosted third-party APIs.
+
+## Migration Strategy
+
+### Phase 0: Freeze V1 Behavior
+
+- Keep current graph working.
+- Add regression tests around current accepted/review behavior.
+- Record known QA sample metrics as baseline.
+
+### Phase 1: Introduce Domain Models And Provider Protocols
+
+- Add new modules without moving all logic immediately.
+- Wrap existing functions as providers.
+- No behavior change.
+
+### Phase 2: Move Business Logic Out Of `sample_pipeline.py`
+
+- Move extraction logic.
+- Move tagging logic.
+- Move quality logic.
+- Move artifact writing.
+- Keep compatibility imports during transition.
+
+### Phase 3: Provider Benchmark Framework
+
+- Add benchmark runner.
+- Add benchmark dashboard page.
+- Add Docling provider first.
+- Add mocked provider tests.
+
+### Phase 4: Structure-Aware Chunking And Indexing
+
+- Add normalized document structure.
+- Add chunk provider.
+- Add Qdrant provider behind feature flag.
+
+### Phase 5: Provider Selection And Promotion
+
+- Use benchmark results to choose defaults.
+- Promote provider config per document class.
+- Keep fallback chain.
+
+### Phase 6: Temporal Batch Execution
+
+- Wrap single-file LangGraph in Temporal activities.
+- Replace subprocess runner for production runs.
+- Keep subprocess/dev runner.
+
+## Milestone Acceptance Criteria
+
+V2 is successful when:
+
+- `sample_pipeline.py` is no longer the primary business-logic home.
+- every graph node has a small, readable implementation.
+- every major capability has a provider interface.
+- current tests plus new provider contract tests pass.
+- dashboard can compare provider outputs.
+- OCR/parser quality is demonstrably better or safer.
+- model usage/cost is accurate.
+- hosted third-party calls are impossible in production config.
+- route/review decisions remain conservative.
+- single-file production path is fast and auditable.
+- batch path is ready for Temporal migration.
+
+## Implementation Order Recommendation
+
+1. Provider protocols and wrappers around current behavior.
+2. Artifact/provider attempt model.
+3. Docling provider spike.
+4. Provider benchmark runner and dashboard.
+5. Chunking provider abstraction.
+6. Qdrant vector store provider.
+7. Retrieval/reranking provider abstraction.
+8. Model-call cache.
+9. API service refactor.
+10. Dashboard provider benchmark/report additions.
+11. Temporal execution layer.
+
+## Resolved Decisions
+
+- Customer documents are not allowed to leave local infrastructure.
+- Hosted third-party APIs are not allowed in the production graph.
+- Postgres is required for V2 production dashboard/run/review state.
+- A local vector database is required; Qdrant is the recommended default.
+- Docling remains the first recommended OSS parser/OCR provider to implement and benchmark.
+
+## Remaining Open Questions
+
+- Which provider benchmark sample should be canonical?
+- How much raw provider output should be stored per file?
+- What is the single-file latency target?
+- Which self-hosted dashboard/review framework, if any, should replace or augment the current custom dashboard?
+- Should Qdrant be required for all local development, or optional until search UI exists?
+
+## Immediate Next Slice After Approval
+
+Build provider interfaces and wrap current behavior without changing output.
+
+Deliverables:
+
+- `providers/extraction/base.py`
+- current extraction provider wrapper.
+- `providers/chunking/base.py`
+- current chunk provider wrapper.
+- provider attempt artifact rows.
+- tests proving V1 output remains compatible.
+
+This gives us the seam needed to add Docling/MinerU/RAGFlow benchmarks without destabilizing the current dashboard.
