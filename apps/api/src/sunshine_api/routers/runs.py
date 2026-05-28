@@ -285,6 +285,10 @@ def run_report(run_id: int) -> dict[str, Any]:
             "count": len(indexing_rows),
             "by_provider": _count_values(indexing_rows, "provider"),
             "by_status": _count_values(indexing_rows, "status"),
+            "indexed_count": sum(int(row.get("indexed_count") or 0) for row in indexing_rows),
+            "skipped_count": sum(int(row.get("skipped_count") or 0) for row in indexing_rows),
+            "semantic_embedding_count": sum(int(row.get("semantic_embedding_count") or 0) for row in indexing_rows),
+            "placeholder_embedding_count": sum(int(row.get("placeholder_embedding_count") or 0) for row in indexing_rows),
             "items": indexing_rows[:100],
         },
         "tags": {

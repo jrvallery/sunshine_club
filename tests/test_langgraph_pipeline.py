@@ -180,6 +180,8 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert embedding_rows[0]["embedding_status"] == "placeholder"
     assert indexing_rows[0]["provider"] == "noop"
     assert indexing_rows[0]["status"] == "skipped"
+    assert indexing_rows[0]["chunk_count"] == 1
+    assert indexing_rows[0]["placeholder_embedding_count"] == 1
     assert semantic_rows == []
     assert llm_rows[0]["primary_tag"] == "annual_spring_tea"
     assert segment_rows[0]["segment_type"] == "single_document"

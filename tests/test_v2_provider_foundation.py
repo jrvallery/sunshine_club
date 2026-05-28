@@ -108,6 +108,8 @@ def test_noop_vector_provider_records_unconfigured_indexing() -> None:
     assert result.status == "skipped"
     assert result.indexed_count == 0
     assert result.skipped_count == 1
+    assert result.indexed_chunk_ids == []
+    assert result.skipped_chunk_ids == ["chunk-1"]
     assert "vector_store_not_configured" in result.warnings
 
 

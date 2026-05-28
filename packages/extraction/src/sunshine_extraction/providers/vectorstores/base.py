@@ -13,6 +13,8 @@ class VectorStoreUpsertResult:
     status: str
     indexed_count: int
     skipped_count: int
+    indexed_chunk_ids: list[str]
+    skipped_chunk_ids: list[str]
     warnings: list[str]
     metadata: dict[str, Any]
 
@@ -28,4 +30,3 @@ class VectorStoreProvider(Protocol):
 
     def upsert_embeddings(self, chunks: list[dict[str, Any]], embeddings: list[dict[str, Any]]) -> VectorStoreUpsertResult:
         """Persist chunk embeddings in a local vector index."""
-

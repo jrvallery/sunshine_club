@@ -44,6 +44,8 @@ class QdrantVectorStoreProvider:
                 status="skipped",
                 indexed_count=0,
                 skipped_count=len(embeddings),
+                indexed_chunk_ids=[],
+                skipped_chunk_ids=[str(row.get("chunk_id")) for row in embeddings if row.get("chunk_id")],
                 warnings=["no_semantic_embeddings_to_index"],
                 metadata={"local_only": True, "url": self.url},
             )
@@ -57,12 +59,16 @@ class QdrantVectorStoreProvider:
                 status="failed",
                 indexed_count=0,
                 skipped_count=len(embedded_rows),
+                indexed_chunk_ids=[],
+                skipped_chunk_ids=[str(row.get("chunk_id")) for row in embedded_rows if row.get("chunk_id")],
                 warnings=[f"qdrant_client_unavailable:{error.__class__.__name__}"],
                 metadata={"local_only": True, "url": self.url},
             )
 
         chunk_by_id = {chunk.get("chunk_id"): chunk for chunk in chunks}
         vector_size = len(embedded_rows[0]["embedding"])
+        indexed_chunk_ids = [str(row.get("chunk_id")) for row in embedded_rows if row.get("chunk_id")]
+        indexed_chunk_id_set = set(indexed_chunk_ids)
         try:
             client = QdrantClient(url=self.url)
             if not client.collection_exists(collection_name=self.collection):
@@ -86,6 +92,8 @@ class QdrantVectorStoreProvider:
                 status="failed",
                 indexed_count=0,
                 skipped_count=len(embedded_rows),
+                indexed_chunk_ids=[],
+                skipped_chunk_ids=indexed_chunk_ids,
                 warnings=[f"qdrant_upsert_failed:{error.__class__.__name__}"],
                 metadata={"local_only": True, "url": self.url},
             )
@@ -95,6 +103,17 @@ class QdrantVectorStoreProvider:
             status="indexed",
             indexed_count=len(points),
             skipped_count=len(embeddings) - len(points),
+            indexed_chunk_ids=indexed_chunk_ids,
+            skipped_chunk_ids=[
+                str(row.get("chunk_id"))
+                for row in embeddings
+                if row.get("chunk_id") and str(row.get("chunk_id")) not in indexed_chunk_id_set
+            ],
             warnings=[],
-            metadata={"local_only": True, "url": self.url, "vector_size": vector_size},
+            metadata={
+                "local_only": True,
+                "url": self.url,
+                "vector_size": vector_size,
+                "point_count": len(points),
+            },
         )

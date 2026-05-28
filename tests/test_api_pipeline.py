@@ -267,6 +267,10 @@ def test_run_report_reads_live_graph_run_artifacts_before_batch_finalize(tmp_pat
                 "status": "skipped",
                 "indexed_count": 0,
                 "skipped_count": 1,
+                "semantic_embedding_count": 1,
+                "placeholder_embedding_count": 0,
+                "indexed_chunk_ids": [],
+                "skipped_chunk_ids": ["chunk-1"],
                 "warnings": ["vector_store_not_configured"],
                 "metadata": {"local_only": True},
             }
@@ -297,6 +301,8 @@ def test_run_report_reads_live_graph_run_artifacts_before_batch_finalize(tmp_pat
     assert payload["segments"]["requires_review_count"] == 1
     assert payload["segments"]["by_type"]["scrapbook_page_group"] == 1
     assert payload["indexing"]["by_status"]["skipped"] == 1
+    assert payload["indexing"]["skipped_count"] == 1
+    assert payload["indexing"]["semantic_embedding_count"] == 1
     assert payload["model_usage"]["summary"]["total_calls"] == 1
     assert payload["model_usage"]["summary"]["external_calls"] == 1
     assert payload["distributions"]["primary_tag"]["meeting_records"] == 1
