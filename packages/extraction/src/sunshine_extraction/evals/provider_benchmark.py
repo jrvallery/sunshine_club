@@ -27,13 +27,15 @@ def benchmark_extraction_providers(
     sample_root: str | Path | None = None,
     sample_categories: list[str] | None = None,
     sample_limit: int | None = None,
+    max_average_seconds: float | None = 30.0,
+    _provider_instances: list[ExtractionProvider] | None = None,
 ) -> dict[str, Any]:
     samples = _filter_samples(
         _benchmark_samples(input_paths or [], sample_manifest=sample_manifest, sample_root=sample_root),
         sample_categories=sample_categories,
         sample_limit=sample_limit,
     )
-    providers = _providers(provider_names)
+    providers = _provider_instances or _providers(provider_names)
     output_path = Path(output_dir) if output_dir is not None else None
     if output_path is not None:
         output_path.mkdir(parents=True, exist_ok=True)
@@ -58,7 +60,8 @@ def benchmark_extraction_providers(
         "categories": sorted({category.strip() for category in sample_categories or [] if category.strip()}),
         "limit": sample_limit,
     }
-    recommendations = _provider_recommendations(rows)
+    summary["runtime_policy"] = {"max_average_seconds": max_average_seconds}
+    recommendations = _provider_recommendations(rows, max_average_seconds=max_average_seconds)
     summary["recommendations"] = recommendations
     if output_path is not None:
         _write_jsonl(output_path / "provider-benchmark-recommendations.jsonl", recommendations)
@@ -314,7 +317,7 @@ def _comparison(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _provider_recommendations(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _provider_recommendations(rows: list[dict[str, Any]], *, max_average_seconds: float | None = 30.0) -> list[dict[str, Any]]:
     recommendations = []
     for provider, provider_rows in _rows_by_provider(rows).items():
         result_count = len(provider_rows)
@@ -324,6 +327,8 @@ def _provider_recommendations(rows: list[dict[str, Any]]) -> list[dict[str, Any]
         available_count = sum(1 for row in provider_rows if row.get("provider_available"))
         local_only = all(bool(row.get("local_only")) for row in provider_rows)
         average_text_length = round(sum(int(row.get("text_length") or 0) for row in provider_rows) / result_count, 2) if result_count else 0
+        average_seconds = round(sum(float(row.get("seconds") or 0) for row in provider_rows) / result_count, 4) if result_count else 0.0
+        max_seconds = round(max((float(row.get("seconds") or 0) for row in provider_rows), default=0.0), 4)
         promotion_status = _promotion_status(
             result_count=result_count,
             extracted_count=extracted_count,
@@ -331,6 +336,8 @@ def _provider_recommendations(rows: list[dict[str, Any]]) -> list[dict[str, Any]
             review_required_count=review_required_count,
             available_count=available_count,
             local_only=local_only,
+            average_seconds=average_seconds,
+            max_average_seconds=max_average_seconds,
         )
         recommendations.append(
             {
@@ -341,6 +348,9 @@ def _provider_recommendations(rows: list[dict[str, Any]]) -> list[dict[str, Any]
                 "ok_quality_rate": _rate(ok_count, result_count),
                 "review_required_rate": _rate(review_required_count, result_count),
                 "average_text_length": average_text_length,
+                "average_seconds": average_seconds,
+                "max_seconds": max_seconds,
+                "max_average_seconds": max_average_seconds,
                 "local_only": local_only,
                 "promotion_status": promotion_status,
                 "promotion_reason": _promotion_reason(promotion_status),
@@ -357,6 +367,8 @@ def _promotion_status(
     review_required_count: int,
     available_count: int,
     local_only: bool,
+    average_seconds: float,
+    max_average_seconds: float | None,
 ) -> str:
     if result_count == 0:
         return "insufficient_data"
@@ -364,6 +376,8 @@ def _promotion_status(
         return "blocked_not_local_only"
     if available_count < result_count:
         return "blocked_dependency_unavailable"
+    if max_average_seconds is not None and average_seconds > max_average_seconds:
+        return "needs_runtime_review"
     if extracted_count == result_count and ok_count == result_count and review_required_count == 0:
         return "candidate"
     return "needs_review"
@@ -375,6 +389,7 @@ def _promotion_reason(status: str) -> str:
         "blocked_dependency_unavailable": "provider dependency is unavailable for at least one benchmarked file",
         "blocked_not_local_only": "provider is not local-only",
         "needs_review": "benchmark output needs review before provider promotion",
+        "needs_runtime_review": "provider quality is acceptable but average runtime exceeds the benchmark promotion threshold",
         "insufficient_data": "no benchmark rows were available",
     }[status]
 

@@ -42,6 +42,7 @@ export default function PipelineEvalPage() {
   const [benchmarkSampleRoot, setBenchmarkSampleRoot] = useState("");
   const [benchmarkSampleCategories, setBenchmarkSampleCategories] = useState("");
   const [benchmarkSampleLimit, setBenchmarkSampleLimit] = useState("");
+  const [benchmarkMaxAverageSeconds, setBenchmarkMaxAverageSeconds] = useState("30");
   const [benchmarkPaths, setBenchmarkPaths] = useState("");
   const [benchmarkProviders, setBenchmarkProviders] = useState<ExtractionProviderName[]>(["current", "docling"]);
 
@@ -116,6 +117,7 @@ export default function PipelineEvalPage() {
           .map((category) => category.trim())
           .filter(Boolean),
         sample_limit: Number(benchmarkSampleLimit) > 0 ? Number(benchmarkSampleLimit) : undefined,
+        max_average_seconds: Number(benchmarkMaxAverageSeconds) > 0 ? Number(benchmarkMaxAverageSeconds) : undefined,
         paths: benchmarkPaths
           .split("\n")
           .map((path) => path.trim())
@@ -211,6 +213,12 @@ export default function PipelineEvalPage() {
             placeholder="image_scan,scanned_pdf"
           />
           <TextInput label="Sample limit" value={benchmarkSampleLimit} onChange={(event) => setBenchmarkSampleLimit(event.target.value)} placeholder="2" />
+          <TextInput
+            label="Max avg seconds"
+            value={benchmarkMaxAverageSeconds}
+            onChange={(event) => setBenchmarkMaxAverageSeconds(event.target.value)}
+            placeholder="30"
+          />
           <TextArea
             label="Extra paths"
             value={benchmarkPaths}
@@ -245,6 +253,7 @@ export default function PipelineEvalPage() {
               <KeyValue label="Providers" value={providerList(providerBenchmark.data.summary)} />
               <KeyValue label="Recommended" value={recommendedProvider(providerBenchmark.data.recommendations)} />
               <KeyValue label="Filter" value={benchmarkFilter(providerBenchmark.data.summary)} />
+              <KeyValue label="Runtime threshold" value={benchmarkRuntimeThreshold(providerBenchmark.data.summary)} />
             </section>
             <section>
               <h3>Promotion Notes</h3>
@@ -744,6 +753,15 @@ function benchmarkFilter(summary: Record<string, unknown> | undefined) {
   const categories = Array.isArray(row.categories) ? row.categories.map(String).join(", ") : "";
   const limit = row.limit ? `limit ${String(row.limit)}` : "";
   return [categories, limit].filter(Boolean).join("; ") || "-";
+}
+
+function benchmarkRuntimeThreshold(summary: Record<string, unknown> | undefined) {
+  const policy = summary?.runtime_policy;
+  if (!policy || typeof policy !== "object" || Array.isArray(policy)) {
+    return "-";
+  }
+  const maxAverageSeconds = (policy as Record<string, unknown>).max_average_seconds;
+  return maxAverageSeconds === null || maxAverageSeconds === undefined ? "disabled" : `${String(maxAverageSeconds)} sec avg`;
 }
 
 function recommendationValue(row: Record<string, unknown>) {

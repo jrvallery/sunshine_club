@@ -129,6 +129,53 @@ def test_provider_benchmark_filters_manifest_samples_and_writes_incremental_rows
     assert json.loads(rows[0])["sample_path"] == str(source_a)
 
 
+def test_provider_benchmark_recommendations_require_runtime_review_when_too_slow(tmp_path: Path) -> None:
+    class SlowProvider:
+        provider_name = "slow_local"
+
+        def dependency_status(self) -> dict[str, object]:
+            return {"provider": self.provider_name, "available": True, "local_only": True}
+
+        def extract(self, sample, plan, *, ocr_executor=None, ocr_artifacts=None):
+            from sunshine_extraction.providers.extraction.base import ExtractionProviderAttempt
+            from sunshine_extraction.services.extraction import ExtractionResult
+
+            extraction = ExtractionResult(
+                sample=sample,
+                plan=plan,
+                extraction_status="extracted",
+                text="high quality but slow text",
+                metadata={"provider": self.provider_name, "local_only": True},
+                page_count=1,
+                warnings=[],
+            )
+            attempt = ExtractionProviderAttempt(
+                provider=self.provider_name,
+                status="extracted",
+                strategy=plan.get("strategy"),
+                seconds=42.0,
+                warnings=[],
+                metadata={"local_only": True},
+            )
+            return extraction, attempt
+
+    source = tmp_path / "minutes.txt"
+    source.write_text("Meeting minutes.", encoding="utf-8")
+
+    result = benchmark_extraction_providers(
+        [source],
+        provider_names=[],
+        max_average_seconds=30.0,
+        _provider_instances=[SlowProvider()],
+    )
+
+    recommendation = result["recommendations"][0]
+    assert recommendation["provider"] == "slow_local"
+    assert recommendation["promotion_status"] == "needs_runtime_review"
+    assert recommendation["average_seconds"] == 42.0
+    assert recommendation["max_average_seconds"] == 30.0
+
+
 def test_generate_provider_benchmark_manifest_from_qa_indexes(tmp_path: Path) -> None:
     qa_root = tmp_path / "qa samples"
     document_group = qa_root / "changed-scanned_document-to-document-pdf_extractable_text_detected"
