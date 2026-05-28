@@ -45,7 +45,14 @@ from sunshine_api.services.imports import (
     list_postgres_run_chunks,
     list_postgres_run_document_segments,
     list_postgres_run_events,
+    list_postgres_run_file_metadata,
     list_postgres_run_model_usage,
+    list_postgres_run_parser_results,
+    list_postgres_run_processing_artifacts,
+    list_postgres_run_provider_attempts,
+    list_postgres_run_provider_selections,
+    list_postgres_run_quality_checks,
+    list_postgres_run_tagging_evidence,
     postgres_runtime_summary,
     record_postgres_review_decision,
     record_postgres_segment_review_decision,
@@ -146,6 +153,85 @@ def postgres_runtime_run_model_usage(run_key: str, limit: int = 500) -> dict[str
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     return {"ok": True, "run_key": run_key, **_model_usage_report(rows)}
+
+
+@router.get("/admin/system/postgres-runtime/runs/{run_key}/provider-attempts")
+def postgres_runtime_run_provider_attempts(run_key: str, limit: int = 500) -> dict[str, Any]:
+    try:
+        rows = list_postgres_run_provider_attempts(run_key=run_key, limit=limit)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"ok": True, "run_key": run_key, "count": len(rows), "provider_attempts": rows}
+
+
+@router.get("/admin/system/postgres-runtime/runs/{run_key}/provider-selections")
+def postgres_runtime_run_provider_selections(run_key: str, limit: int = 500) -> dict[str, Any]:
+    try:
+        rows = list_postgres_run_provider_selections(run_key=run_key, limit=limit)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"ok": True, "run_key": run_key, "count": len(rows), "provider_selections": rows}
+
+
+@router.get("/admin/system/postgres-runtime/runs/{run_key}/quality-checks")
+def postgres_runtime_run_quality_checks(run_key: str, limit: int = 500) -> dict[str, Any]:
+    try:
+        rows = list_postgres_run_quality_checks(run_key=run_key, limit=limit)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    review_required_count = sum(1 for row in rows if row.get("requires_review") is True)
+    return {"ok": True, "run_key": run_key, "count": len(rows), "review_required_count": review_required_count, "quality_checks": rows}
+
+
+@router.get("/admin/system/postgres-runtime/runs/{run_key}/tagging-evidence")
+def postgres_runtime_run_tagging_evidence(run_key: str, limit: int = 500) -> dict[str, Any]:
+    try:
+        rows = list_postgres_run_tagging_evidence(run_key=run_key, limit=limit)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"ok": True, "run_key": run_key, "count": len(rows), "tagging_evidence": rows}
+
+
+@router.get("/admin/system/postgres-runtime/runs/{run_key}/file-metadata")
+def postgres_runtime_run_file_metadata(run_key: str, limit: int = 500) -> dict[str, Any]:
+    try:
+        rows = list_postgres_run_file_metadata(run_key=run_key, limit=limit)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"ok": True, "run_key": run_key, "count": len(rows), "file_metadata": rows}
+
+
+@router.get("/admin/system/postgres-runtime/runs/{run_key}/processing-artifacts")
+def postgres_runtime_run_processing_artifacts(run_key: str, limit: int = 500) -> dict[str, Any]:
+    try:
+        rows = list_postgres_run_processing_artifacts(run_key=run_key, limit=limit)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"ok": True, "run_key": run_key, "count": len(rows), "processing_artifacts": rows}
+
+
+@router.get("/admin/system/postgres-runtime/runs/{run_key}/parser-results")
+def postgres_runtime_run_parser_results(run_key: str, limit: int = 500) -> dict[str, Any]:
+    try:
+        rows = list_postgres_run_parser_results(run_key=run_key, limit=limit)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    review_required_count = sum(1 for row in rows if row.get("requires_review") is True)
+    return {"ok": True, "run_key": run_key, "count": len(rows), "review_required_count": review_required_count, "parser_results": rows}
 
 
 @router.get("/admin/system/postgres-runtime/runs/{run_key}/segments")

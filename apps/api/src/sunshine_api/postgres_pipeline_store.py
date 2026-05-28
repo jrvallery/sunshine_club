@@ -372,6 +372,83 @@ class PostgresPipelineStore:
         finally:
             connection.close()
 
+    def list_run_provider_attempts(self, *, run_key: str, limit: int = 500) -> list[dict[str, Any]]:
+        connection = self._connect_factory(self.database_url)
+        try:
+            rows = self._list_pipeline_runs(connection, limit=500)
+            if not any(row.get("run_key") == run_key for row in rows):
+                raise KeyError(f"Postgres pipeline run not found: {run_key}")
+            capped_limit = max(1, min(int(limit), 1000))
+            return self._list_provider_attempts(connection, run_key=run_key, limit=capped_limit)
+        finally:
+            connection.close()
+
+    def list_run_provider_selections(self, *, run_key: str, limit: int = 500) -> list[dict[str, Any]]:
+        connection = self._connect_factory(self.database_url)
+        try:
+            rows = self._list_pipeline_runs(connection, limit=500)
+            if not any(row.get("run_key") == run_key for row in rows):
+                raise KeyError(f"Postgres pipeline run not found: {run_key}")
+            capped_limit = max(1, min(int(limit), 1000))
+            return self._list_provider_selections(connection, run_key=run_key, limit=capped_limit)
+        finally:
+            connection.close()
+
+    def list_run_quality_checks(self, *, run_key: str, limit: int = 500) -> list[dict[str, Any]]:
+        connection = self._connect_factory(self.database_url)
+        try:
+            rows = self._list_pipeline_runs(connection, limit=500)
+            if not any(row.get("run_key") == run_key for row in rows):
+                raise KeyError(f"Postgres pipeline run not found: {run_key}")
+            capped_limit = max(1, min(int(limit), 1000))
+            return self._list_quality_checks(connection, run_key=run_key, limit=capped_limit)
+        finally:
+            connection.close()
+
+    def list_run_tagging_evidence(self, *, run_key: str, limit: int = 500) -> list[dict[str, Any]]:
+        connection = self._connect_factory(self.database_url)
+        try:
+            rows = self._list_pipeline_runs(connection, limit=500)
+            if not any(row.get("run_key") == run_key for row in rows):
+                raise KeyError(f"Postgres pipeline run not found: {run_key}")
+            capped_limit = max(1, min(int(limit), 1000))
+            return self._list_tagging_evidence(connection, run_key=run_key, limit=capped_limit)
+        finally:
+            connection.close()
+
+    def list_run_file_metadata(self, *, run_key: str, limit: int = 500) -> list[dict[str, Any]]:
+        connection = self._connect_factory(self.database_url)
+        try:
+            rows = self._list_pipeline_runs(connection, limit=500)
+            if not any(row.get("run_key") == run_key for row in rows):
+                raise KeyError(f"Postgres pipeline run not found: {run_key}")
+            capped_limit = max(1, min(int(limit), 1000))
+            return self._list_file_metadata(connection, run_key=run_key, limit=capped_limit)
+        finally:
+            connection.close()
+
+    def list_run_processing_artifacts(self, *, run_key: str, limit: int = 500) -> list[dict[str, Any]]:
+        connection = self._connect_factory(self.database_url)
+        try:
+            rows = self._list_pipeline_runs(connection, limit=500)
+            if not any(row.get("run_key") == run_key for row in rows):
+                raise KeyError(f"Postgres pipeline run not found: {run_key}")
+            capped_limit = max(1, min(int(limit), 1000))
+            return self._list_processing_artifacts(connection, run_key=run_key, limit=capped_limit)
+        finally:
+            connection.close()
+
+    def list_run_parser_results(self, *, run_key: str, limit: int = 500) -> list[dict[str, Any]]:
+        connection = self._connect_factory(self.database_url)
+        try:
+            rows = self._list_pipeline_runs(connection, limit=500)
+            if not any(row.get("run_key") == run_key for row in rows):
+                raise KeyError(f"Postgres pipeline run not found: {run_key}")
+            capped_limit = max(1, min(int(limit), 1000))
+            return self._list_parser_results(connection, run_key=run_key, limit=capped_limit)
+        finally:
+            connection.close()
+
     def list_run_document_segments(self, *, run_key: str, limit: int = 500) -> list[dict[str, Any]]:
         connection = self._connect_factory(self.database_url)
         try:

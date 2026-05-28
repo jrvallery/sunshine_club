@@ -243,6 +243,83 @@ def list_postgres_run_model_usage(
     return store.list_run_model_usage(run_key=run_key, limit=limit)
 
 
+def list_postgres_run_provider_attempts(
+    *,
+    run_key: str,
+    limit: int = 500,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> list[dict[str, Any]]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.list_run_provider_attempts(run_key=run_key, limit=limit)
+
+
+def list_postgres_run_provider_selections(
+    *,
+    run_key: str,
+    limit: int = 500,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> list[dict[str, Any]]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.list_run_provider_selections(run_key=run_key, limit=limit)
+
+
+def list_postgres_run_quality_checks(
+    *,
+    run_key: str,
+    limit: int = 500,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> list[dict[str, Any]]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.list_run_quality_checks(run_key=run_key, limit=limit)
+
+
+def list_postgres_run_tagging_evidence(
+    *,
+    run_key: str,
+    limit: int = 500,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> list[dict[str, Any]]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.list_run_tagging_evidence(run_key=run_key, limit=limit)
+
+
+def list_postgres_run_file_metadata(
+    *,
+    run_key: str,
+    limit: int = 500,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> list[dict[str, Any]]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.list_run_file_metadata(run_key=run_key, limit=limit)
+
+
+def list_postgres_run_processing_artifacts(
+    *,
+    run_key: str,
+    limit: int = 500,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> list[dict[str, Any]]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.list_run_processing_artifacts(run_key=run_key, limit=limit)
+
+
+def list_postgres_run_parser_results(
+    *,
+    run_key: str,
+    limit: int = 500,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> list[dict[str, Any]]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.list_run_parser_results(run_key=run_key, limit=limit)
+
+
 def list_postgres_run_document_segments(
     *,
     run_key: str,
@@ -611,6 +688,13 @@ __all__ = [
     "list_postgres_run_chunks",
     "list_postgres_run_document_segments",
     "list_postgres_run_events",
+    "list_postgres_run_file_metadata",
+    "list_postgres_run_parser_results",
+    "list_postgres_run_processing_artifacts",
+    "list_postgres_run_provider_attempts",
+    "list_postgres_run_provider_selections",
+    "list_postgres_run_quality_checks",
+    "list_postgres_run_tagging_evidence",
     "postgres_golden_label_summary",
     "postgres_file_facets",
     "postgres_file_result_inspection",

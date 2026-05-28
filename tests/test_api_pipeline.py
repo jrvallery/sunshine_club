@@ -230,6 +230,91 @@ def test_postgres_run_model_usage_endpoint_wraps_service(monkeypatch) -> None:
     assert captured == {"run_key": "run-1", "limit": 11}
 
 
+def test_postgres_run_detail_table_endpoints_wrap_services(monkeypatch) -> None:
+    captured: dict[str, dict[str, Any]] = {}
+    cases = [
+        (
+            "provider-attempts",
+            "list_postgres_run_provider_attempts",
+            "provider_attempts",
+            {"provider": "docling", "capability": "parser", "status": "candidate"},
+        ),
+        (
+            "provider-selections",
+            "list_postgres_run_provider_selections",
+            "provider_selections",
+            {"selected_provider": "current", "provider_selection_reason": "fast_local"},
+        ),
+        (
+            "tagging-evidence",
+            "list_postgres_run_tagging_evidence",
+            "tagging_evidence",
+            {"evidence_type": "semantic_examples", "primary_tag": "history_archive_general"},
+        ),
+        (
+            "file-metadata",
+            "list_postgres_run_file_metadata",
+            "file_metadata",
+            {"metadata_type": "source_identity", "relative_path": "History/founders.pdf"},
+        ),
+        (
+            "processing-artifacts",
+            "list_postgres_run_processing_artifacts",
+            "processing_artifacts",
+            {"artifact_type": "ocr_page", "provider": "cortex"},
+        ),
+    ]
+
+    for endpoint, service_name, payload_key, row in cases:
+        def fake_service(*, run_key: str, limit: int = 500, _endpoint: str = endpoint, _row: dict = row) -> list[dict]:
+            captured[_endpoint] = {"run_key": run_key, "limit": limit}
+            return [_row]
+
+        monkeypatch.setattr(f"sunshine_api.routers.health.{service_name}", fake_service)
+
+        response = TestClient(app).get(f"/admin/system/postgres-runtime/runs/run-1/{endpoint}?limit=17")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["run_key"] == "run-1"
+        assert payload["count"] == 1
+        assert payload[payload_key][0] == row
+        assert captured[endpoint] == {"run_key": "run-1", "limit": 17}
+
+
+def test_postgres_run_quality_and_parser_endpoints_report_review_counts(monkeypatch) -> None:
+    captured = {}
+
+    def fake_quality_checks(*, run_key: str, limit: int = 500) -> list[dict]:
+        captured["quality"] = {"run_key": run_key, "limit": limit}
+        return [
+            {"check_type": "text_validation", "requires_review": True},
+            {"check_type": "chunk_gate", "requires_review": False},
+        ]
+
+    def fake_parser_results(*, run_key: str, limit: int = 500) -> list[dict]:
+        captured["parser"] = {"run_key": run_key, "limit": limit}
+        return [
+            {"provider": "current", "requires_review": False},
+            {"provider": "docling", "requires_review": True},
+        ]
+
+    monkeypatch.setattr("sunshine_api.routers.health.list_postgres_run_quality_checks", fake_quality_checks)
+    monkeypatch.setattr("sunshine_api.routers.health.list_postgres_run_parser_results", fake_parser_results)
+
+    quality_response = TestClient(app).get("/admin/system/postgres-runtime/runs/run-1/quality-checks?limit=18")
+    parser_response = TestClient(app).get("/admin/system/postgres-runtime/runs/run-1/parser-results?limit=19")
+
+    assert quality_response.status_code == 200
+    assert parser_response.status_code == 200
+    assert quality_response.json()["review_required_count"] == 1
+    assert parser_response.json()["review_required_count"] == 1
+    assert captured == {
+        "quality": {"run_key": "run-1", "limit": 18},
+        "parser": {"run_key": "run-1", "limit": 19},
+    }
+
+
 def test_postgres_run_segments_endpoint_wraps_service(monkeypatch) -> None:
     captured = {}
 
