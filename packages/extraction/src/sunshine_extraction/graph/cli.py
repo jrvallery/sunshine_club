@@ -14,6 +14,7 @@ from sunshine_extraction.config import (
 )
 
 from sunshine_extraction.graph.batch import run_document_batch
+from sunshine_extraction.graph.deps import parse_semantic_retrieval_filter
 from sunshine_extraction.graph.runtime import run_document_graph
 from sunshine_extraction.graph.utils import _json_safe
 from sunshine_extraction.providers.extraction import extraction_provider_from_env
@@ -39,6 +40,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--llm-tag-provider", choices=["auto", "cortex", "disabled"])
     parser.add_argument("--ocr-fallback-provider", choices=["cortex", "disabled"])
     parser.add_argument("--semantic-index-path")
+    parser.add_argument("--semantic-retrieval-filter-json")
     parser.add_argument("--checkpoint-path")
     parser.add_argument("--thread-id")
     parser.add_argument("--retry-attempts", type=int, default=1)
@@ -60,6 +62,7 @@ def main() -> None:
         provider_override=args.llm_tag_provider or "auto",
     )
     ocr_executor = ocr_executor_from_env(fallback_provider_override=args.ocr_fallback_provider)
+    semantic_retrieval_filter = parse_semantic_retrieval_filter(args.semantic_retrieval_filter_json)
     if args.input_root:
         summary = run_document_batch(
             args.input_root,
@@ -78,6 +81,7 @@ def main() -> None:
             max_concurrency=args.max_concurrency,
             rate_limit_seconds=args.rate_limit_seconds,
             semantic_index_path=args.semantic_index_path,
+            semantic_retrieval_filter=semantic_retrieval_filter,
         )
         print(json.dumps(_json_safe(summary), indent=2, sort_keys=True))
     else:
@@ -95,6 +99,7 @@ def main() -> None:
             retry_attempts=args.retry_attempts,
             retry_delay_seconds=args.retry_delay_seconds,
             semantic_index_path=args.semantic_index_path,
+            semantic_retrieval_filter=semantic_retrieval_filter,
         )
         print(json.dumps(_json_safe(result.get("final_result", result)), indent=2, sort_keys=True))
 

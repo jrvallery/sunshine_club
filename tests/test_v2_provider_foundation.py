@@ -11,6 +11,8 @@ from pypdf import PdfWriter
 from sunshine_extraction.config.models import ProviderConfig
 from sunshine_extraction.config.provider_registry import DEFAULT_PROVIDER_REGISTRY, REQUIRED_CAPABILITIES, provider_registry_rows, validate_provider_registry
 from sunshine_extraction.embeddings import EmbeddingConfigurationError, PlaceholderEmbeddingProvider, provider_from_env
+from sunshine_extraction.graph.deps import _resolve_deps, parse_semantic_retrieval_filter
+from sunshine_extraction.graph.nodes.retrieval import _retrieve_labeled_examples_node
 from sunshine_extraction.domain.artifacts import ArtifactManifestEntry
 from sunshine_extraction.domain.chunks import chunk_row
 from sunshine_extraction.domain.model_usage import ModelUsageRow, cost_basis
@@ -34,6 +36,7 @@ from sunshine_extraction.providers.llm import CortexLLMTagInspector, CurrentLLMT
 from sunshine_extraction.providers.observability import LangfuseObservabilityProvider, NoopObservabilityProvider
 from sunshine_extraction.providers.reranking import CortexRerankProvider
 from sunshine_extraction.providers.retrieval import CurrentSemanticRetrievalProvider, GoldenExampleRetrievalProvider, QdrantSemanticRetrievalProvider
+from sunshine_extraction.providers.retrieval.base import SemanticRetrievalProviderAttempt
 from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider, SQLiteGoldenVectorStoreProvider
 from sunshine_extraction.domain.documents import IMAGE_EXTENSIONS, SPREADSHEET_EXTENSIONS, TEXT_EXTENSIONS, SampleFile
 from sunshine_extraction.services.artifacts.writers import extraction_result_row, sample_input_row, write_pipeline_result
@@ -430,6 +433,86 @@ def test_current_semantic_retrieval_provider_reports_missing_index() -> None:
     assert attempt.result_count == 0
     assert attempt.warnings == ["semantic_index_missing"]
     assert attempt.metadata["local_only"] is True
+
+
+def test_semantic_retrieval_filter_can_be_configured_from_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    configured = '{"correct_primary_tag":"meeting_records","metadata.segment_type":"meeting_packet_section","empty":""}'
+
+    parsed = parse_semantic_retrieval_filter(configured)
+    monkeypatch.setenv("SUNSHINE_RETRIEVAL_FILTER_JSON", configured)
+    deps = _resolve_deps(embedding_provider=PlaceholderEmbeddingProvider(dimensions=4))
+
+    assert parsed == {
+        "correct_primary_tag": "meeting_records",
+        "metadata.segment_type": "meeting_packet_section",
+    }
+    assert deps["semantic_retrieval_filter"] == parsed
+
+
+def test_retrieve_labeled_examples_node_passes_metadata_filter_to_provider(tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+    source = tmp_path / "founders.txt"
+    source.write_text("Founders history", encoding="utf-8")
+    sample = _sample(source, relative_path="History/founders.txt")
+    extraction = ExtractionResult(
+        sample=sample,
+        plan={"strategy": "text_extraction", "document_subtype": "historical_summary"},
+        extraction_status="extracted",
+        text="Founders of Sunshine Club organized in 1902.",
+        metadata={},
+        page_count=1,
+        warnings=[],
+    )
+
+    class FakeRetrievalProvider:
+        provider_name = "fake"
+
+        def dependency_status(self) -> dict[str, object]:
+            return {"local_only": True}
+
+        def retrieve(
+            self,
+            *,
+            index_path: str | None,
+            query_text: str,
+            limit: int,
+            metadata_filter: dict[str, object] | None = None,
+        ) -> tuple[list[dict[str, object]], SemanticRetrievalProviderAttempt]:
+            captured["index_path"] = index_path
+            captured["query_text"] = query_text
+            captured["limit"] = limit
+            captured["metadata_filter"] = metadata_filter
+            return [], SemanticRetrievalProviderAttempt(
+                provider="fake",
+                status="retrieved",
+                index_path=index_path,
+                query_count=1,
+                result_count=0,
+                warnings=[],
+                metadata={"metadata_filter": metadata_filter or {}},
+            )
+
+    result = _retrieve_labeled_examples_node(
+        {
+            "relative_path": "History/founders.txt",
+            "filename": "founders.txt",
+            "content_class": {"final_class": "document"},
+            "extraction_plan": {"document_subtype": "historical_summary"},
+            "extraction_result": extraction,
+            "warnings": [],
+            "model_usage": [],
+        },
+        {
+            "semantic_index_path": "semantic.sqlite",
+            "semantic_retrieval_provider": FakeRetrievalProvider(),
+            "semantic_retrieval_filter": {"correct_primary_tag": "history_archive_general"},
+            "embedding_provider": PlaceholderEmbeddingProvider(dimensions=4),
+        },
+    )
+
+    assert captured["metadata_filter"] == {"correct_primary_tag": "history_archive_general"}
+    assert captured["limit"] == 5
+    assert result["retrieval_result"]["metadata"]["metadata_filter"] == {"correct_primary_tag": "history_archive_general"}
 
 
 def test_retrieval_and_rerank_provider_boundaries_are_local_only() -> None:

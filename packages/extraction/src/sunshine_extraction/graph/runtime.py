@@ -48,6 +48,7 @@ def run_document_graph(
     observability_provider: ObservabilityProvider | None = None,
     dashboard_run_id: int | None = None,
     semantic_index_path: str | Path | None | object = SEMANTIC_INDEX_FROM_ENV,
+    semantic_retrieval_filter: dict[str, Any] | None = None,
     progress: bool = False,
     checkpoint_path: str | Path | None = None,
     thread_id: str | None = None,
@@ -101,6 +102,7 @@ def run_document_graph(
         run_results_importer=run_results_importer,
         observability_provider=observability_provider,
         semantic_index_path=semantic_index_path,
+        semantic_retrieval_filter=semantic_retrieval_filter,
     )
     config = {"configurable": {"thread_id": active_thread_id}}
     if checkpoint_path is not None:

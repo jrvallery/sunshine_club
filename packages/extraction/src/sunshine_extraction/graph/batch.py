@@ -46,6 +46,7 @@ def run_document_batch(
     llm_tag_inspector: LLMTagInspector | None = None,
     ocr_executor: OcrExecutor | None = None,
     semantic_index_path: str | Path | None = None,
+    semantic_retrieval_filter: dict[str, Any] | None = None,
     progress: bool = False,
     checkpoint_path: str | Path | None = None,
     retry_attempts: int = 1,
@@ -141,6 +142,7 @@ def run_document_batch(
                         llm_tag_inspector,
                         ocr_executor,
                         semantic_index_path,
+                        semantic_retrieval_filter,
                     ),
                 )
             )
@@ -167,6 +169,7 @@ def run_document_batch(
                         llm_tag_inspector,
                         ocr_executor,
                         semantic_index_path,
+                        semantic_retrieval_filter,
                     )
                 ] = spec["index"]
                 if active_rate_limit:
@@ -254,6 +257,7 @@ def _run_batch_item(
     llm_tag_inspector: LLMTagInspector | None,
     ocr_executor: OcrExecutor | None,
     semantic_index_path: str | Path | None,
+    semantic_retrieval_filter: dict[str, Any] | None,
 ) -> dict[str, Any]:
     sample = spec["sample"]
     index = spec["index"]
@@ -275,6 +279,7 @@ def _run_batch_item(
         llm_tag_inspector=llm_tag_inspector,
         ocr_executor=ocr_executor,
         semantic_index_path=semantic_index_path,
+        semantic_retrieval_filter=semantic_retrieval_filter,
         checkpoint_path=checkpoint_path,
         thread_id=f"batch:{sample.source_path}",
         retry_attempts=retry_attempts,

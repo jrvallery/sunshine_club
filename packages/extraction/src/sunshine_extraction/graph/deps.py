@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
+from typing import Any
 
 from sunshine_extraction.embeddings import (
     EmbeddingConfigurationError,
@@ -44,6 +46,7 @@ def _resolve_deps(
     run_results_importer: RunResultsImporter | None = None,
     model_call_cache: SQLiteModelCallCache | None = None,
     semantic_index_path: str | Path | None | object = SEMANTIC_INDEX_FROM_ENV,
+    semantic_retrieval_filter: dict[str, Any] | None = None,
 ) -> DocumentPipelineDeps:
     if embedding_provider is None:
         try:
@@ -52,7 +55,7 @@ def _resolve_deps(
             embedding_provider = PlaceholderEmbeddingProvider()
     active_llm_tag_inspector = llm_tag_inspector or llm_tag_inspector_from_env()
     active_model_call_cache = model_call_cache if model_call_cache is not None else model_call_cache_from_env()
-    return {
+    deps: DocumentPipelineDeps = {
         "extraction_provider": extraction_provider or extraction_provider_from_env(),
         "chunking_provider": chunking_provider or CurrentChunkingProvider(),
         "chunk_embedding_provider": chunk_embedding_provider or CurrentChunkEmbeddingProvider(embedding_provider, cache=active_model_call_cache),
@@ -68,6 +71,10 @@ def _resolve_deps(
         "model_call_cache": active_model_call_cache,
         "semantic_index_path": _resolve_semantic_index_path(semantic_index_path),
     }
+    active_retrieval_filter = semantic_retrieval_filter if semantic_retrieval_filter is not None else _semantic_retrieval_filter_from_env()
+    if active_retrieval_filter:
+        deps["semantic_retrieval_filter"] = active_retrieval_filter
+    return deps
 
 
 def _embedding_failure_mode(configured: str | None) -> str:
@@ -108,3 +115,26 @@ def _resolve_semantic_index_path(semantic_index_path: str | Path | None | object
     if semantic_index_path is None:
         return None
     return str(semantic_index_path)
+
+
+def _semantic_retrieval_filter_from_env() -> dict[str, Any] | None:
+    configured = os.environ.get("SUNSHINE_RETRIEVAL_FILTER_JSON", "").strip()
+    if not configured:
+        return None
+    return parse_semantic_retrieval_filter(configured)
+
+
+def parse_semantic_retrieval_filter(configured: str | dict[str, Any] | None) -> dict[str, Any] | None:
+    if configured is None:
+        return None
+    if isinstance(configured, dict):
+        return _clean_retrieval_filter(configured)
+    parsed = json.loads(configured)
+    if not isinstance(parsed, dict):
+        raise ValueError("semantic retrieval filter must be a JSON object")
+    return _clean_retrieval_filter(parsed)
+
+
+def _clean_retrieval_filter(configured: dict[str, Any]) -> dict[str, Any] | None:
+    cleaned = {str(key): value for key, value in configured.items() if value is not None and value != ""}
+    return cleaned or None
