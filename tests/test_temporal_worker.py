@@ -4,9 +4,9 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-from sunshine_worker.activities import run_single_file_pipeline_activity
+from sunshine_worker.activities import run_batch_pipeline_activity, run_single_file_pipeline_activity
 from sunshine_worker.temporal_worker import DEFAULT_TASK_QUEUE, run_worker
-from sunshine_worker.workflows import SingleFilePipelineWorkflow
+from sunshine_worker.workflows import BatchPipelineWorkflow, SingleFilePipelineWorkflow
 
 
 def test_single_file_activity_wraps_langgraph_runtime(tmp_path: Path, monkeypatch) -> None:
@@ -67,6 +67,40 @@ def test_temporal_worker_registers_pipeline_workflow_and_activity(monkeypatch) -
 
     assert captured["address"] == "temporal:7233"
     assert captured["task_queue"] == DEFAULT_TASK_QUEUE
-    assert captured["workflows"] == [SingleFilePipelineWorkflow]
-    assert captured["activities"] == [run_single_file_pipeline_activity]
+    assert captured["workflows"] == [SingleFilePipelineWorkflow, BatchPipelineWorkflow]
+    assert captured["activities"] == [run_single_file_pipeline_activity, run_batch_pipeline_activity]
     assert captured["ran"] is True
+
+
+def test_batch_activity_wraps_langgraph_batch_runtime(tmp_path: Path, monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_run_document_batch(input_root: str, **kwargs: Any) -> dict[str, Any]:
+        captured["input_root"] = input_root
+        captured["kwargs"] = kwargs
+        return {"selected_sample_count": 2, "graph_run_count": 2, "output_dir": kwargs["output_dir"]}
+
+    monkeypatch.setattr("sunshine_worker.activities.load_pipeline_env", lambda: None)
+    monkeypatch.setattr("sunshine_worker.activities.run_document_batch", fake_run_document_batch)
+
+    result = asyncio.run(
+        run_batch_pipeline_activity(
+            {
+                "input_root": "/mnt/sunshine/qa-samples",
+                "output_dir": str(tmp_path),
+                "taxonomy_path": "taxonomy.json",
+                "limit": 2,
+                "retry_attempts": 2,
+                "max_concurrency": 3,
+            }
+        )
+    )
+
+    assert captured["input_root"] == "/mnt/sunshine/qa-samples"
+    assert captured["kwargs"]["taxonomy_path"] == "taxonomy.json"
+    assert captured["kwargs"]["limit"] == 2
+    assert captured["kwargs"]["retry_attempts"] == 2
+    assert captured["kwargs"]["max_concurrency"] == 3
+    assert result["ok"] is True
+    assert result["summary"]["graph_run_count"] == 2
+    assert result["graph_batch_summary_path"] == str(tmp_path / "graph-batch-summary.json")

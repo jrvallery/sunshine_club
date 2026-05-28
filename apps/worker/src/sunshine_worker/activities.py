@@ -7,6 +7,7 @@ from typing import Any
 
 from temporalio import activity
 
+from sunshine_extraction.graph.batch import run_document_batch
 from sunshine_extraction.graph.runtime import run_document_graph
 from sunshine_extraction.graph.utils import _json_safe
 from sunshine_extraction.services.env import load_pipeline_env
@@ -43,4 +44,36 @@ async def run_single_file_pipeline_activity(payload: dict[str, Any]) -> dict[str
     }
 
 
-__all__ = ["run_single_file_pipeline_activity"]
+@activity.defn
+async def run_batch_pipeline_activity(payload: dict[str, Any]) -> dict[str, Any]:
+    """Run a local QA/sample batch through the LangGraph document pipeline."""
+
+    load_pipeline_env()
+    kwargs: dict[str, Any] = {
+        "output_dir": payload["output_dir"],
+        "corrected_path": payload.get("corrected_path"),
+        "plan_path": payload.get("plan_path"),
+        "taxonomy_path": payload.get("taxonomy_path"),
+        "limit": payload.get("limit"),
+        "semantic_index_path": payload.get("semantic_index_path"),
+        "progress": bool(payload.get("progress", False)),
+        "checkpoint_path": payload.get("checkpoint_path"),
+        "retry_attempts": int(payload.get("retry_attempts") or 1),
+        "retry_delay_seconds": float(payload.get("retry_delay_seconds") or 0),
+        "max_concurrency": int(payload.get("max_concurrency") or 1),
+        "rate_limit_seconds": float(payload.get("rate_limit_seconds") or 0),
+    }
+    clean_kwargs = {key: value for key, value in kwargs.items() if value is not None}
+    summary = run_document_batch(payload["input_root"], **clean_kwargs)
+    output_path = Path(payload["output_dir"])
+    return {
+        "ok": True,
+        "input_root": str(payload["input_root"]),
+        "output_dir": str(output_path),
+        "summary": _json_safe(summary),
+        "graph_batch_summary_path": str(output_path / "graph-batch-summary.json"),
+        "artifact_manifest_path": str(output_path / "artifact-manifest.json"),
+    }
+
+
+__all__ = ["run_batch_pipeline_activity", "run_single_file_pipeline_activity"]

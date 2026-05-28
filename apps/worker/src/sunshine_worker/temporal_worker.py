@@ -7,8 +7,8 @@ import os
 from temporalio.client import Client
 from temporalio.worker import Worker
 
-from sunshine_worker.activities import run_single_file_pipeline_activity
-from sunshine_worker.workflows import SingleFilePipelineWorkflow
+from sunshine_worker.activities import run_batch_pipeline_activity, run_single_file_pipeline_activity
+from sunshine_worker.workflows import BatchPipelineWorkflow, SingleFilePipelineWorkflow
 
 
 DEFAULT_TEMPORAL_ADDRESS = "localhost:7233"
@@ -20,7 +20,7 @@ async def run_worker(*, address: str | None = None, task_queue: str | None = Non
     worker = Worker(
         client,
         task_queue=task_queue or os.environ.get("SUNSHINE_TEMPORAL_TASK_QUEUE") or DEFAULT_TASK_QUEUE,
-        workflows=[SingleFilePipelineWorkflow],
-        activities=[run_single_file_pipeline_activity],
+        workflows=[SingleFilePipelineWorkflow, BatchPipelineWorkflow],
+        activities=[run_single_file_pipeline_activity, run_batch_pipeline_activity],
     )
     await worker.run()
