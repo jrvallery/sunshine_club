@@ -1114,6 +1114,13 @@ Success criteria:
 - New artifacts are documented.
 - Raw provider artifacts are linked, not mixed into normalized rows.
 
+Current implementation:
+
+- Graph single-file runs and batch runs write `artifact-manifest.json`.
+- Manifest rows include artifact path, kind, existence, size, modified time, JSONL row count, and SHA-256 for non-manifest artifacts.
+- `artifact-manifest.json` includes itself with `sha256: null` and `note: self_referential_manifest` because a file cannot truthfully hash itself while embedding that hash.
+- The manifest makes review-critical rows such as `sample-document-segments.jsonl`, `sample-route-decisions.jsonl`, `sample-quality-gates.jsonl`, and `sample-model-usage.jsonl` discoverable from one place.
+
 ### 24. `import_run_results`
 
 Purpose:

@@ -65,6 +65,7 @@ from sunshine_extraction.sample_pipeline import (
 from sunshine_extraction.graph.runtime import run_document_graph
 from sunshine_extraction.graph.utils import _progress, _write_jsonl
 from sunshine_extraction.providers.extraction import ExtractionProvider
+from sunshine_extraction.services.artifact_manifest import write_artifact_manifest
 
 def run_document_batch(
     input_root: str | Path = DEFAULT_INPUT_ROOT,
@@ -252,6 +253,15 @@ def run_document_batch(
         )
         + "\n",
         encoding="utf-8",
+    )
+    write_artifact_manifest(
+        output_dir_path,
+        expected_names=[
+            *artifact_rows.keys(),
+            "sample-pipeline-summary.json",
+            "sample-ocr-summary.json",
+            "graph-batch-summary.json",
+        ],
     )
     _progress(progress, "langgraph-batch: complete")
     return summary

@@ -2220,6 +2220,7 @@ def _looks_like_dashboard_run_output(output_dir: Path) -> bool:
         "sample-placement-proposals.jsonl",
         "sample-route-decisions.jsonl",
         "sample-import-results.jsonl",
+        "artifact-manifest.json",
         "graph-result.json",
         "graph-audit-events.jsonl",
     }

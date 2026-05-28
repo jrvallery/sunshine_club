@@ -178,6 +178,8 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     placement_rows = [json.loads(line) for line in (output_dir / "sample-placement-proposals.jsonl").read_text().splitlines()]
     route_rows = [json.loads(line) for line in (output_dir / "sample-route-decisions.jsonl").read_text().splitlines()]
     import_rows = [json.loads(line) for line in (output_dir / "sample-import-results.jsonl").read_text().splitlines()]
+    manifest = json.loads((output_dir / "artifact-manifest.json").read_text())
+    manifest_by_name = {artifact["name"]: artifact for artifact in manifest["artifacts"]}
 
     assert final_result["route_status"] == "route_candidate"
     assert final_result["top_tag_candidate"] == "annual_spring_tea"
@@ -226,6 +228,13 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert "top_tag:annual_spring_tea" in route_rows[0]["evidence"]
     assert import_rows[0]["import_status"] == "skipped"
     assert import_rows[0]["importer"] == "noop"
+    assert manifest_by_name["sample-pipeline-results.jsonl"]["row_count"] == 1
+    assert manifest_by_name["sample-route-decisions.jsonl"]["row_count"] == 1
+    assert manifest_by_name["sample-document-segments.jsonl"]["row_count"] == 1
+    assert manifest_by_name["sample-import-results.jsonl"]["row_count"] == 1
+    assert len(manifest_by_name["graph-result.json"]["sha256"]) == 64
+    assert manifest_by_name["artifact-manifest.json"]["note"] == "self_referential_manifest"
+    assert manifest_by_name["artifact-manifest.json"]["sha256"] is None
     assert {row["purpose"] for row in model_usage_rows} == {"chunk_embedding", "semantic_retrieval_embedding", "tag_inspection"}
     assert [event["node"] for event in audit_events] == [
         "load_file_context",
@@ -446,6 +455,8 @@ def test_langgraph_missing_file_persists_failure_state(tmp_path: Path) -> None:
     pipeline_rows = [json.loads(line) for line in (output_dir / "sample-pipeline-results.jsonl").read_text().splitlines()]
     review_rows = [json.loads(line) for line in (output_dir / "sample-review-queue.jsonl").read_text().splitlines()]
     import_rows = [json.loads(line) for line in (output_dir / "sample-import-results.jsonl").read_text().splitlines()]
+    manifest = json.loads((output_dir / "artifact-manifest.json").read_text())
+    manifest_by_name = {artifact["name"]: artifact for artifact in manifest["artifacts"]}
 
     assert final_result["route_status"] == "review_failed_extraction"
     assert final_result["review_reason"] == "file_missing"
@@ -454,6 +465,10 @@ def test_langgraph_missing_file_persists_failure_state(tmp_path: Path) -> None:
     assert pipeline_rows == [final_result]
     assert review_rows[0]["review_reason"] == "file_missing"
     assert import_rows[0]["import_status"] == "skipped"
+    assert manifest_by_name["sample-pipeline-results.jsonl"]["row_count"] == 1
+    assert manifest_by_name["sample-review-queue.jsonl"]["row_count"] == 1
+    assert manifest_by_name["sample-import-results.jsonl"]["row_count"] == 1
+    assert len(manifest_by_name["graph-result.json"]["sha256"]) == 64
     assert [event["node"] for event in audit_events] == ["load_file_context", "persist_outputs", "import_run_results"]
 
 
@@ -519,6 +534,8 @@ def test_langgraph_batch_aggregates_artifacts_and_continues_after_file_failure(t
     audit_events = [json.loads(line) for line in (output_dir / "graph-audit-events.jsonl").read_text().splitlines()]
     batch_summary = json.loads((output_dir / "graph-batch-summary.json").read_text())
     pipeline_summary = json.loads((output_dir / "sample-pipeline-summary.json").read_text())
+    manifest = json.loads((output_dir / "artifact-manifest.json").read_text())
+    manifest_by_name = {artifact["name"]: artifact for artifact in manifest["artifacts"]}
 
     assert summary["selected_sample_count"] == 2
     assert summary["graph_run_count"] == 2
@@ -531,6 +548,10 @@ def test_langgraph_batch_aggregates_artifacts_and_continues_after_file_failure(t
     assert batch_summary["max_concurrency"] == 2
     assert pipeline_summary["artifact_counts"]["sample-pipeline-results.jsonl"] == 2
     assert pipeline_summary["max_concurrency"] == 2
+    assert manifest_by_name["sample-pipeline-results.jsonl"]["row_count"] == 2
+    assert manifest_by_name["sample-review-queue.jsonl"]["row_count"] == 1
+    assert manifest_by_name["graph-batch-summary.json"]["kind"] == "json"
+    assert len(manifest_by_name["sample-pipeline-summary.json"]["sha256"]) == 64
     assert (output_dir / "graph-runs" / "00001" / "graph-result.json").exists()
     assert (output_dir / "graph-runs" / "00002" / "graph-result.json").exists()
     assert len([event for event in audit_events if event["node"] == "persist_outputs"]) == 2
