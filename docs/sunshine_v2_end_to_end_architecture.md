@@ -758,6 +758,26 @@ Implementation note:
 - Long scrapbook packets, newspaper packets, and mixed historical PDFs should be treated as parent containers first. The system may create logical child-document proposals by page range, but it must not split, delete, or rewrite the source PDF during automated processing.
 - This capability is allowed in the current V2 pass as review-only segmentation because the required page-level structure already exists. Physical PDF splitting/export is a later reviewed action after provider benchmarks prove enough boundary quality.
 
+Provider research note:
+
+- Docling is a good fit for the evidence layer because it exposes parsed document structure with page/layout provenance and native chunking primitives, but the Sunshine boundary decision still belongs in `propose_document_segments`.
+- Treat Docling page rows, layout sections, OCR text, tables, and image references as inputs to the segmenter rather than as accepted split decisions.
+- The segmenter must preserve page numbers from every provider so each proposed child document can be traced to an immutable parent file and page range.
+- A provider that cannot preserve stable page numbers, page text snippets, and layout evidence is not acceptable for scrapbook/newspaper splitting, even if its raw OCR text looks better.
+
+Current-pass scope:
+
+- In scope now:
+  - emit logical page-range child-document proposals for long scrapbook PDFs, newspaper packets, and mixed historical PDFs.
+  - route those proposals to segment review when the boundary is not already reviewed.
+  - attach segment IDs and page ranges to chunks, embeddings, retrieval matches, review rows, and run reports.
+  - preserve the full parent PDF as the source of truth.
+- Out of scope until benchmarked:
+  - automatic physical PDF splitting.
+  - deleting or rewriting the parent PDF.
+  - silently accepting a Docling/Cortex/other provider boundary as a final archival document.
+  - moving child documents into final folders without human-reviewed segment decisions.
+
 Current implementation:
 
 - `domain/document_segments.py` defines logical child-document segment rows that preserve parent source path and page range.
