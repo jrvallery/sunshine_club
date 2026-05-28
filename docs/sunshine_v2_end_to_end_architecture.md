@@ -936,7 +936,7 @@ Current implementation:
 - `providers/vectorstores/sqlite_golden.py` exposes the existing SQLite golden-label semantic-index path as an explicit provider boundary.
 - Postgres migration `0003_pipeline_chunks_embeddings.sql` creates run-owned chunk and embedding tables backed by pgvector for V2 artifact imports.
 - `apps/api/services/vector_index.py` can rebuild the configured local Qdrant collection from semantic-quality Postgres chunk embeddings by run key or across imported runs.
-- `POST /admin/vector-index/qdrant/rebuild` exposes the rebuild operation for production maintenance/dashboard controls.
+- `POST /admin/vector-index/qdrant/rebuild` exposes the rebuild operation for production maintenance/dashboard controls. Requests can now specify both `run_key` and a Qdrant `collection`, so operators can rebuild a single imported run into a named local collection without changing process environment variables.
 - `graph/nodes/indexing.py` owns the `index_chunks` node, separated from embedding so vector-store writes are auditable as their own graph phase.
 - Graph writes `sample-indexing.jsonl` with provider status, chunk counts, embedding counts, placeholder counts, and warnings.
 

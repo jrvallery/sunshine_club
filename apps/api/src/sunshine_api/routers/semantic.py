@@ -72,7 +72,7 @@ def semantic_index_build(request: SemanticIndexBuildRequest) -> dict[str, Any]:
 @router.post("/admin/vector-index/qdrant/rebuild")
 def qdrant_rebuild(request: QdrantRebuildRequest) -> dict[str, Any]:
     try:
-        return rebuild_qdrant_from_postgres(run_key=request.run_key, limit=request.limit)
+        return rebuild_qdrant_from_postgres(run_key=request.run_key, collection=request.collection, limit=request.limit)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 

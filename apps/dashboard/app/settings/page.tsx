@@ -37,6 +37,7 @@ type LocalInfrastructure = {
 
 type QdrantRebuildResponse = {
   ok: boolean;
+  collection?: string | null;
   source_row_count: number;
   vector_store: {
     provider: string;
@@ -82,6 +83,7 @@ type PostgresRunDetail = {
 export default function SettingsPage() {
   const queryClient = useQueryClient();
   const [rebuildRunKey, setRebuildRunKey] = useState("");
+  const [rebuildCollection, setRebuildCollection] = useState("");
   const [rebuildLimit, setRebuildLimit] = useState("");
   const [postgresRunKey, setPostgresRunKey] = useState("");
   const health = useQuery({ queryKey: ["api-health"], queryFn: () => fetchJson<Health>("/api/healthz") });
@@ -125,6 +127,7 @@ export default function SettingsPage() {
     mutationFn: () =>
       postJson<QdrantRebuildResponse>("/api/admin/vector-index/qdrant/rebuild", {
         run_key: rebuildRunKey.trim() || undefined,
+        collection: rebuildCollection.trim() || undefined,
         limit: Number(rebuildLimit) > 0 ? Number(rebuildLimit) : undefined
       }),
     onSuccess: async () => {
@@ -374,6 +377,12 @@ export default function SettingsPage() {
         </div>
         <div className="formGrid compactForm">
           <TextInput label="Run key" value={rebuildRunKey} onChange={(event) => setRebuildRunKey(event.target.value)} />
+          <TextInput
+            label="Collection"
+            value={rebuildCollection}
+            onChange={(event) => setRebuildCollection(event.target.value)}
+            placeholder={String(infrastructure.data?.vector_store_policy?.qdrant_collection ?? "sunshine_chunks")}
+          />
           <TextInput label="Limit" value={rebuildLimit} onChange={(event) => setRebuildLimit(event.target.value)} />
           <Button variant="primary" disabled={rebuildQdrant.isPending} onClick={() => rebuildQdrant.mutate()}>
             {rebuildQdrant.isPending ? "Rebuilding..." : "Rebuild Qdrant"}
@@ -383,6 +392,7 @@ export default function SettingsPage() {
           <div className="settingsGrid">
             <KeyValue label="Status" value={rebuildQdrant.data.vector_store.status} />
             <KeyValue label="Collection" value={rebuildQdrant.data.vector_store.collection ?? "-"} />
+            <KeyValue label="Requested collection" value={rebuildQdrant.data.collection ?? "-"} />
             <KeyValue label="Source rows" value={String(rebuildQdrant.data.source_row_count)} />
             <KeyValue label="Indexed" value={String(rebuildQdrant.data.vector_store.indexed_count)} />
           </div>

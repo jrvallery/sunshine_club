@@ -306,6 +306,39 @@ def test_local_infrastructure_status_is_local_only(monkeypatch) -> None:
     assert any(provider["key"] == "ocr.openai" and provider["enabled"] is False for provider in payload["provider_registry"]["providers"])
 
 
+def test_qdrant_rebuild_endpoint_accepts_collection_override(monkeypatch) -> None:
+    captured = {}
+
+    def fake_rebuild(*, run_key: str | None = None, collection: str | None = None, limit: int | None = None) -> dict:
+        captured["run_key"] = run_key
+        captured["collection"] = collection
+        captured["limit"] = limit
+        return {
+            "ok": True,
+            "run_key": run_key,
+            "collection": collection,
+            "requested_limit": limit,
+            "source_row_count": 1,
+            "vector_store": {
+                "provider": "qdrant",
+                "collection": collection,
+                "status": "indexed",
+                "indexed_count": 1,
+            },
+        }
+
+    monkeypatch.setattr("sunshine_api.routers.semantic.rebuild_qdrant_from_postgres", fake_rebuild)
+
+    response = TestClient(app).post(
+        "/admin/vector-index/qdrant/rebuild",
+        json={"run_key": "run-1", "collection": "sunshine-review", "limit": 25},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["collection"] == "sunshine-review"
+    assert captured == {"run_key": "run-1", "collection": "sunshine-review", "limit": 25}
+
+
 def test_run_request_rejects_hosted_openai_provider(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SUNSHINE_REVIEW_DB_PATH", str(tmp_path / "review.sqlite"))
 

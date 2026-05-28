@@ -24,6 +24,7 @@ def rebuild_qdrant_from_postgres(
     *,
     database_url: str | None = None,
     run_key: str | None = None,
+    collection: str | None = None,
     limit: int | None = None,
     vector_store: VectorStoreProvider | None = None,
     connect_factory: ConnectFactory | None = None,
@@ -41,11 +42,12 @@ def rebuild_qdrant_from_postgres(
 
     chunks = [_chunk_row(row) for row in rows]
     embeddings = [_embedding_row(row) for row in rows]
-    active_vector_store = vector_store or QdrantVectorStoreProvider()
+    active_vector_store = vector_store or QdrantVectorStoreProvider(collection=collection)
     result = active_vector_store.upsert_embeddings(chunks, embeddings)
     return {
         "ok": result.status in {"indexed", "skipped"},
         "run_key": run_key,
+        "collection": collection or result.collection,
         "requested_limit": limit,
         "source_row_count": len(rows),
         "vector_store": result.as_row(),

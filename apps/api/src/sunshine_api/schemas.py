@@ -128,6 +128,7 @@ class SemanticIndexBuildRequest(BaseModel):
 
 class QdrantRebuildRequest(BaseModel):
     run_key: str | None = None
+    collection: str | None = None
     limit: int | None = Field(default=None, ge=1)
 
 

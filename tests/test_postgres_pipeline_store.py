@@ -1633,6 +1633,49 @@ def test_rebuild_qdrant_from_postgres_replays_semantic_embeddings() -> None:
     assert connection.closed is True
 
 
+def test_rebuild_qdrant_from_postgres_accepts_collection_override(monkeypatch) -> None:
+    class FakeConnection:
+        def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
+            return _Cursor(rows=[])
+
+        def close(self) -> None:
+            pass
+
+    captured: dict[str, Any] = {}
+
+    class FakeQdrantVectorStore:
+        provider_name = "qdrant"
+
+        def __init__(self, *, collection: str | None = None) -> None:
+            captured["collection"] = collection
+            self.collection = collection
+
+        def upsert_embeddings(self, chunks: list[dict[str, Any]], embeddings: list[dict[str, Any]]) -> VectorStoreUpsertResult:
+            return VectorStoreUpsertResult(
+                provider="qdrant",
+                collection=self.collection,
+                status="skipped",
+                indexed_count=0,
+                skipped_count=0,
+                indexed_chunk_ids=[],
+                skipped_chunk_ids=[],
+                warnings=["no_semantic_embeddings_to_index"],
+                metadata={"local_only": True},
+            )
+
+    monkeypatch.setattr("sunshine_api.services.vector_index.QdrantVectorStoreProvider", FakeQdrantVectorStore)
+
+    result = rebuild_qdrant_from_postgres(
+        database_url="postgresql://local/test",
+        collection="sunshine-review",
+        connect_factory=lambda _url: FakeConnection(),
+    )
+
+    assert captured["collection"] == "sunshine-review"
+    assert result["collection"] == "sunshine-review"
+    assert result["vector_store"]["collection"] == "sunshine-review"
+
+
 def _postgres_import_artifacts(tmp_path: Path) -> Path:
     output_dir = tmp_path / "run"
     output_dir.mkdir()
