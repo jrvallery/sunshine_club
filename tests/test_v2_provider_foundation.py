@@ -52,8 +52,17 @@ from sunshine_extraction.services.extraction import ExtractionResult
 from sunshine_extraction.services.structure import normalize_document_structure
 
 
+class _FakeDoclingPage:
+    def __init__(self, page_no: int, text: str) -> None:
+        self.page_no = page_no
+        self.text = text
+
+
 class _FakeDoclingDocument:
-    pages = [object(), object()]
+    pages = [
+        _FakeDoclingPage(1, "Sunshine founders history and anniversary notes."),
+        _FakeDoclingPage(2, "Newspaper article clipping from the Longmont Ledger."),
+    ]
     tables = [object()]
     pictures = [object(), object(), object()]
     groups = []
@@ -633,6 +642,8 @@ def test_docling_provider_extracts_with_injected_local_converter(tmp_path: Path)
     assert attempt.metadata["structure"]["picture_count"] == 3
     assert structure["provider"] == "docling"
     assert structure["page_count"] == 2
+    assert structure["pages"][0]["text"] == "Sunshine founders history and anniversary notes."
+    assert structure["pages"][1]["source"] == "docling"
     assert len(structure["tables"]) == 1
     assert len(structure["figures"]) == 3
 
@@ -858,6 +869,58 @@ def test_segmentation_proposes_mixed_collection_page_ranges_from_page_text(tmp_p
     assert segments[0]["requires_segment_review"] is True
     assert segments[0]["metadata"]["policy"] == "page_level_review_candidates"
     assert "matched:scrapbook" not in segments[0]["segment_boundary_evidence"]
+    assert "page_signal:newspaper_or_article" in segments[0]["segment_boundary_evidence"]
+    assert "page_signal:scrapbook_or_photo" in segments[0]["segment_boundary_evidence"]
+
+
+def test_segmentation_uses_provider_structure_pages_when_ocr_pages_are_absent(tmp_path: Path) -> None:
+    source = tmp_path / "docling_packet.pdf"
+    source.write_text("fake", encoding="utf-8")
+    sample = _sample(source, relative_path="archive/history/docling_packet.pdf")
+    extraction = ExtractionResult(
+        sample=sample,
+        plan={"strategy": "docling_layout"},
+        extraction_status="extracted",
+        text="Provider markdown for mixed historical packet",
+        metadata={
+            "provider": "docling",
+            "docling_structure": {
+                "page_count": 3,
+                "pages": [
+                    {
+                        "page_number": 1,
+                        "text": "Founders history and anniversary notes",
+                        "text_length": 36,
+                        "word_count": 5,
+                        "provider": "docling",
+                    },
+                    {
+                        "page_number": 2,
+                        "text": "Newspaper article clipping from the Ledger",
+                        "text_length": 42,
+                        "word_count": 6,
+                        "provider": "docling",
+                    },
+                    {
+                        "page_number": 3,
+                        "text": "Scrapbook photograph caption",
+                        "text_length": 28,
+                        "word_count": 3,
+                        "provider": "docling",
+                    },
+                ],
+            },
+        },
+        page_count=3,
+        warnings=[],
+    )
+    structure = normalize_document_structure(extraction)
+
+    segments = propose_document_segments(extraction, file_id="file-3", document_structure=structure)
+
+    assert len(segments) == 3
+    assert segments[0]["segment_type"] == "mixed_collection_page"
+    assert segments[0]["metadata"]["policy"] == "page_level_review_candidates"
     assert "page_signal:newspaper_or_article" in segments[0]["segment_boundary_evidence"]
     assert "page_signal:scrapbook_or_photo" in segments[0]["segment_boundary_evidence"]
 

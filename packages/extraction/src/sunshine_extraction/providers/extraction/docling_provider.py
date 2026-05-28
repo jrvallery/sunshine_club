@@ -113,7 +113,8 @@ def _export_markdown(document: Any) -> str:
 
 
 def _docling_structure(document: Any) -> dict[str, Any]:
-    pages = _safe_len(getattr(document, "pages", None))
+    page_rows = _docling_pages(getattr(document, "pages", None))
+    pages = len(page_rows) if page_rows else _safe_len(getattr(document, "pages", None))
     tables = _safe_len(getattr(document, "tables", None))
     pictures = _safe_len(getattr(document, "pictures", None))
     groups = _safe_len(getattr(document, "groups", None))
@@ -125,7 +126,48 @@ def _docling_structure(document: Any) -> dict[str, Any]:
         "picture_count": pictures,
         "group_count": groups,
         "text_item_count": texts,
+        "pages": page_rows,
     }
+
+
+def _docling_pages(pages: Any) -> list[dict[str, Any]]:
+    if not pages:
+        return []
+    rows: list[dict[str, Any]] = []
+    try:
+        iterator = list(pages.values()) if isinstance(pages, dict) else list(pages)
+    except TypeError:
+        return []
+    for fallback_index, page in enumerate(iterator, start=1):
+        page_number = _safe_int(getattr(page, "page_no", None)) or _safe_int(getattr(page, "page_number", None)) or fallback_index
+        text = _safe_page_text(page)
+        row = {
+            "page_number": page_number,
+            "text": text,
+            "text_length": len(text),
+            "word_count": len(text.split()),
+            "quality": "provider_page",
+            "provider": "docling",
+        }
+        rows.append(row)
+    return rows
+
+
+def _safe_page_text(page: Any) -> str:
+    for method_name in ("export_to_text", "export_to_markdown"):
+        method = getattr(page, method_name, None)
+        if callable(method):
+            try:
+                value = method()
+            except Exception:  # noqa: BLE001 - page text is best-effort metadata.
+                continue
+            if value:
+                return str(value)
+    for attr_name in ("text", "content", "caption"):
+        value = getattr(page, attr_name, None)
+        if value:
+            return str(value)
+    return ""
 
 
 def _safe_len(value: Any) -> int | None:

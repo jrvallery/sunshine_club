@@ -20,7 +20,7 @@ def propose_document_segments(
 ) -> list[dict[str, Any]]:
     pages = ocr_pages or []
     page_count = _page_count(extraction, pages, document_structure or {})
-    normalized_pages = _normalized_pages(pages, page_count)
+    normalized_pages = _normalized_pages(_segment_source_pages(pages, document_structure or {}), page_count)
     segment_type, evidence = _segment_type_and_evidence(extraction, content_class or {}, normalized_pages)
     if _should_emit_candidate_splits(page_count, segment_type):
         split_segments = _candidate_split_segments(
@@ -188,6 +188,15 @@ def _normalized_pages(pages: list[dict[str, Any]], page_count: int) -> list[dict
         if isinstance(page.get("page_number"), int) or str(page.get("page_number") or "").isdigit()
     }
     return [by_number.get(index, {"page_number": index, "text": "", "text_length": 0, "word_count": 0}) for index in range(1, page_count + 1)]
+
+
+def _segment_source_pages(ocr_pages: list[dict[str, Any]], document_structure: dict[str, Any]) -> list[dict[str, Any]]:
+    if ocr_pages:
+        return ocr_pages
+    structure_pages = document_structure.get("pages")
+    if isinstance(structure_pages, list):
+        return [page for page in structure_pages if isinstance(page, dict)]
+    return []
 
 
 def _mixed_collection_evidence(pages: list[dict[str, Any]]) -> list[str]:

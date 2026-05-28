@@ -47,18 +47,47 @@ def _pages(extraction: ExtractionResult, ocr_pages: list[dict[str, Any]]) -> lis
         return [
             {
                 "page_number": page.get("page_number"),
+                "text": page.get("text") or "",
                 "text_length": page.get("text_length"),
                 "word_count": page.get("word_count"),
                 "quality": page.get("ocr_status"),
                 "mean_confidence": page.get("mean_confidence"),
+                "warnings": page.get("warnings", []),
+                "source": "ocr",
             }
             for page in ocr_pages
         ]
+    docling_structure = extraction.metadata.get("docling_structure")
+    if isinstance(docling_structure, dict) and isinstance(docling_structure.get("pages"), list):
+        return [_provider_page_row(page) for page in docling_structure["pages"]]
     if extraction.text.strip():
-        return [{"page_number": 1, "text_length": len(extraction.text), "word_count": len(extraction.text.split()), "quality": "text"}]
+        return [
+            {
+                "page_number": 1,
+                "text": extraction.text,
+                "text_length": len(extraction.text),
+                "word_count": len(extraction.text.split()),
+                "quality": "text",
+                "source": "extracted_text",
+            }
+        ]
     if extraction.metadata:
-        return [{"page_number": None, "text_length": 0, "word_count": 0, "quality": "metadata"}]
+        return [{"page_number": None, "text": "", "text_length": 0, "word_count": 0, "quality": "metadata", "source": "metadata"}]
     return []
+
+
+def _provider_page_row(page: dict[str, Any]) -> dict[str, Any]:
+    text = str(page.get("text") or "")
+    return {
+        "page_number": page.get("page_number"),
+        "text": text,
+        "text_length": page.get("text_length", len(text)),
+        "word_count": page.get("word_count", len(text.split())),
+        "quality": page.get("quality", "provider_page"),
+        "mean_confidence": page.get("mean_confidence"),
+        "warnings": page.get("warnings", []),
+        "source": page.get("provider") or page.get("source") or "provider_structure",
+    }
 
 
 def _sections(extraction: ExtractionResult) -> list[dict[str, Any]]:

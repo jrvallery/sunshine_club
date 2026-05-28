@@ -748,8 +748,8 @@ Implementation note:
 
 - This is worth designing into V2 now.
 - Full automatic splitting should be gated behind provider benchmarks and review because bad splitting can be as damaging as bad classification.
-- The first implementation pass should create the data model, artifact shape, and conservative “one segment per PDF unless strong boundary evidence exists” behavior.
-- If Docling produces reliable page/section boundaries during the spike, the first pass can also emit candidate page groups for dashboard review.
+- The first implementation pass creates the data model, artifact shape, and conservative review-only split proposals when strong boundary evidence exists.
+- If Docling produces reliable page/section boundaries during the spike, those rows should emit candidate page groups for dashboard review.
 - Future Docling/Cortex layout signals should plug into this stage as additional boundary evidence, not bypass it, so long scrapbook PDFs can later be promoted into accepted child documents without changing the graph shape.
 
 Current implementation:
@@ -757,7 +757,8 @@ Current implementation:
 - `domain/document_segments.py` defines logical child-document segment rows that preserve parent source path and page range.
 - `services/segmentation/page_grouping.py` emits review-only candidate page segments for multi-page scrapbook/newspaper inputs, separator-based groups when blank pages are detected, and fixed page windows for very large files.
 - Generic long scanned PDFs can also become `mixed_collection_page_group` proposals when OCR page text contains multiple collection signals such as scrapbook/photo, newspaper/article, page-layout, or historical-context evidence.
-- Docling/MinerU/RAGFlow layout outputs should feed this node as boundary evidence; they should not create child documents outside the segment-review contract.
+- `providers/extraction/docling_provider.py` now exports provider page rows when Docling exposes page text, and `services/structure.py` preserves provider/OCR page snippets for downstream segmentation.
+- Docling/MinerU/RAGFlow layout outputs should feed this node as boundary evidence through normalized structure; they should not create child documents outside the segment-review contract.
 - `graph/nodes/segmentation.py` runs segmentation after structure normalization.
 - `graph/nodes/chunking.py` attaches single-segment IDs to chunks when safe.
 - Segment proposals are artifacts only; no physical source files are split or modified.
