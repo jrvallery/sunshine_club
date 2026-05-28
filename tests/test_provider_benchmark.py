@@ -359,6 +359,67 @@ def test_provider_benchmark_blocks_promotion_when_packet_lacks_page_structure(tm
     assert result["recommendations"][0]["promotion_reason"] == "segmentation-required samples did not all return page-level structure ready for boundary review"
 
 
+def test_provider_benchmark_does_not_block_promotion_for_single_page_packet_image(tmp_path: Path) -> None:
+    class SinglePagePacketProvider:
+        provider_name = "single_page_packet"
+
+        def dependency_status(self) -> dict[str, object]:
+            return {"provider": self.provider_name, "available": True, "local_only": True}
+
+        def extract(self, sample, plan, *, ocr_executor=None, ocr_artifacts=None):
+            from sunshine_extraction.providers.extraction.base import ExtractionProviderAttempt
+            from sunshine_extraction.services.extraction import ExtractionResult
+
+            text = "Newspaper article clipping text."
+            extraction = ExtractionResult(
+                sample=sample,
+                plan=plan,
+                extraction_status="extracted",
+                text=text,
+                metadata={
+                    "provider": self.provider_name,
+                    "local_only": True,
+                    "provider_structure": {
+                        "page_count": 1,
+                        "pages": [{"page_number": 1, "text": text, "text_length": len(text), "word_count": 4}],
+                    },
+                },
+                page_count=1,
+                warnings=[],
+            )
+            attempt = ExtractionProviderAttempt(
+                provider=self.provider_name,
+                status="extracted",
+                strategy=plan.get("strategy"),
+                seconds=1.0,
+                warnings=[],
+                metadata={"local_only": True},
+            )
+            return extraction, attempt
+
+    source = tmp_path / "article.jpg"
+    source.write_bytes(b"fake image")
+    manifest = tmp_path / "provider-benchmark-samples.json"
+    manifest.write_text(
+        json.dumps({"samples": [{"path": source.name, "category": "newspaper_packet", "label": "newspaper article"}]}),
+        encoding="utf-8",
+    )
+
+    result = benchmark_extraction_providers(
+        [],
+        provider_names=[],
+        sample_manifest=manifest,
+        _provider_instances=[SinglePagePacketProvider()],
+    )
+
+    parser_row = result["parser_results"][0]
+    recommendation = result["recommendations"][0]
+    assert parser_row["segmentation_required"] is False
+    assert parser_row["segmentation_readiness"] == "not_required_single_page"
+    assert recommendation["segmentation_required_count"] == 0
+    assert recommendation["promotion_status"] == "candidate"
+
+
 def test_provider_benchmark_records_provider_exceptions_and_continues(tmp_path: Path) -> None:
     class ExplodingProvider:
         provider_name = "exploding_local"

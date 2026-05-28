@@ -304,10 +304,13 @@ def _segmentation_assessment(
 ) -> dict[str, Any]:
     category = str(sample_spec.get("category") or "uncategorized")
     sample_metadata = sample_spec.get("metadata") if isinstance(sample_spec.get("metadata"), dict) else {}
-    segmentation_required = category in {"scrapbook_packet", "newspaper_packet"} or bool(sample_metadata.get("expected_segments"))
+    category_requires_segmentation = category in {"scrapbook_packet", "newspaper_packet"} or bool(sample_metadata.get("expected_segments"))
     provider_structure = _provider_structure(extraction_metadata)
     pages = provider_structure.get("pages") if isinstance(provider_structure.get("pages"), list) else []
     page_count = _safe_int(extraction_page_count) or _safe_int(provider_structure.get("page_count")) or len(pages) or None
+    segmentation_required = category_requires_segmentation
+    if category_requires_segmentation and not sample_metadata.get("expected_segments") and page_count == 1:
+        segmentation_required = False
     pages_with_text = sum(1 for page in pages if str(page.get("text") or "").strip())
     page_text_coverage_rate = _rate(pages_with_text, int(page_count or 0)) if page_count else (1.0 if extraction_text.strip() and not segmentation_required else 0.0)
     layout_signal_count = sum(
@@ -316,8 +319,12 @@ def _segmentation_assessment(
     )
     page_structure_available = bool(page_count and pages and len(pages) >= min(int(page_count), len(pages)) and page_text_coverage_rate > 0)
     if not segmentation_required:
-        readiness = "not_required"
-        reason = "sample category does not require packet segmentation"
+        if category_requires_segmentation and page_count == 1:
+            readiness = "not_required_single_page"
+            reason = "single-page packet does not require page-range segmentation"
+        else:
+            readiness = "not_required"
+            reason = "sample category does not require packet segmentation"
     elif page_count is None or page_count < 2:
         readiness = "needs_review"
         reason = "segmentation sample has no multi-page structure"
