@@ -15,6 +15,7 @@ from sunshine_extraction.graph.state import DocumentPipelineState
 from sunshine_extraction.graph.build import build_document_graph
 from sunshine_extraction.graph.deps import SEMANTIC_INDEX_FROM_ENV, _resolve_deps
 from sunshine_extraction.graph.utils import _json_safe, _write_jsonl
+from sunshine_extraction.services.artifact_manifest import write_artifact_manifest
 from sunshine_extraction.providers.chunking import ChunkingProvider
 from sunshine_extraction.providers.extraction import ExtractionProvider
 from sunshine_extraction.providers.observability import ObservabilityProvider
@@ -123,4 +124,5 @@ def run_document_graph(
         json.dumps(_json_safe(result), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    write_artifact_manifest(output_dir_path, run_id=result.get("dashboard_run_id") or result.get("run_id"))
     return result

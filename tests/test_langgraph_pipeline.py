@@ -282,6 +282,8 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert manifest_by_name["sample-embedding-results.jsonl"]["row_count"] == 1
     assert manifest_by_name["sample-retrieval-results.jsonl"]["row_count"] == 1
     assert manifest_by_name["sample-import-results.jsonl"]["row_count"] == 1
+    assert manifest_by_name["graph-run-metadata.json"]["kind"] == "json"
+    assert len(manifest_by_name["graph-run-metadata.json"]["sha256"]) == 64
     assert len(manifest_by_name["graph-result.json"]["sha256"]) == 64
     assert manifest_by_name["artifact-manifest.json"]["note"] == "self_referential_manifest"
     assert manifest_by_name["artifact-manifest.json"]["sha256"] is None

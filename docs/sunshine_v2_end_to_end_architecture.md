@@ -1260,6 +1260,7 @@ Current implementation:
 
 - Graph single-file runs and batch runs write `artifact-manifest.json`.
 - Graph single-file runs write `graph-run-metadata.json` with total runtime, latency status, latency policy, and raw-provider artifact retention policy.
+- The final runtime write refreshes `artifact-manifest.json` after `graph-run-metadata.json` and the final `graph-result.json` are written, so runtime metadata is included in the auditable artifact index.
 - `domain/model_usage.py` defines the normalized model-usage row contract and local/external/placeholder cost-basis classification used by graph audit rows.
 - `domain/artifacts.py` defines artifact manifest and manifest-entry contracts used by manifest generation.
 - Manifest rows include artifact path, kind, existence, size, modified time, JSONL row count, and SHA-256 for non-manifest artifacts.
