@@ -65,6 +65,41 @@ def delete_postgres_pipeline_run_if_configured(*, run_key: str) -> dict[str, Any
         }
 
 
+def record_postgres_pipeline_run_state_if_configured(
+    *,
+    run: dict[str, Any],
+    status: str | None = None,
+    summary: dict[str, Any] | None = None,
+    error: str | None = None,
+) -> dict[str, Any]:
+    database_url = os.environ.get("DATABASE_URL") or os.environ.get("SUNSHINE_DATABASE_URL")
+    run_key = str(run.get("run_key") or "")
+    if not database_url:
+        return {
+            "record_status": "skipped",
+            "store": "postgres_runtime",
+            "run_key": run_key,
+            "reason": "postgres_database_url_not_configured",
+        }
+    store = PostgresPipelineStore(database_url)
+    return {
+        "record_status": "recorded",
+        "store": "postgres_runtime",
+        "result": store.record_pipeline_run_state(
+            run_key=run_key,
+            status=status or str(run.get("status") or "queued"),
+            preset_key=run.get("preset_key"),
+            input_root=run.get("input_root"),
+            output_dir=run.get("output_dir"),
+            summary=summary or run.get("summary") or {},
+            error=error or run.get("error"),
+            embedding_provider=run.get("embedding_provider"),
+            llm_provider=run.get("llm_tag_provider") if run.get("llm_tag_provider") != "disabled" else None,
+            vector_store_provider="qdrant",
+        ),
+    }
+
+
 def import_provider_benchmark_output_to_postgres(
     output_dir: str | Path,
     *,
@@ -493,6 +528,7 @@ __all__ = [
     "postgres_file_result_text",
     "postgres_runtime_summary",
     "postgres_review_summary",
+    "record_postgres_pipeline_run_state_if_configured",
     "record_postgres_review_decision",
     "search_postgres_files",
     "update_postgres_golden_label",

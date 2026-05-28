@@ -16,7 +16,7 @@ from typing import Any
 
 from sunshine_api.dependencies import review_store
 from sunshine_api.review_store import ReviewStore
-from sunshine_api.services.imports import import_langgraph_output_to_postgres_if_configured
+from sunshine_api.services.imports import import_langgraph_output_to_postgres_if_configured, record_postgres_pipeline_run_state_if_configured
 
 
 from sunshine_api.services.run_reports import _read_live_run_summary, _read_run_summary
@@ -31,6 +31,8 @@ def _execute_run(run_id: int, command: list[str], output_dir: str, import_on_suc
     try:
         store = review_store()
         store.mark_pipeline_run_started(run_id)
+        run = store.get_pipeline_run(run_id)
+        _record_postgres_run_state(run, status="running", summary=run.get("summary") or {})
         process = subprocess.Popen(
             command,
             cwd=Path.cwd(),
@@ -45,19 +47,34 @@ def _execute_run(run_id: int, command: list[str], output_dir: str, import_on_suc
         _stream_run_output(store, run_id, process, output_dir)
         summary = _read_run_summary(output_dir)
         if store.get_pipeline_run(run_id)["status"] == "cancelled":
+            cancelled_run = store.get_pipeline_run(run_id)
+            _record_postgres_run_state(cancelled_run, status="cancelled", summary=summary or cancelled_run.get("summary") or {})
             return
         if process.returncode == 0:
             if import_on_success and (Path(output_dir) / "sample-pipeline-results.jsonl").exists():
                 _import_success_outputs(store, run_id, output_dir)
             store.mark_pipeline_run_finished(run_id, status="succeeded", summary=summary)
+            finished_run = store.get_pipeline_run(run_id)
+            _record_postgres_run_state(finished_run, status="succeeded", summary=summary or finished_run.get("summary") or {})
         else:
             store.mark_pipeline_run_finished(run_id, status="failed", summary=summary, error=f"Command exited {process.returncode}")
+            failed_run = store.get_pipeline_run(run_id)
+            _record_postgres_run_state(failed_run, status="failed", summary=summary or failed_run.get("summary") or {}, error=failed_run.get("error"))
     except Exception as error:  # noqa: BLE001 - background run errors must be captured for the UI.
         if store is not None:
             store.mark_pipeline_run_finished(run_id, status="failed", error=f"{type(error).__name__}: {error}")
+            failed_run = store.get_pipeline_run(run_id)
+            _record_postgres_run_state(failed_run, status="failed", summary=failed_run.get("summary") or {}, error=failed_run.get("error"))
     finally:
         with _RUN_PROCESS_LOCK:
             _RUN_PROCESSES.pop(run_id, None)
+
+
+def _record_postgres_run_state(run: dict[str, Any], *, status: str, summary: dict[str, Any], error: str | None = None) -> None:
+    try:
+        record_postgres_pipeline_run_state_if_configured(run=run, status=status, summary=summary, error=error)
+    except Exception:  # noqa: BLE001 - SQLite run state and filesystem artifacts remain authoritative for the dev runner.
+        return
 
 
 def _import_success_outputs(store: ReviewStore, run_id: int, output_dir: str) -> None:

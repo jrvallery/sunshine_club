@@ -118,6 +118,73 @@ class PostgresPipelineStore:
         finally:
             connection.close()
 
+    def record_pipeline_run_state(
+        self,
+        *,
+        run_key: str,
+        status: str,
+        preset_key: str | None = None,
+        input_root: str | None = None,
+        output_dir: str | Path | None = None,
+        summary: dict[str, Any] | None = None,
+        error: str | None = None,
+        embedding_provider: str | None = None,
+        embedding_model: str | None = None,
+        llm_provider: str | None = None,
+        llm_model: str | None = None,
+        extraction_provider: str | None = None,
+        vector_store_provider: str | None = None,
+        vector_store_collection: str | None = None,
+    ) -> dict[str, Any]:
+        if status not in {"queued", "running", "succeeded", "failed", "cancelled"}:
+            raise ValueError(f"Unsupported pipeline run status: {status}")
+        resolved_output_dir = str(output_dir or "")
+        if not resolved_output_dir:
+            raise ValueError("output_dir is required to record a Postgres pipeline run")
+        run_summary = dict(summary or {})
+        if error:
+            run_summary["error"] = error
+        connection = self._connect_factory(self.database_url)
+        try:
+            run_id = self._upsert_run_state(
+                connection,
+                run_key=run_key,
+                preset_key=preset_key,
+                input_root=input_root,
+                output_dir=Path(resolved_output_dir),
+                status=status,
+                summary=run_summary,
+                embedding_provider=embedding_provider,
+                embedding_model=embedding_model,
+                llm_provider=llm_provider,
+                llm_model=llm_model,
+                extraction_provider=extraction_provider,
+                vector_store_provider=vector_store_provider,
+                vector_store_collection=vector_store_collection,
+            )
+            connection.execute(
+                """
+                insert into pipeline_run_events (
+                    run_id, node, status, message, payload
+                ) values (%s, 'dashboard_run_lifecycle', %s, %s, %s::jsonb)
+                """,
+                (
+                    run_id,
+                    status,
+                    error or f"Dashboard run state recorded as {status}.",
+                    json.dumps({"run_key": run_key, "status": status, "summary": run_summary}, sort_keys=True),
+                ),
+            )
+            connection.commit()
+            return {
+                "run_id": run_id,
+                "run_key": run_key,
+                "status": status,
+                "output_dir": resolved_output_dir,
+            }
+        finally:
+            connection.close()
+
     def get_pipeline_run(self, *, run_key: str) -> dict[str, Any]:
         connection = self._connect_factory(self.database_url)
         try:
@@ -1510,6 +1577,82 @@ class PostgresPipelineStore:
                 providers.get("extraction_provider"),
                 providers.get("vector_store_provider"),
                 providers.get("vector_store_collection") or graph_runtime.get("policy", {}).get("qdrant_collection"),
+            ),
+        ).fetchone()
+        return str(row[0] if isinstance(row, tuple) else row["id"])
+
+    def _upsert_run_state(
+        self,
+        connection: PostgresConnection,
+        *,
+        run_key: str,
+        preset_key: str | None,
+        input_root: str | None,
+        output_dir: Path,
+        status: str,
+        summary: dict[str, Any],
+        embedding_provider: str | None,
+        embedding_model: str | None,
+        llm_provider: str | None,
+        llm_model: str | None,
+        extraction_provider: str | None,
+        vector_store_provider: str | None,
+        vector_store_collection: str | None,
+    ) -> str:
+        row = connection.execute(
+            """
+            insert into pipeline_runs (
+                run_key, preset_key, input_root, output_dir, status, local_only, summary,
+                embedding_provider, embedding_model, llm_provider, llm_model,
+                extraction_provider, vector_store_provider, vector_store_collection,
+                started_at, finished_at
+            )
+            values (
+                %s, %s, %s, %s, %s, true, %s::jsonb,
+                %s, %s, %s, %s, %s, %s, %s,
+                case when %s = 'running' then now() else null end,
+                case when %s in ('succeeded', 'failed', 'cancelled') then now() else null end
+            )
+            on conflict (run_key) do update set
+                preset_key = coalesce(excluded.preset_key, pipeline_runs.preset_key),
+                input_root = coalesce(excluded.input_root, pipeline_runs.input_root),
+                output_dir = excluded.output_dir,
+                status = excluded.status,
+                summary = excluded.summary,
+                embedding_provider = coalesce(excluded.embedding_provider, pipeline_runs.embedding_provider),
+                embedding_model = coalesce(excluded.embedding_model, pipeline_runs.embedding_model),
+                llm_provider = coalesce(excluded.llm_provider, pipeline_runs.llm_provider),
+                llm_model = coalesce(excluded.llm_model, pipeline_runs.llm_model),
+                extraction_provider = coalesce(excluded.extraction_provider, pipeline_runs.extraction_provider),
+                vector_store_provider = coalesce(excluded.vector_store_provider, pipeline_runs.vector_store_provider),
+                vector_store_collection = coalesce(excluded.vector_store_collection, pipeline_runs.vector_store_collection),
+                started_at = case
+                    when excluded.status = 'running' then coalesce(pipeline_runs.started_at, now())
+                    else pipeline_runs.started_at
+                end,
+                finished_at = case
+                    when excluded.status in ('succeeded', 'failed', 'cancelled') then now()
+                    else pipeline_runs.finished_at
+                end,
+                updated_at = now()
+            returning id
+            """,
+            (
+                run_key,
+                preset_key,
+                input_root,
+                str(output_dir),
+                status,
+                json.dumps(summary, sort_keys=True),
+                embedding_provider,
+                embedding_model,
+                llm_provider,
+                llm_model,
+                extraction_provider,
+                vector_store_provider,
+                vector_store_collection,
+                status,
+                status,
             ),
         ).fetchone()
         return str(row[0] if isinstance(row, tuple) else row["id"])

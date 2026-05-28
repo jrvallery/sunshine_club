@@ -283,6 +283,37 @@ def test_run_request_rejects_hosted_openai_provider(tmp_path: Path, monkeypatch)
     assert response.status_code == 422
 
 
+def test_run_creation_records_queued_state_to_postgres_when_configured(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SUNSHINE_REVIEW_DB_PATH", str(tmp_path / "review.sqlite"))
+    captured: dict[str, Any] = {}
+
+    def fake_record(*, run: dict[str, Any], status: str | None = None, summary: dict[str, Any] | None = None, error: str | None = None) -> dict[str, Any]:
+        captured["run_key"] = run["run_key"]
+        captured["status"] = status
+        captured["output_dir"] = run["output_dir"]
+        captured["summary"] = summary
+        captured["error"] = error
+        return {"record_status": "recorded", "store": "postgres_runtime", "result": {"run_key": run["run_key"], "status": status}}
+
+    monkeypatch.setattr("sunshine_api.routers.runs.record_postgres_pipeline_run_state_if_configured", fake_record)
+
+    response = TestClient(app).post(
+        "/admin/runs",
+        json={
+            "preset_key": "qa_samples_fast",
+            "input_root": str(tmp_path / "input"),
+            "output_dir": str(tmp_path / "output"),
+            "embedding_provider": "cortex",
+            "start": False,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["postgres_record"]["record_status"] == "recorded"
+    assert captured["status"] == "queued"
+    assert captured["output_dir"] == str(tmp_path / "output")
+
+
 def test_provider_benchmark_api_runs_current_provider(tmp_path: Path) -> None:
     source = tmp_path / "minutes.txt"
     source.write_text("Meeting minutes and Sunshine Club notes.", encoding="utf-8")

@@ -117,6 +117,43 @@ def test_postgres_import_service_wraps_store(tmp_path: Path) -> None:
     assert connection.committed is True
 
 
+def test_postgres_pipeline_store_records_run_lifecycle_state() -> None:
+    connection = _FakeConnection()
+    store = PostgresPipelineStore("postgresql://local/test", connect_factory=lambda _url: connection)
+
+    result = store.record_pipeline_run_state(
+        run_key="qa-run-1",
+        preset_key="qa_samples_fast",
+        input_root="/mnt/sunshine/qa samples",
+        output_dir="/mnt/sunshine/dashboard-runs/qa-run-1",
+        status="running",
+        summary={"processed_count": 2, "selected_sample_count": 10},
+        embedding_provider="cortex",
+        llm_provider="cortex",
+        vector_store_provider="qdrant",
+    )
+
+    assert result["run_id"] == "00000000-0000-0000-0000-000000000123"
+    assert result["run_key"] == "qa-run-1"
+    assert result["status"] == "running"
+    executed_sql = "\n".join(query for query, _params in connection.executed)
+    assert "insert into pipeline_runs" in executed_sql
+    assert "dashboard_run_lifecycle" in executed_sql
+    run_params = next(params for query, params in connection.executed if "insert into pipeline_runs" in query)
+    assert run_params[0:6] == (
+        "qa-run-1",
+        "qa_samples_fast",
+        "/mnt/sunshine/qa samples",
+        "/mnt/sunshine/dashboard-runs/qa-run-1",
+        "running",
+        '{"processed_count": 2, "selected_sample_count": 10}',
+    )
+    event_params = next(params for query, params in connection.executed if "insert into pipeline_run_events" in query)
+    assert event_params[0:3] == ("00000000-0000-0000-0000-000000000123", "running", "Dashboard run state recorded as running.")
+    assert connection.committed is True
+    assert connection.closed is True
+
+
 def test_postgres_pipeline_store_imports_provider_benchmark_artifacts(tmp_path: Path) -> None:
     output_dir = tmp_path / "provider-benchmark"
     output_dir.mkdir()

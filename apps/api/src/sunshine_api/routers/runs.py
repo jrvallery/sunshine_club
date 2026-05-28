@@ -32,7 +32,11 @@ router = APIRouter()
 
 
 from sunshine_api.services.model_usage import _count_list_values, _count_values, _model_usage_report, _read_model_usage_artifact
-from sunshine_api.services.imports import delete_postgres_pipeline_run_if_configured, import_langgraph_output_to_postgres_if_configured
+from sunshine_api.services.imports import (
+    delete_postgres_pipeline_run_if_configured,
+    import_langgraph_output_to_postgres_if_configured,
+    record_postgres_pipeline_run_state_if_configured,
+)
 from sunshine_api.services.run_commands import _batch_command, _batch_input_sample_count
 from sunshine_api.services.run_execution import _RUN_PROCESSES, _RUN_PROCESS_LOCK, _execute_run
 from sunshine_api.services.run_reports import (
@@ -87,6 +91,7 @@ def start_run(request: RunStartRequest) -> dict[str, Any]:
         ocr_fallback_provider=ocr_fallback_provider,
         semantic_index_path=request.semantic_index_path,
     )
+    postgres_record = record_postgres_pipeline_run_state_if_configured(run=run, status="queued", summary=run.get("summary") or {})
     if request.start:
         sample_count = _batch_input_sample_count(input_root)
         if sample_count == 0:
@@ -96,11 +101,18 @@ def start_run(request: RunStartRequest) -> dict[str, Any]:
                 summary={"selected_sample_count": 0, "processed_count": 0, "error_count": 1},
                 error="No runnable QA sample indexes found in input_root. Batch runs require grouped index.jsonl files; use the file browser for single-file runs.",
             )
-            return store.get_pipeline_run(run["id"])
+            failed_run = store.get_pipeline_run(run["id"])
+            record_postgres_pipeline_run_state_if_configured(
+                run=failed_run,
+                status="failed",
+                summary=failed_run.get("summary") or {},
+                error=failed_run.get("error"),
+            )
+            return {**failed_run, "postgres_record": postgres_record}
         store.update_pipeline_run_progress(run["id"], {"selected_sample_count": sample_count, "processed_count": 0})
         thread = threading.Thread(target=_execute_run, args=(run["id"], command, output_dir, request.import_on_success), daemon=True)
         thread.start()
-    return run
+    return {**run, "postgres_record": postgres_record}
 
 
 @router.get("/admin/runs")
