@@ -2,29 +2,14 @@
 
 from __future__ import annotations
 
-import argparse
 import json
-import mimetypes
-import os
-import sys
 import time
-import uuid
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from langgraph.graph import END, START, StateGraph
-
-from sunshine_extraction.embeddings import (
-    EmbeddingConfigurationError,
-    EmbeddingProvider,
-    PlaceholderEmbeddingProvider,
-    provider_from_env,
-)
-from sunshine_extraction.graph.state import DocumentPipelineDeps, DocumentPipelineState
-from sunshine_extraction.semantic_index import DEFAULT_INDEX_DB, search_semantic_index
+from sunshine_extraction.embeddings import EmbeddingProvider
 from sunshine_extraction.sample_pipeline import (
     DEFAULT_OUTPUT_DIR,
     DEFAULT_CORRECTED_PATH,
@@ -32,41 +17,21 @@ from sunshine_extraction.sample_pipeline import (
     DEFAULT_PLAN_PATH,
     DEFAULT_TAXONOMY_PATH,
     EXPECTED_STRATEGIES,
-    IMAGE_EXTENSIONS,
-    SPREADSHEET_EXTENSIONS,
-    TEXT_EXTENSIONS,
-    ExtractionResult,
     LLMTagInspector,
-    OcrArtifacts,
     OcrExecutor,
-    SampleFile,
-    assign_tag_candidates,
     build_ocr_summary,
-    chunk_content,
-    combine_tag_candidates,
-    embed_chunks_with_fallback,
-    extract_content,
-    extraction_quality_gate,
-    extraction_result_row,
-    llm_inspection_row,
-    llm_tag_inspector_from_env,
-    load_pipeline_env,
     load_existing_content_class,
     load_existing_extraction_plan,
-    load_taxonomy_options,
-    ocr_executor_from_env,
-    resolve_route_or_review,
-    sample_input_row,
     select_sample_files,
-    validate_and_repair_extraction,
-    write_pipeline_result,
 )
 
 from sunshine_extraction.graph.runtime import run_document_graph
 from sunshine_extraction.graph.utils import _progress, _write_jsonl
 from sunshine_extraction.providers.chunking import ChunkingProvider
 from sunshine_extraction.providers.extraction import ExtractionProvider
+from sunshine_extraction.services.artifacts import extraction_result_row, sample_input_row
 from sunshine_extraction.services.artifact_manifest import write_artifact_manifest
+from sunshine_extraction.services.tagging import llm_inspection_row
 
 def run_document_batch(
     input_root: str | Path = DEFAULT_INPUT_ROOT,
