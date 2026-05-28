@@ -39,10 +39,11 @@ from sunshine_api.services.semantic import _semantic_index_status
 from sunshine_api.services.vector_index import rebuild_qdrant_from_postgres
 from sunshine_extraction.evaluate_pipeline import DEFAULT_EVAL_OUTPUT_DIR, run_golden_pipeline_evaluation
 from sunshine_extraction.evals.provider_benchmark import benchmark_extraction_providers
-from sunshine_extraction.sample_pipeline import load_pipeline_env
-from sunshine_extraction.sample_pipeline import LLMTagInspector, llm_tag_inspector_from_env, ocr_executor_from_env
 from sunshine_extraction.semantic_eval import evaluate_review_db
 from sunshine_extraction.semantic_index import DEFAULT_INDEX_DB, build_semantic_index
+from sunshine_extraction.services.env import load_pipeline_env
+from sunshine_extraction.services.extraction import ocr_executor_from_env
+from sunshine_extraction.services.tagging import LLMTagInspector, llm_tag_inspector_from_env
 
 
 @router.get("/admin/semantic-index/status")

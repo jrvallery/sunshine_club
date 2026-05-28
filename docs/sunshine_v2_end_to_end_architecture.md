@@ -498,7 +498,7 @@ Current implementation:
 - `providers/extraction/ocr_common.py` owns shared OCR page/document row helpers; `providers/ocr.py` remains a compatibility import wrapper.
 - `providers/extraction/mineru_provider.py`, `providers/extraction/ragflow_deepdoc_provider.py`, and `providers/extraction/unstructured_provider.py` define optional local parser boundaries that report skipped/unavailable until benchmarked and enabled.
 - `providers/extraction/openai_ocr.py` is an explicit hosted-OpenAI OCR policy boundary that raises because production is local-only.
-- Production graph/provider code no longer imports `sample_pipeline.py`; that module remains a legacy CLI compatibility runner and test target.
+- Production graph/provider/API code no longer imports `sample_pipeline.py`; that module remains a legacy CLI compatibility runner and test target.
 
 ### 8. `validate_extraction`
 

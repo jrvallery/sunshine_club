@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from sunshine_extraction.sample_pipeline import DEFAULT_TAXONOMY_PATH, load_taxonomy_options
+from sunshine_extraction.services.tagging import DEFAULT_TAXONOMY_PATH, load_taxonomy_options
 
 
 DEFAULT_REVIEW_DB_PATH = ".local/sunshine-review.sqlite"

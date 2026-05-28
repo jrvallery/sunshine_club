@@ -32,7 +32,8 @@ router = APIRouter()
 
 
 from sunshine_extraction.langgraph_pipeline import run_document_graph
-from sunshine_extraction.sample_pipeline import llm_tag_inspector_from_env, load_pipeline_env
+from sunshine_extraction.services.env import load_pipeline_env
+from sunshine_extraction.services.tagging import llm_tag_inspector_from_env
 
 
 @router.post("/admin/pipeline/run-file", response_model=DocumentPipelineRunResponse)
@@ -69,4 +70,3 @@ def import_langgraph_output(request: ReviewImportRequest) -> dict[str, Any]:
         sample_routed_per_bucket=request.sample_routed_per_bucket,
         sample_seed=request.sample_seed,
     )
-
