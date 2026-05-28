@@ -52,6 +52,7 @@ from sunshine_api.services.imports import (
     list_postgres_run_provider_attempts,
     list_postgres_run_provider_selections,
     list_postgres_run_quality_checks,
+    list_postgres_run_results,
     list_postgres_run_tagging_evidence,
     postgres_runtime_summary,
     record_postgres_review_decision,
@@ -142,6 +143,31 @@ def postgres_runtime_run_artifacts(run_key: str, limit: int = 500) -> dict[str, 
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     return {"ok": True, "run_key": run_key, "count": len(artifacts), "artifacts": artifacts}
+
+
+@router.get("/admin/system/postgres-runtime/runs/{run_key}/results")
+def postgres_runtime_run_results(run_key: str, limit: int = 500) -> dict[str, Any]:
+    try:
+        rows = list_postgres_run_results(run_key=run_key, limit=limit)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    route_counts: dict[str, int] = {}
+    class_counts: dict[str, int] = {}
+    for row in rows:
+        route_status = str(row.get("route_status") or "unknown")
+        final_class = str(row.get("final_class") or "unknown")
+        route_counts[route_status] = route_counts.get(route_status, 0) + 1
+        class_counts[final_class] = class_counts.get(final_class, 0) + 1
+    return {
+        "ok": True,
+        "run_key": run_key,
+        "count": len(rows),
+        "route_counts": route_counts,
+        "class_counts": class_counts,
+        "results": rows,
+    }
 
 
 @router.get("/admin/system/postgres-runtime/runs/{run_key}/model-usage")

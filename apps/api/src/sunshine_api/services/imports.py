@@ -232,6 +232,17 @@ def list_postgres_run_artifacts(
     return store.list_run_artifacts(run_key=run_key, limit=limit)
 
 
+def list_postgres_run_results(
+    *,
+    run_key: str,
+    limit: int = 500,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> list[dict[str, Any]]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.list_run_results(run_key=run_key, limit=limit)
+
+
 def list_postgres_run_model_usage(
     *,
     run_key: str,
@@ -694,6 +705,7 @@ __all__ = [
     "list_postgres_run_provider_attempts",
     "list_postgres_run_provider_selections",
     "list_postgres_run_quality_checks",
+    "list_postgres_run_results",
     "list_postgres_run_tagging_evidence",
     "postgres_golden_label_summary",
     "postgres_file_facets",

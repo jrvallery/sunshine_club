@@ -230,6 +230,41 @@ def test_postgres_run_model_usage_endpoint_wraps_service(monkeypatch) -> None:
     assert captured == {"run_key": "run-1", "limit": 11}
 
 
+def test_postgres_run_results_endpoint_wraps_service(monkeypatch) -> None:
+    captured = {}
+
+    def fake_list_results(*, run_key: str, limit: int = 500) -> list[dict]:
+        captured["run_key"] = run_key
+        captured["limit"] = limit
+        return [
+            {
+                "relative_path": "History/founders.pdf",
+                "route_status": "route_candidate",
+                "final_class": "document",
+                "top_tag_candidate": "history_archive_general",
+            },
+            {
+                "relative_path": "History/scrapbook.pdf",
+                "route_status": "review_segment_boundary",
+                "final_class": "scanned_document",
+                "top_tag_candidate": "scrapbooks",
+            },
+        ]
+
+    monkeypatch.setattr("sunshine_api.routers.health.list_postgres_run_results", fake_list_results)
+
+    response = TestClient(app).get("/admin/system/postgres-runtime/runs/run-1/results?limit=16")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run_key"] == "run-1"
+    assert payload["count"] == 2
+    assert payload["route_counts"] == {"route_candidate": 1, "review_segment_boundary": 1}
+    assert payload["class_counts"] == {"document": 1, "scanned_document": 1}
+    assert payload["results"][1]["top_tag_candidate"] == "scrapbooks"
+    assert captured == {"run_key": "run-1", "limit": 16}
+
+
 def test_postgres_run_detail_table_endpoints_wrap_services(monkeypatch) -> None:
     captured: dict[str, dict[str, Any]] = {}
     cases = [
