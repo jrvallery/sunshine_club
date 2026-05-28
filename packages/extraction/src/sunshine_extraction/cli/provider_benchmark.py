@@ -12,7 +12,11 @@ from sunshine_extraction.evals.provider_benchmark import benchmark_extraction_pr
 def main() -> None:
     parser = argparse.ArgumentParser(description="Benchmark local extraction providers on selected files.")
     parser.add_argument("paths", nargs="+", help="Files to benchmark.")
-    parser.add_argument("--providers", default="current,docling", help="Comma-separated providers: current,docling.")
+    parser.add_argument(
+        "--providers",
+        default="current,docling",
+        help="Comma-separated providers: current, docling, mineru, ragflow_deepdoc, unstructured.",
+    )
     parser.add_argument("--output-dir", help="Optional output directory for benchmark artifacts.")
     args = parser.parse_args()
     provider_names = [name.strip() for name in args.providers.split(",") if name.strip()]

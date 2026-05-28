@@ -1537,8 +1537,9 @@ JavaScript/dashboard dependencies:
 
 Important missing V2 dependencies:
 
-- Docling is recommended but not installed or implemented yet.
-- Qdrant client/server is recommended but not installed/provisioned yet.
+- Docling is declared as an optional Python extra and has a local provider boundary; the actual local dependency install/runtime benchmark still needs to be performed.
+- MinerU, RAGFlow DeepDoc, and Unstructured have local provider boundaries for benchmarking, but are not declared as installed dependencies yet.
+- Qdrant client is declared; the local Qdrant server/service/provisioning path still needs to be made first-class.
 - Postgres client exists, but the local Postgres database/service/migrations need to be made first-class.
 - Local embedding/vector indexing stack is not fully wired yet.
 - Provider benchmark tooling exists for extraction providers; dashboard benchmark review and real Docling/MinerU/RAGFlow dependency benchmarking still need to be finished.
