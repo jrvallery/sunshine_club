@@ -19,6 +19,9 @@ from sunshine_extraction.services.provider_policy import assert_local_provider
 from sunshine_extraction.services.confidence import calibrate_confidence, confidence_calibration_row
 from sunshine_extraction.services.routing import resolve_route_decision
 from sunshine_extraction.services.segmentation import propose_document_segments
+from sunshine_extraction.services.tagging.evidence import combine_tag_candidates
+from sunshine_extraction.services.tagging.rules import assign_tag_candidates
+from sunshine_extraction.services.tagging.taxonomy import DEFAULT_TAXONOMY_PATH
 from sunshine_extraction.services.extraction import ExtractionResult
 from sunshine_extraction.services.structure import normalize_document_structure
 
@@ -240,6 +243,12 @@ def test_route_decision_service_prioritizes_embedding_unavailable(tmp_path: Path
     assert decision["priority"] == "high"
     assert decision["review_stage"] == "needs_ocr_review"
     assert "warning:embedding_quality_unavailable" in decision["evidence"]
+
+
+def test_tagging_package_exposes_v2_boundaries() -> None:
+    assert callable(assign_tag_candidates)
+    assert callable(combine_tag_candidates)
+    assert str(DEFAULT_TAXONOMY_PATH).endswith(".json")
 
 
 def test_docling_provider_is_optional_and_local_only() -> None:

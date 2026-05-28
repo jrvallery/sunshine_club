@@ -906,6 +906,11 @@ Success criteria:
 - Rules are data-driven, not buried in long Python functions.
 - Golden label tests cover high-risk tags.
 
+Current implementation:
+
+- `services/tagging/rules.py` exposes the deterministic rule-tagging service boundary while preserving existing rule behavior.
+- The graph writes deterministic and final tag candidates through `sample-tag-candidates.jsonl`; the next hardening step is moving the rule table itself out of legacy Python into data/config.
+
 ### 18. `inspect_tags_with_llm`
 
 Purpose:
@@ -978,6 +983,11 @@ Success criteria:
 - Review UI can show why a tag won.
 - Conflicts are explicit.
 - No accepted route without evidence.
+
+Current implementation:
+
+- `services/tagging/evidence.py` exposes the tag evidence-combination service boundary.
+- Combined candidates retain deterministic, semantic, and LLM evidence in `sample-tag-candidates.jsonl` and in final result confidence inputs.
 
 ### 20. `calibrate_confidence`
 
