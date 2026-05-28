@@ -26,7 +26,7 @@ def _inspect_tags_with_llm(state: DocumentPipelineState, deps: DocumentPipelineD
     taxonomy = load_taxonomy_options(state.get("taxonomy_path", DEFAULT_TAXONOMY_PATH))
     extraction = state.get("extraction_result") or _empty_extraction(state)
     started = time.monotonic()
-    inspection = deps["llm_tag_inspector"].inspect(
+    inspection, attempt = deps["llm_tag_inspection_provider"].inspect_tags(
         sample=state["sample"],
         corrected=state["content_class"],
         plan=state["extraction_plan"],
@@ -39,6 +39,7 @@ def _inspect_tags_with_llm(state: DocumentPipelineState, deps: DocumentPipelineD
     usage_row = _llm_tag_model_usage_row(state, inspection, started=started)
     return {
         "llm_tag_inspection": inspection,
+        "llm_tag_inspection_result": attempt.as_row(),
         "warnings": warnings,
         "model_usage": [*state.get("model_usage", []), usage_row] if usage_row else state.get("model_usage", []),
     }

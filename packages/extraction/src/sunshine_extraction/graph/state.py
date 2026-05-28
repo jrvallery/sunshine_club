@@ -10,6 +10,7 @@ from sunshine_extraction.embeddings import EmbeddingProvider
 from sunshine_extraction.providers.chunking import ChunkingProvider
 from sunshine_extraction.providers.embeddings import ChunkEmbeddingProvider
 from sunshine_extraction.providers.extraction import ExtractionProvider
+from sunshine_extraction.providers.llm import LLMTagInspectionProvider
 from sunshine_extraction.providers.retrieval import SemanticRetrievalProvider
 from sunshine_extraction.providers.vectorstores import VectorStoreProvider
 from sunshine_extraction.services.content import SampleFile
@@ -60,6 +61,7 @@ class DocumentPipelineState(TypedDict, total=False):
     retrieval_result: dict[str, Any]
     semantic_examples: list[dict[str, Any]]
     deterministic_tag_candidates: list[dict[str, Any]]
+    llm_tag_inspection_result: dict[str, Any]
     llm_tag_inspection: dict[str, Any]
     model_usage: list[dict[str, Any]]
     tag_candidates: list[dict[str, Any]]
@@ -81,6 +83,7 @@ class DocumentPipelineDeps(TypedDict, total=False):
     chunk_embedding_provider: ChunkEmbeddingProvider
     vector_store: VectorStoreProvider
     semantic_retrieval_provider: SemanticRetrievalProvider
+    llm_tag_inspection_provider: LLMTagInspectionProvider
     embedding_provider: EmbeddingProvider
     embedding_failure_mode: str
     llm_tag_inspector: LLMTagInspector

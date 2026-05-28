@@ -943,6 +943,13 @@ Success criteria:
 - Prompt/model versions are stored.
 - Calls are cached by input hash.
 
+Current implementation:
+
+- `providers/llm/base.py` defines the LLM tag inspection provider contract.
+- `CurrentLLMTagInspectionProvider` wraps the existing local/OpenAI-compatible inspector shape and preserves structured inspection output.
+- Graph runs write `sample-llm-tag-inspection-results.jsonl` with provider, model, status, token counts, warnings, and normalized metadata.
+- Hosted OpenAI/Gemini-style providers remain disabled by environment policy for production paths; Cortex/OpenAI-compatible local endpoints remain the intended provider.
+
 ### 19. `combine_tag_evidence`
 
 Purpose:
@@ -1123,6 +1130,7 @@ Artifacts:
 - `sample-indexing.jsonl`
 - `sample-retrieval-results.jsonl`
 - `sample-semantic-examples.jsonl`
+- `sample-llm-tag-inspection-results.jsonl`
 - `sample-llm-tag-inspections.jsonl`
 - `sample-tag-candidates.jsonl`
 - `sample-placement-proposals.jsonl`
@@ -1678,6 +1686,7 @@ Required artifacts:
 - `sample-indexing.jsonl`
 - `sample-retrieval-results.jsonl`
 - `sample-semantic-examples.jsonl`
+- `sample-llm-tag-inspection-results.jsonl`
 - `sample-llm-tag-inspections.jsonl`
 - `sample-tag-candidates.jsonl`
 - `sample-placement-proposals.jsonl`

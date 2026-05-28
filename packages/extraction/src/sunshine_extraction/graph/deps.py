@@ -15,6 +15,7 @@ from sunshine_extraction.graph.state import DocumentPipelineDeps
 from sunshine_extraction.providers.chunking import ChunkingProvider, CurrentChunkingProvider
 from sunshine_extraction.providers.embeddings import ChunkEmbeddingProvider, CurrentChunkEmbeddingProvider
 from sunshine_extraction.providers.extraction import ExtractionProvider, extraction_provider_from_env
+from sunshine_extraction.providers.llm import CurrentLLMTagInspectionProvider, LLMTagInspectionProvider
 from sunshine_extraction.providers.retrieval import CurrentSemanticRetrievalProvider, SemanticRetrievalProvider
 from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider, VectorStoreProvider
 from sunshine_extraction.services.extraction import OcrExecutor, ocr_executor_from_env
@@ -32,6 +33,7 @@ def _resolve_deps(
     chunk_embedding_provider: ChunkEmbeddingProvider | None = None,
     vector_store: VectorStoreProvider | None = None,
     semantic_retrieval_provider: SemanticRetrievalProvider | None = None,
+    llm_tag_inspection_provider: LLMTagInspectionProvider | None = None,
     embedding_failure_mode: str | None = None,
     llm_tag_inspector: LLMTagInspector | None = None,
     ocr_executor: OcrExecutor | None = None,
@@ -43,15 +45,17 @@ def _resolve_deps(
             embedding_provider = provider_from_env()
         except EmbeddingConfigurationError:
             embedding_provider = PlaceholderEmbeddingProvider()
+    active_llm_tag_inspector = llm_tag_inspector or llm_tag_inspector_from_env()
     return {
         "extraction_provider": extraction_provider or extraction_provider_from_env(),
         "chunking_provider": chunking_provider or CurrentChunkingProvider(),
         "chunk_embedding_provider": chunk_embedding_provider or CurrentChunkEmbeddingProvider(embedding_provider),
         "vector_store": vector_store or _vector_store_from_env(),
         "semantic_retrieval_provider": semantic_retrieval_provider or CurrentSemanticRetrievalProvider(embedding_provider),
+        "llm_tag_inspection_provider": llm_tag_inspection_provider or CurrentLLMTagInspectionProvider(active_llm_tag_inspector),
         "embedding_provider": embedding_provider,
         "embedding_failure_mode": _embedding_failure_mode(embedding_failure_mode),
-        "llm_tag_inspector": llm_tag_inspector or llm_tag_inspector_from_env(),
+        "llm_tag_inspector": active_llm_tag_inspector,
         "ocr_executor": ocr_executor or ocr_executor_from_env(),
         "run_results_importer": run_results_importer or run_results_importer_from_env(),
         "semantic_index_path": _resolve_semantic_index_path(semantic_index_path),

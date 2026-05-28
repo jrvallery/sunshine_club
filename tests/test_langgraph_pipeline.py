@@ -168,6 +168,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     quality_gate_rows = [json.loads(line) for line in (output_dir / "sample-quality-gates.jsonl").read_text().splitlines()]
     semantic_rows = [json.loads(line) for line in (output_dir / "sample-semantic-examples.jsonl").read_text().splitlines()]
     llm_rows = [json.loads(line) for line in (output_dir / "sample-llm-tag-inspections.jsonl").read_text().splitlines()]
+    llm_result_rows = [json.loads(line) for line in (output_dir / "sample-llm-tag-inspection-results.jsonl").read_text().splitlines()]
     model_usage_rows = [json.loads(line) for line in (output_dir / "sample-model-usage.jsonl").read_text().splitlines()]
     segment_rows = [json.loads(line) for line in (output_dir / "sample-document-segments.jsonl").read_text().splitlines()]
     chunking_rows = [json.loads(line) for line in (output_dir / "sample-chunking-results.jsonl").read_text().splitlines()]
@@ -209,6 +210,9 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert "validation:ok" in quality_gate_rows[0]["quality_evidence"]
     assert semantic_rows == []
     assert llm_rows[0]["primary_tag"] == "annual_spring_tea"
+    assert llm_result_rows[0]["provider"] == "disabled"
+    assert llm_result_rows[0]["status"] == "inspected"
+    assert llm_result_rows[0]["metadata"]["primary_tag"] == "annual_spring_tea"
     assert segment_rows[0]["segment_type"] == "single_document"
     assert segment_rows[0]["requires_segment_review"] is False
     assert chunking_rows[0]["provider"] == "current"
@@ -245,6 +249,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert import_rows[0]["importer"] == "noop"
     assert manifest_by_name["sample-pipeline-results.jsonl"]["row_count"] == 1
     assert manifest_by_name["sample-route-decisions.jsonl"]["row_count"] == 1
+    assert manifest_by_name["sample-llm-tag-inspection-results.jsonl"]["row_count"] == 1
     assert manifest_by_name["sample-document-segments.jsonl"]["row_count"] == 1
     assert manifest_by_name["sample-chunking-results.jsonl"]["row_count"] == 1
     assert manifest_by_name["sample-embedding-results.jsonl"]["row_count"] == 1
@@ -571,6 +576,7 @@ def test_langgraph_batch_aggregates_artifacts_and_continues_after_file_failure(t
     assert manifest_by_name["sample-chunking-results.jsonl"]["row_count"] == 1
     assert manifest_by_name["sample-embedding-results.jsonl"]["row_count"] == 1
     assert manifest_by_name["sample-retrieval-results.jsonl"]["row_count"] == 1
+    assert manifest_by_name["sample-llm-tag-inspection-results.jsonl"]["row_count"] == 1
     assert manifest_by_name["graph-batch-summary.json"]["kind"] == "json"
     assert len(manifest_by_name["sample-pipeline-summary.json"]["sha256"]) == 64
     assert (output_dir / "graph-runs" / "00001" / "graph-result.json").exists()

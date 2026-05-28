@@ -11,6 +11,7 @@ from sunshine_extraction.providers.probe import NativeFileProbeProvider
 from sunshine_extraction.providers.chunking import CurrentChunkingProvider
 from sunshine_extraction.providers.embeddings import CurrentChunkEmbeddingProvider
 from sunshine_extraction.providers.extraction import CurrentExtractionProvider, DoclingExtractionProvider, extraction_provider_from_env
+from sunshine_extraction.providers.llm import CurrentLLMTagInspectionProvider
 from sunshine_extraction.providers.retrieval import CurrentSemanticRetrievalProvider
 from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider
 from sunshine_extraction.sample_pipeline import SampleFile, llm_tag_inspector_from_env, ocr_executor_from_env
@@ -39,6 +40,28 @@ class _FakeDoclingConverter:
     def convert(self, path: str) -> _FakeDoclingResult:
         assert path
         return _FakeDoclingResult()
+
+
+class _FakeLLMTagInspector:
+    model = "test-model"
+    provider_name = "test"
+
+    def inspect(self, **_kwargs):
+        return {
+            "llm_status": "inspected",
+            "provider": "test",
+            "model": self.model,
+            "primary_tag": "annual_spring_tea",
+            "secondary_tags": [],
+            "confidence": 0.9,
+            "evidence": ["tea evidence"],
+            "rationale": "Strong tea evidence.",
+            "needs_review": False,
+            "warning": None,
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "total_tokens": 15,
+        }
 
 
 def _sample(path: Path, *, relative_path: str = "Sunshine shared folders/file.pdf") -> SampleFile:
@@ -128,6 +151,38 @@ def test_current_semantic_retrieval_provider_reports_missing_index() -> None:
     assert attempt.result_count == 0
     assert attempt.warnings == ["semantic_index_missing"]
     assert attempt.metadata["local_only"] is True
+
+
+def test_current_llm_tag_inspection_provider_wraps_existing_behavior(tmp_path: Path) -> None:
+    source = tmp_path / "tea.txt"
+    source.write_text("Annual tea notes", encoding="utf-8")
+    sample = _sample(source)
+    taxonomy = type("Taxonomy", (), {"primary_tags": ["annual_spring_tea"], "secondary_tags": [], "primary_definitions": {}})()
+
+    inspection, attempt = CurrentLLMTagInspectionProvider(_FakeLLMTagInspector()).inspect_tags(
+        sample=sample,
+        corrected={"final_class": "document"},
+        plan={"strategy": "text_extraction"},
+        extraction=ExtractionResult(
+            sample=sample,
+            plan={"strategy": "text_extraction"},
+            extraction_status="extracted",
+            text="Annual tea notes",
+            metadata={},
+            page_count=1,
+            warnings=[],
+        ),
+        taxonomy=taxonomy,
+        deterministic_candidates=[],
+        semantic_examples=[],
+    )
+
+    assert inspection["primary_tag"] == "annual_spring_tea"
+    assert attempt.provider == "test"
+    assert attempt.model == "test-model"
+    assert attempt.status == "inspected"
+    assert attempt.input_tokens == 10
+    assert attempt.total_tokens == 15
 
 
 def test_docling_provider_is_optional_and_local_only() -> None:

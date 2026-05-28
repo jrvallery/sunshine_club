@@ -3,6 +3,7 @@
 from sunshine_extraction.sample_pipeline import (
     DEFAULT_TAXONOMY_PATH,
     LLMTagInspector,
+    TaxonomyOptions,
     assign_tag_candidates,
     calibrate_tag_confidence,
     combine_tag_candidates,
@@ -14,6 +15,7 @@ from sunshine_extraction.sample_pipeline import (
 __all__ = [
     "DEFAULT_TAXONOMY_PATH",
     "LLMTagInspector",
+    "TaxonomyOptions",
     "assign_tag_candidates",
     "calibrate_tag_confidence",
     "combine_tag_candidates",
