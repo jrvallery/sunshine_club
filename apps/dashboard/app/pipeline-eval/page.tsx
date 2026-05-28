@@ -130,14 +130,12 @@ export default function PipelineEvalPage() {
           <SelectInput label="Embedding provider" value={embeddingProvider} onChange={(event) => setEmbeddingProvider(event.target.value)}>
             <option value="placeholder">Placeholder</option>
             <option value="cortex">Cortex</option>
-            <option value="openai">OpenAI</option>
           </SelectInput>
           <CheckboxField label="Enable LLM tags" checked={enableLlmTags} onChange={(event) => setEnableLlmTags(event.target.checked)} />
           <CheckboxField label="Enable OCR" checked={enableOcr} onChange={(event) => setEnableOcr(event.target.checked)} />
           <SelectInput label="OCR fallback" value={ocrFallbackProvider} onChange={(event) => setOcrFallbackProvider(event.target.value)}>
             <option value="disabled">Disabled</option>
             <option value="cortex">Cortex</option>
-            <option value="openai">OpenAI</option>
           </SelectInput>
           <Button variant="primary" disabled={runEval.isPending} onClick={() => runEval.mutate()}>
             {runEval.isPending ? "Running..." : "Run Eval"}

@@ -271,10 +271,10 @@ function RunStartDialog({
   const [inputRoot, setInputRoot] = useState(preset.input_root);
   const [outputDir, setOutputDir] = useState(preset.output_dir);
   const [runRole, setRunRole] = useState("test");
-  const [embeddingProvider, setEmbeddingProvider] = useState(preset.embedding_provider || "cortex");
+  const [embeddingProvider, setEmbeddingProvider] = useState(normalizeEmbeddingProvider(preset.embedding_provider));
   const [enableLlmTags, setEnableLlmTags] = useState(preset.enable_llm_tags);
-  const [llmTagProvider, setLlmTagProvider] = useState(normalizeRunProvider(preset.llm_tag_provider));
-  const [ocrFallbackProvider, setOcrFallbackProvider] = useState(normalizeRunProvider(preset.ocr_fallback_provider));
+  const [llmTagProvider, setLlmTagProvider] = useState(normalizeLlmProvider(preset.llm_tag_provider));
+  const [ocrFallbackProvider, setOcrFallbackProvider] = useState(normalizeOcrProvider(preset.ocr_fallback_provider));
   const [semanticIndexPath, setSemanticIndexPath] = useState("");
   const [importOnSuccess, setImportOnSuccess] = useState(false);
 
@@ -297,9 +297,9 @@ function RunStartDialog({
           <option value="baseline">Baseline</option>
           <option value="evaluation">Evaluation</option>
         </SelectInput>
-        <ProviderSelect label="Embedding path" value={embeddingProvider} onChange={setEmbeddingProvider} />
-        <ProviderSelect label="LLM tag path" value={llmTagProvider} onChange={setLlmTagProvider} />
-        <ProviderSelect label="OCR fallback path" value={ocrFallbackProvider} onChange={setOcrFallbackProvider} />
+        <ProviderSelect label="Embedding path" value={embeddingProvider} onChange={setEmbeddingProvider} options={["cortex", "placeholder"]} />
+        <ProviderSelect label="LLM tag path" value={llmTagProvider} onChange={setLlmTagProvider} options={["cortex"]} />
+        <ProviderSelect label="OCR fallback path" value={ocrFallbackProvider} onChange={setOcrFallbackProvider} options={["cortex", "disabled"]} />
         <TextInput
           label="Semantic index path"
           value={semanticIndexPath}
@@ -342,20 +342,49 @@ function MiniMetric({ label, value }: { label: string; value: number }) {
   );
 }
 
-function ProviderSelect({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function ProviderSelect({
+  label,
+  value,
+  onChange,
+  options
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+}) {
   return (
     <label className="field">
       <span>{label}</span>
       <select value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="cortex">Cortex</option>
-        <option value="openai">OpenAI</option>
+        {options.map((option) => (
+          <option key={option} value={option}>{providerLabel(option)}</option>
+        ))}
       </select>
     </label>
   );
 }
 
-function normalizeRunProvider(value?: string | null) {
-  return value === "openai" ? "openai" : "cortex";
+function providerLabel(value: string) {
+  if (value === "placeholder") {
+    return "Placeholder";
+  }
+  if (value === "disabled") {
+    return "Disabled";
+  }
+  return "Cortex";
+}
+
+function normalizeEmbeddingProvider(value?: string | null) {
+  return value === "placeholder" ? "placeholder" : "cortex";
+}
+
+function normalizeLlmProvider(_value?: string | null) {
+  return "cortex";
+}
+
+function normalizeOcrProvider(value?: string | null) {
+  return value === "disabled" ? "disabled" : "cortex";
 }
 
 function RunProgressBar({ progress, run }: { progress?: PipelineRunProgress; run: PipelineRun }) {

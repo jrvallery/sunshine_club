@@ -141,9 +141,9 @@ function FileViewerPageContent() {
         <section className="drawerSection">
           <h2>Actions</h2>
           <div className="providerPickerGrid">
-            <ProviderSelect label="Embedding path" value={embeddingProvider} onChange={setEmbeddingProvider} />
-            <ProviderSelect label="LLM tag path" value={llmProvider} onChange={setLlmProvider} />
-            <ProviderSelect label="OCR fallback path" value={ocrProvider} onChange={setOcrProvider} />
+            <ProviderSelect label="Embedding path" value={embeddingProvider} onChange={setEmbeddingProvider} options={["cortex", "placeholder"]} />
+            <ProviderSelect label="LLM tag path" value={llmProvider} onChange={setLlmProvider} options={["cortex"]} />
+            <ProviderSelect label="OCR fallback path" value={ocrProvider} onChange={setOcrProvider} options={["cortex", "disabled"]} />
           </div>
           <div className="buttonRow">
             <button className="secondaryButton" onClick={() => copyText(file.source_path)}>Copy Path</button>
@@ -190,16 +190,37 @@ function FileViewerPageContent() {
   );
 }
 
-function ProviderSelect({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function ProviderSelect({
+  label,
+  value,
+  onChange,
+  options
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+}) {
   return (
     <label>
       <span>{label}</span>
       <select value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="cortex">Cortex</option>
-        <option value="openai">OpenAI</option>
+        {options.map((option) => (
+          <option key={option} value={option}>{providerLabel(option)}</option>
+        ))}
       </select>
     </label>
   );
+}
+
+function providerLabel(value: string) {
+  if (value === "placeholder") {
+    return "Placeholder";
+  }
+  if (value === "disabled") {
+    return "Disabled";
+  }
+  return "Cortex";
 }
 
 function copyText(value: string) {
