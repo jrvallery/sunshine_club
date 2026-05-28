@@ -14,7 +14,7 @@ import { StatusBadge } from "../../../../components/ui/StatusBadge";
 import { deleteJson, fetchJson, postJson } from "../../../../lib/api";
 import type { PipelineRun, PipelineRunEvent, PostgresRunReport, RunModelUsageReport, RunReport } from "../../../../lib/types";
 
-type ReportTab = "overview" | "files" | "review" | "segments" | "training" | "ocr" | "tags" | "placement" | "models" | "logs" | "artifacts" | "diff";
+type ReportTab = "overview" | "files" | "review" | "segments" | "training" | "ocr" | "tags" | "placement" | "models" | "providers" | "logs" | "artifacts" | "diff";
 
 const tabs: Array<{ key: ReportTab; label: string }> = [
   { key: "overview", label: "Overview" },
@@ -26,6 +26,7 @@ const tabs: Array<{ key: ReportTab; label: string }> = [
   { key: "tags", label: "Tags" },
   { key: "placement", label: "Placement" },
   { key: "models", label: "Model Usage" },
+  { key: "providers", label: "Providers" },
   { key: "logs", label: "Logs" },
   { key: "artifacts", label: "Artifacts" },
   { key: "diff", label: "Diff" }
@@ -227,6 +228,7 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
       {activeTab === "tags" ? <BreakdownGrid values={data.tags} /> : null}
       {activeTab === "placement" ? <BreakdownGrid values={data.placement} /> : null}
       {activeTab === "models" ? <ModelUsageTab usage={data.model_usage} /> : null}
+      {activeTab === "providers" ? <ProviderAttemptsTab rows={data.provider_attempts.items} summary={data.provider_attempts} /> : null}
       {activeTab === "logs" ? <LogsTab events={logRows} postgresBacked={Boolean(postgresData?.run_events?.length)} /> : null}
       {activeTab === "artifacts" ? <ArtifactsTab report={data} /> : null}
       {activeTab === "diff" ? <DiffTab report={data} /> : null}
@@ -260,7 +262,7 @@ function PostgresRunReportView({
   const runKey = String(report.run.run_key ?? "");
   const status = String(report.run.status ?? "-");
   const modelCalls = Number(report.summary.model_call_count ?? 0);
-  const postgresTabs = tabs.filter((tab) => ["overview", "files", "review", "segments", "ocr", "models", "logs"].includes(tab.key));
+  const postgresTabs = tabs.filter((tab) => ["overview", "files", "review", "segments", "ocr", "models", "providers", "logs"].includes(tab.key));
   const activePostgresTab = postgresTabs.some((tab) => tab.key === activeTab) ? activeTab : "overview";
   return (
     <main className="pageShell">
@@ -321,6 +323,7 @@ function PostgresRunReportView({
       {activePostgresTab === "segments" ? <SegmentsTab postgresReport={report} /> : null}
       {activePostgresTab === "ocr" ? <PostgresParserTab report={report} /> : null}
       {activePostgresTab === "models" ? <JsonTable title="Model Calls" rows={report.model_usage ?? []} /> : null}
+      {activePostgresTab === "providers" ? <ProviderAttemptsTab rows={report.provider_attempts ?? []} summary={report.summary} /> : null}
       {activePostgresTab === "logs" ? <LogsTab events={report.run_events ?? []} postgresBacked /> : null}
     </main>
   );
@@ -496,6 +499,26 @@ function ModelUsageTab({ usage }: { usage: RunModelUsageReport }) {
         <UsageBreakdown title="Purpose" values={usage.by_purpose} />
       </div>
       <JsonTable title="Model Calls" rows={usage.calls} />
+    </section>
+  );
+}
+
+function ProviderAttemptsTab({ rows, summary }: { rows: Array<Record<string, unknown>>; summary: Record<string, unknown> }) {
+  const byProvider = recordNumberMap(summary.by_provider ?? summary.provider_attempt_provider ?? {});
+  const byStatus = recordNumberMap(summary.by_status ?? summary.provider_attempt_status ?? {});
+  return (
+    <section className="panel">
+      <div className="sectionHeader">
+        <div>
+          <h2>Provider Attempts</h2>
+          <span>{rows.length} provider chain rows</span>
+        </div>
+      </div>
+      <div className="reportGrid">
+        <Breakdown title="Provider" values={byProvider} />
+        <Breakdown title="Status" values={byStatus} />
+      </div>
+      <JsonTable title="Provider Attempt Rows" rows={rows} />
     </section>
   );
 }
@@ -951,6 +974,17 @@ function formatProcessed(report: RunReport) {
   const processed = report.progress.processed_count ?? report.run.processed_count ?? report.overview.processed_count ?? 0;
   const total = report.progress.total_count;
   return total == null ? String(processed) : `${processed} / ${total}`;
+}
+
+function recordNumberMap(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  const result: Record<string, number> = {};
+  for (const [key, count] of Object.entries(value as Record<string, unknown>)) {
+    result[key] = Number(count) || 0;
+  }
+  return result;
 }
 
 function runExecutionBackend(run: PipelineRun) {
