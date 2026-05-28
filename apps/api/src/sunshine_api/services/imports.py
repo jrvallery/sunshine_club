@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 from typing import Any
 
 from sunshine_api.postgres_pipeline_store import ConnectFactory, PostgresPipelineStore
@@ -18,6 +19,29 @@ def import_langgraph_output_to_postgres(
 ) -> dict[str, Any]:
     store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
     return store.import_langgraph_output(output_dir, run_key=run_key, preset_key=preset_key)
+
+
+def import_langgraph_output_to_postgres_if_configured(
+    output_dir: str | Path,
+    *,
+    run_key: str,
+    preset_key: str | None = None,
+) -> dict[str, Any]:
+    database_url = os.environ.get("DATABASE_URL") or os.environ.get("SUNSHINE_DATABASE_URL")
+    if not database_url:
+        return {
+            "import_status": "skipped",
+            "importer": "postgres_runtime",
+            "output_dir": str(output_dir),
+            "run_key": run_key,
+            "preset_key": preset_key,
+            "reason": "postgres_database_url_not_configured",
+        }
+    return {
+        "import_status": "imported",
+        "importer": "postgres_runtime",
+        "result": import_langgraph_output_to_postgres(output_dir, run_key=run_key, preset_key=preset_key, database_url=database_url),
+    }
 
 
 def postgres_runtime_summary(
@@ -95,6 +119,7 @@ def record_postgres_review_decision(
 
 __all__ = [
     "import_langgraph_output_to_postgres",
+    "import_langgraph_output_to_postgres_if_configured",
     "get_postgres_pipeline_run",
     "get_postgres_run_report",
     "list_postgres_pipeline_runs",

@@ -32,6 +32,7 @@ router = APIRouter()
 
 
 from sunshine_api.services.model_usage import _count_list_values, _count_values, _model_usage_report, _read_model_usage_artifact
+from sunshine_api.services.imports import import_langgraph_output_to_postgres_if_configured
 from sunshine_api.services.run_commands import _batch_command, _batch_input_sample_count
 from sunshine_api.services.run_execution import _RUN_PROCESSES, _RUN_PROCESS_LOCK, _execute_run
 from sunshine_api.services.run_reports import (
@@ -508,7 +509,20 @@ def import_run_results(run_id: int) -> dict[str, Any]:
     output_dir = run.get("output_dir")
     if not output_dir:
         raise HTTPException(status_code=400, detail="Run has no output_dir")
-    return store.import_langgraph_output(output_dir, sample_routed_per_bucket=0, run_id=run_id)
+    legacy_result = store.import_langgraph_output(output_dir, sample_routed_per_bucket=0, run_id=run_id)
+    try:
+        postgres_result = import_langgraph_output_to_postgres_if_configured(
+            output_dir,
+            run_key=str(run["run_key"]),
+            preset_key=run.get("preset_key"),
+        )
+    except Exception as error:  # noqa: BLE001 - expose import failure without hiding legacy import result.
+        postgres_result = {
+            "import_status": "failed",
+            "importer": "postgres_runtime",
+            "error": f"{type(error).__name__}: {error}",
+        }
+    return {**legacy_result, "postgres_import": postgres_result}
 
 
 @router.post("/admin/runs/{run_id}/rerun-failed")

@@ -16,6 +16,7 @@ from typing import Any
 
 from sunshine_api.dependencies import review_store
 from sunshine_api.review_store import ReviewStore
+from sunshine_api.services.imports import import_langgraph_output_to_postgres_if_configured
 
 
 from sunshine_api.services.run_reports import _read_live_run_summary, _read_run_summary
@@ -47,7 +48,7 @@ def _execute_run(run_id: int, command: list[str], output_dir: str, import_on_suc
             return
         if process.returncode == 0:
             if import_on_success and (Path(output_dir) / "sample-pipeline-results.jsonl").exists():
-                store.import_langgraph_output(output_dir, sample_routed_per_bucket=0)
+                _import_success_outputs(store, run_id, output_dir)
             store.mark_pipeline_run_finished(run_id, status="succeeded", summary=summary)
         else:
             store.mark_pipeline_run_finished(run_id, status="failed", summary=summary, error=f"Command exited {process.returncode}")
@@ -57,6 +58,41 @@ def _execute_run(run_id: int, command: list[str], output_dir: str, import_on_suc
     finally:
         with _RUN_PROCESS_LOCK:
             _RUN_PROCESSES.pop(run_id, None)
+
+
+def _import_success_outputs(store: ReviewStore, run_id: int, output_dir: str) -> None:
+    run = store.get_pipeline_run(run_id)
+    sqlite_result = store.import_langgraph_output(output_dir, sample_routed_per_bucket=0, run_id=run_id)
+    postgres_result: dict[str, Any]
+    try:
+        postgres_result = import_langgraph_output_to_postgres_if_configured(
+            output_dir,
+            run_key=str(run["run_key"]),
+            preset_key=run.get("preset_key"),
+        )
+        postgres_level = "info" if postgres_result.get("import_status") != "skipped" else "warning"
+    except Exception as error:  # noqa: BLE001 - import failures are audit events; artifacts remain on disk.
+        postgres_result = {
+            "import_status": "failed",
+            "importer": "postgres_runtime",
+            "error": f"{type(error).__name__}: {error}",
+        }
+        postgres_level = "error"
+    with store._connect() as connection:
+        store.add_pipeline_run_event(
+            connection,
+            run_id,
+            level="info",
+            message="Imported run artifacts into legacy dashboard store.",
+            payload=sqlite_result,
+        )
+        store.add_pipeline_run_event(
+            connection,
+            run_id,
+            level=postgres_level,
+            message="Imported run artifacts into Postgres V2 runtime." if postgres_result.get("import_status") == "imported" else "Postgres V2 runtime import skipped or failed.",
+            payload=postgres_result,
+        )
 
 
 def _stream_run_output(store: ReviewStore, run_id: int, process: subprocess.Popen[str], output_dir: str) -> None:

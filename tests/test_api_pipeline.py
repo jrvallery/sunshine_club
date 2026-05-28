@@ -6,6 +6,7 @@ import json
 from fastapi.testclient import TestClient
 
 from sunshine_api.main import app
+from sunshine_api.services.imports import import_langgraph_output_to_postgres_if_configured
 from sunshine_api.services.model_usage import _model_usage_report, _read_model_usage_artifact
 
 
@@ -60,6 +61,22 @@ def test_import_langgraph_output_postgres_endpoint_wraps_service(tmp_path: Path,
     assert response.status_code == 200
     assert response.json()["import_result"]["run_id"] == "postgres-run-id"
     assert captured == {"output_dir": str(tmp_path), "run_key": "run-1", "preset_key": "qa"}
+
+
+def test_postgres_import_helper_skips_when_database_is_not_configured(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("SUNSHINE_DATABASE_URL", raising=False)
+
+    result = import_langgraph_output_to_postgres_if_configured(tmp_path, run_key="run-1", preset_key="qa")
+
+    assert result == {
+        "import_status": "skipped",
+        "importer": "postgres_runtime",
+        "output_dir": str(tmp_path),
+        "run_key": "run-1",
+        "preset_key": "qa",
+        "reason": "postgres_database_url_not_configured",
+    }
 
 
 def test_postgres_review_items_endpoint_wraps_service(monkeypatch) -> None:
