@@ -229,6 +229,42 @@ def test_postgres_run_model_usage_endpoint_wraps_service(monkeypatch) -> None:
     assert captured == {"run_key": "run-1", "limit": 11}
 
 
+def test_postgres_run_segments_endpoint_wraps_service(monkeypatch) -> None:
+    captured = {}
+
+    def fake_list_segments(*, run_key: str, limit: int = 500) -> list[dict]:
+        captured["run_key"] = run_key
+        captured["limit"] = limit
+        return [
+            {
+                "segment_id": "file-1:pages-00001-00002:segment-001",
+                "segment_type": "scrapbook_page_group",
+                "page_start": 1,
+                "page_end": 2,
+                "requires_segment_review": True,
+            },
+            {
+                "segment_id": "file-1:pages-00003-00003:segment-002",
+                "segment_type": "newspaper_article",
+                "page_start": 3,
+                "page_end": 3,
+                "requires_segment_review": False,
+            },
+        ]
+
+    monkeypatch.setattr("sunshine_api.routers.health.list_postgres_run_document_segments", fake_list_segments)
+
+    response = TestClient(app).get("/admin/system/postgres-runtime/runs/run-1/segments?limit=12")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run_key"] == "run-1"
+    assert payload["count"] == 2
+    assert payload["review_required_count"] == 1
+    assert payload["segments"][0]["segment_type"] == "scrapbook_page_group"
+    assert captured == {"run_key": "run-1", "limit": 12}
+
+
 def test_semantic_search_endpoint_wraps_local_qdrant_service(monkeypatch) -> None:
     captured = {}
 

@@ -792,6 +792,7 @@ Current implementation:
 - Long mixed scrapbook PDFs are intentionally handled as proposed page-range child documents first. A later export/promote action can create physical child documents only after review accepts the page ranges.
 - Large conglomerate scrapbook PDFs, newspaper PDFs, and mixed historical packets are explicitly in scope for V2 as review-only logical splits. The current pass should preserve enough page-level structure to make splitting easy later; it should not attempt irreversible physical PDF splitting until segment proposals have dashboard review and benchmark-backed acceptance criteria.
 - The Postgres run-report Segments tab can now record accept/reject/needs-split decisions for proposed page ranges. Decisions update the segment metadata and matching review queue row, keeping source PDFs immutable while creating durable review evidence for future split/export work.
+- `GET /admin/system/postgres-runtime/runs/{run_key}/segments` exposes document-segment rows directly from Postgres, including page ranges and review-required counts, so clients can inspect scrapbook/newspaper split proposals without loading the full run report.
 - Docling/MinerU/RAGFlow parser comparisons should explicitly score scrapbook packet segmentation. If a parser can expose reliable page/section/article boundaries, those boundaries become evidence for `propose_document_segments`; they do not replace the LangGraph node or bypass human review.
 
 Segmentation benchmark criteria:

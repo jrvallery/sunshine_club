@@ -1417,6 +1417,58 @@ def test_postgres_pipeline_store_lists_run_model_usage() -> None:
     assert connection.closed is True
 
 
+def test_postgres_pipeline_store_lists_run_document_segments() -> None:
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.closed = False
+            self.executed: list[tuple[str, tuple[Any, ...]]] = []
+
+        def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
+            self.executed.append((query, params))
+            normalized = " ".join(query.lower().split())
+            if "from pipeline_runs r" in normalized:
+                return _Cursor(rows=[{"id": "run-id", "run_key": "run-report"}])
+            if "from document_segments ds" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "segment-row-id",
+                            "run_id": "run-id",
+                            "run_key": "run-report",
+                            "source_path": "/source/scrapbook.pdf",
+                            "relative_path": "Scrapbooks/scrapbook.pdf",
+                            "segment_id": "file-1:pages-00001-00002:segment-001",
+                            "parent_file_id": "file-1",
+                            "page_start": 1,
+                            "page_end": 2,
+                            "segment_index": 1,
+                            "segment_type": "scrapbook_page_group",
+                            "segment_title": "scrapbook.pdf pp1-2",
+                            "segment_confidence": 0.45,
+                            "requires_segment_review": True,
+                            "boundary_evidence": ["matched:scrapbook"],
+                            "metadata": {"text_snippet": "First clipping"},
+                            "created_at": None,
+                        }
+                    ]
+                )
+            return _Cursor(rows=[])
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+    store = PostgresPipelineStore("postgresql://local/test", connect_factory=lambda _url: connection)
+
+    rows = store.list_run_document_segments(run_key="run-report", limit=10)
+
+    assert rows[0]["segment_id"] == "file-1:pages-00001-00002:segment-001"
+    assert rows[0]["requires_segment_review"] is True
+    assert rows[0]["metadata"]["text_snippet"] == "First clipping"
+    assert any(params == ("run-report", 10) for _query, params in connection.executed)
+    assert connection.closed is True
+
+
 def test_postgres_pipeline_store_records_review_decision() -> None:
     class FakeConnection:
         def __init__(self) -> None:

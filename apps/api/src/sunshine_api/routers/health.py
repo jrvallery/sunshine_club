@@ -41,6 +41,7 @@ from sunshine_api.services.imports import (
     list_postgres_pipeline_runs,
     list_postgres_review_items,
     list_postgres_run_artifacts,
+    list_postgres_run_document_segments,
     list_postgres_run_events,
     list_postgres_run_model_usage,
     postgres_runtime_summary,
@@ -143,6 +144,18 @@ def postgres_runtime_run_model_usage(run_key: str, limit: int = 500) -> dict[str
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     return {"ok": True, "run_key": run_key, **_model_usage_report(rows)}
+
+
+@router.get("/admin/system/postgres-runtime/runs/{run_key}/segments")
+def postgres_runtime_run_segments(run_key: str, limit: int = 500) -> dict[str, Any]:
+    try:
+        segments = list_postgres_run_document_segments(run_key=run_key, limit=limit)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    review_required = sum(1 for segment in segments if segment.get("requires_segment_review") is True)
+    return {"ok": True, "run_key": run_key, "count": len(segments), "review_required_count": review_required, "segments": segments}
 
 
 @router.post("/admin/system/postgres-runtime/runs/{run_key}/segments/{segment_id}/decision")
