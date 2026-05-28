@@ -20,6 +20,7 @@ def local_infrastructure_status() -> dict[str, Any]:
             "configured": bool(postgres_url),
             "driver_available": _module_available("psycopg"),
             "url_present": bool(postgres_url),
+            "pipeline_runtime_importer": True,
         },
         "qdrant": qdrant.dependency_status(),
         "docling": docling.dependency_status(),
