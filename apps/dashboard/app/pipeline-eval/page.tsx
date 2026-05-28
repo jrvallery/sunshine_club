@@ -24,6 +24,36 @@ type ProviderBenchmarkLatest = {
   parser_results?: Array<Record<string, unknown>>;
   artifact_manifest?: Record<string, unknown> | null;
   background_error?: Record<string, unknown> | null;
+  postgres_import?: Record<string, unknown> | null;
+};
+
+type ProviderBenchmarkPostgresRun = {
+  id?: string;
+  benchmark_key: string;
+  output_dir?: string | null;
+  status?: string | null;
+  partial?: boolean | null;
+  summary?: Record<string, unknown>;
+  result_count?: number;
+  parser_result_count?: number;
+  recommendation_count?: number;
+  updated_at?: string | null;
+  created_at?: string | null;
+};
+
+type ProviderBenchmarkPostgresList = {
+  ok: boolean;
+  count: number;
+  runs: ProviderBenchmarkPostgresRun[];
+};
+
+type ProviderBenchmarkPostgresDetail = {
+  ok: boolean;
+  run: ProviderBenchmarkPostgresRun;
+  summary: Record<string, unknown>;
+  results: Array<Record<string, unknown>>;
+  parser_results: Array<Record<string, unknown>>;
+  recommendations: Array<Record<string, unknown>>;
 };
 
 const EXTRACTION_PROVIDERS: ExtractionProviderName[] = ["current", "docling", "mineru", "ragflow_deepdoc", "unstructured"];
@@ -47,6 +77,7 @@ export default function PipelineEvalPage() {
   const [benchmarkMaxAverageSeconds, setBenchmarkMaxAverageSeconds] = useState("30");
   const [benchmarkPaths, setBenchmarkPaths] = useState("");
   const [benchmarkProviders, setBenchmarkProviders] = useState<ExtractionProviderName[]>(["current", "docling"]);
+  const [selectedBenchmarkKey, setSelectedBenchmarkKey] = useState<string | null>(null);
 
   const evalRuns = useQuery({
     queryKey: ["pipeline-eval-runs"],
@@ -79,6 +110,19 @@ export default function PipelineEvalPage() {
     queryKey: ["provider-benchmark-latest", benchmarkOutputDir],
     enabled: Boolean(benchmarkOutputDir),
     queryFn: () => fetchJson<ProviderBenchmarkLatest>(`/api/admin/provider-benchmarks/latest${queryString({ output_dir: benchmarkOutputDir })}`)
+  });
+  const postgresBenchmarks = useQuery({
+    queryKey: ["provider-benchmarks-postgres"],
+    queryFn: () => fetchJson<ProviderBenchmarkPostgresList>("/api/admin/provider-benchmarks/postgres?limit=25")
+  });
+  const selectedPostgresBenchmark = selectedBenchmarkKey ?? postgresBenchmarks.data?.runs?.[0]?.benchmark_key ?? null;
+  const postgresBenchmarkDetail = useQuery({
+    queryKey: ["provider-benchmark-postgres-detail", selectedPostgresBenchmark],
+    enabled: Boolean(selectedPostgresBenchmark),
+    queryFn: () =>
+      fetchJson<ProviderBenchmarkPostgresDetail>(
+        `/api/admin/provider-benchmarks/postgres/${encodeURIComponent(String(selectedPostgresBenchmark))}${queryString({ result_limit: 100, parser_result_limit: 100 })}`
+      )
   });
   const runEval = useMutation({
     mutationFn: () =>
@@ -128,6 +172,23 @@ export default function PipelineEvalPage() {
         background: true
       }),
     onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["provider-benchmark-latest"] });
+      await queryClient.invalidateQueries({ queryKey: ["provider-benchmarks-postgres"] });
+    }
+  });
+  const importProviderBenchmark = useMutation({
+    mutationFn: () =>
+      postJson<Record<string, unknown>>("/api/admin/provider-benchmarks/import-postgres", {
+        output_dir: benchmarkOutputDir,
+        benchmark_key: benchmarkOutputDir.split("/").filter(Boolean).at(-1) || undefined
+      }),
+    onSuccess: async (payload) => {
+      const benchmarkKey = typeof payload.benchmark_key === "string" ? payload.benchmark_key : null;
+      if (benchmarkKey) {
+        setSelectedBenchmarkKey(benchmarkKey);
+      }
+      await queryClient.invalidateQueries({ queryKey: ["provider-benchmarks-postgres"] });
+      await queryClient.invalidateQueries({ queryKey: ["provider-benchmark-postgres-detail"] });
       await queryClient.invalidateQueries({ queryKey: ["provider-benchmark-latest"] });
     }
   });
@@ -245,6 +306,9 @@ export default function PipelineEvalPage() {
           <Button disabled={providerBenchmark.isFetching} onClick={() => queryClient.invalidateQueries({ queryKey: ["provider-benchmark-latest"] })}>
             {providerBenchmark.isFetching ? "Refreshing..." : "Refresh Latest"}
           </Button>
+          <Button disabled={importProviderBenchmark.isPending || !benchmarkOutputDir} onClick={() => importProviderBenchmark.mutate()}>
+            {importProviderBenchmark.isPending ? "Importing..." : "Import Latest To Postgres"}
+          </Button>
         </div>
         {providerBenchmark.data?.exists ? (
           <div className="drawerGrid">
@@ -258,6 +322,7 @@ export default function PipelineEvalPage() {
               <KeyValue label="Filter" value={benchmarkFilter(providerBenchmark.data.summary)} />
               <KeyValue label="Runtime threshold" value={benchmarkRuntimeThreshold(providerBenchmark.data.summary)} />
               <KeyValue label="Artifacts" value={benchmarkArtifactSummary(providerBenchmark.data.artifact_manifest)} />
+              <KeyValue label="Postgres import" value={postgresImportSummary(providerBenchmark.data.postgres_import)} />
               {providerBenchmark.data.background_error ? <KeyValue label="Background error" value={backgroundErrorSummary(providerBenchmark.data.background_error)} /> : null}
             </section>
             <section>
@@ -285,6 +350,62 @@ export default function PipelineEvalPage() {
             {providerBenchmark.isError ? `Latest benchmark lookup failed: ${providerBenchmark.error.message}` : "No benchmark artifacts found for this output dir yet."}
           </p>
         )}
+        <div className="drawerGrid">
+          <section className="wideSection">
+            <div className="sectionHeader">
+              <div>
+                <h3>Postgres Benchmark History</h3>
+                <p className="muted">Durable V2 provider benchmark evidence imported into Postgres.</p>
+              </div>
+              <Button disabled={postgresBenchmarks.isFetching} onClick={() => queryClient.invalidateQueries({ queryKey: ["provider-benchmarks-postgres"] })}>
+                {postgresBenchmarks.isFetching ? "Refreshing..." : "Refresh Postgres"}
+              </Button>
+            </div>
+            <ProviderBenchmarkPostgresRuns
+              rows={postgresBenchmarks.data?.runs ?? []}
+              selectedKey={selectedPostgresBenchmark}
+              onSelect={setSelectedBenchmarkKey}
+            />
+          </section>
+          <section className="wideSection">
+            <h3>Postgres Benchmark Detail</h3>
+            {postgresBenchmarkDetail.data ? (
+              <div className="drawerGrid compactGrid">
+                <section>
+                  <h4>Summary</h4>
+                  <KeyValue label="Benchmark" value={postgresBenchmarkDetail.data.run.benchmark_key} />
+                  <KeyValue label="Status" value={String(postgresBenchmarkDetail.data.run.status ?? "-")} />
+                  <KeyValue label="Results" value={String(postgresBenchmarkDetail.data.summary.result_count ?? 0)} />
+                  <KeyValue label="Parser rows" value={String(postgresBenchmarkDetail.data.summary.parser_result_count ?? 0)} />
+                  <KeyValue label="Recommendations" value={String(postgresBenchmarkDetail.data.summary.recommendation_count ?? 0)} />
+                  <KeyValue label="Providers" value={objectSummary(postgresBenchmarkDetail.data.summary.providers)} />
+                  <KeyValue label="Samples" value={objectSummary(postgresBenchmarkDetail.data.summary.sample_categories)} />
+                </section>
+                <section>
+                  <h4>Recommendations</h4>
+                  {(postgresBenchmarkDetail.data.recommendations ?? []).slice(0, 8).map((row, index) => (
+                    <KeyValue key={`${String(row.provider ?? index)}-${index}`} label={String(row.provider ?? `row ${index + 1}`)} value={recommendationValue(row)} />
+                  ))}
+                  {!postgresBenchmarkDetail.data.recommendations.length ? <p className="muted">No recommendations imported.</p> : null}
+                </section>
+                <section className="wideSection">
+                  <h4>Imported Results</h4>
+                  <ProviderBenchmarkRows rows={postgresBenchmarkDetail.data.results ?? []} />
+                </section>
+                <section className="wideSection">
+                  <h4>Imported Parser Artifacts</h4>
+                  <ProviderParserRows rows={postgresBenchmarkDetail.data.parser_results ?? []} />
+                </section>
+              </div>
+            ) : (
+              <p className="muted">
+                {postgresBenchmarkDetail.isError
+                  ? `Postgres benchmark detail failed: ${postgresBenchmarkDetail.error.message}`
+                  : "Select or import a benchmark to inspect durable provider evidence."}
+              </p>
+            )}
+          </section>
+        </div>
       </section>
 
       <section className="bands">
@@ -718,6 +839,54 @@ function ProviderBenchmarkRows({ rows }: { rows: Array<Record<string, unknown>> 
   );
 }
 
+function ProviderBenchmarkPostgresRuns({
+  rows,
+  selectedKey,
+  onSelect
+}: {
+  rows: ProviderBenchmarkPostgresRun[];
+  selectedKey: string | null;
+  onSelect: (benchmarkKey: string) => void;
+}) {
+  return (
+    <div className="tableWrap" tabIndex={0} aria-label="Postgres provider benchmark runs table">
+      <table>
+        <thead>
+          <tr>
+            <th>Benchmark</th>
+            <th>Status</th>
+            <th>Results</th>
+            <th>Parser</th>
+            <th>Recommendations</th>
+            <th>Updated</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.benchmark_key}>
+              <td>
+                <button className="linkButton fileCell" onClick={() => onSelect(row.benchmark_key)}>
+                  <strong>{row.benchmark_key}</strong>
+                  <span>{row.output_dir ?? "-"}</span>
+                </button>
+              </td>
+              <td>
+                <StatusBadge value={String(row.status ?? "-")} tone={row.status === "failed" ? "danger" : "default"} />
+                {row.benchmark_key === selectedKey ? <span className="muted"> selected</span> : null}
+              </td>
+              <td>{String(row.result_count ?? 0)}</td>
+              <td>{String(row.parser_result_count ?? 0)}</td>
+              <td>{String(row.recommendation_count ?? 0)}</td>
+              <td>{row.updated_at ?? row.created_at ?? "-"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!rows.length ? <p className="muted">No provider benchmark runs imported into Postgres yet.</p> : null}
+    </div>
+  );
+}
+
 function expectedValue(row: Record<string, unknown>) {
   if (typeof row.count === "number" && row.reason) {
     return `${row.count} affected`;
@@ -783,11 +952,29 @@ function backgroundErrorSummary(error: Record<string, unknown>) {
   return [error.error_type, error.error].map(String).filter(Boolean).join(": ") || "failed";
 }
 
+function postgresImportSummary(value: Record<string, unknown> | null | undefined) {
+  if (!value) {
+    return "-";
+  }
+  const status = String(value.import_status ?? "-");
+  const reason = value.reason ? `: ${String(value.reason)}` : "";
+  const error = value.error ? `: ${String(value.error)}` : "";
+  return `${status}${reason}${error}`;
+}
+
 function recommendationValue(row: Record<string, unknown>) {
   const provider = String(row.recommended_provider ?? row.provider ?? "-");
   const decision = String(row.decision ?? row.recommendation ?? row.status ?? "-");
   const reason = String(row.reason ?? row.notes ?? row.evidence ?? "");
   return [provider, decision, reason].filter((part) => part && part !== "-").join(": ") || "-";
+}
+
+function objectSummary(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return "-";
+  }
+  const entries = Object.entries(value as Record<string, unknown>);
+  return entries.length ? entries.map(([key, count]) => `${key} (${String(count)})`).join(", ") : "-";
 }
 
 function formatSeconds(value: unknown) {
