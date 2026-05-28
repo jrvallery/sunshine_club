@@ -65,6 +65,7 @@ from sunshine_extraction.sample_pipeline import (
 from sunshine_extraction.graph.batch import run_document_batch
 from sunshine_extraction.graph.runtime import run_document_graph
 from sunshine_extraction.graph.utils import _json_safe
+from sunshine_extraction.providers.extraction import extraction_provider_from_env
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the Sunshine LangGraph pipeline.")
@@ -78,10 +79,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--plan", default=str(DEFAULT_PLAN_PATH))
     parser.add_argument("--taxonomy", default=str(DEFAULT_TAXONOMY_PATH))
     parser.add_argument("--limit", type=int)
-    parser.add_argument("--embedding-provider", choices=["cortex", "openai", "disabled"])
+    parser.add_argument("--extraction-provider", choices=["current", "docling"])
+    parser.add_argument("--embedding-provider", choices=["cortex", "placeholder", "disabled"])
     parser.add_argument("--enable-llm-tags", action="store_true")
-    parser.add_argument("--llm-tag-provider", choices=["auto", "cortex", "openai", "disabled"])
-    parser.add_argument("--ocr-fallback-provider", choices=["openai", "cortex", "disabled"])
+    parser.add_argument("--llm-tag-provider", choices=["auto", "cortex", "disabled"])
+    parser.add_argument("--ocr-fallback-provider", choices=["cortex", "disabled"])
     parser.add_argument("--semantic-index-path")
     parser.add_argument("--checkpoint-path")
     parser.add_argument("--thread-id")
@@ -98,6 +100,7 @@ def main() -> None:
     load_pipeline_env()
     if args.embedding_provider:
         os.environ["SUNSHINE_EMBEDDING_PROVIDER"] = "placeholder" if args.embedding_provider == "disabled" else args.embedding_provider
+    extraction_provider = extraction_provider_from_env(args.extraction_provider)
     inspector = llm_tag_inspector_from_env(
         enabled=args.enable_llm_tags,
         provider_override=args.llm_tag_provider or "auto",
@@ -111,6 +114,7 @@ def main() -> None:
             plan_path=args.plan,
             taxonomy_path=args.taxonomy,
             limit=args.limit,
+            extraction_provider=extraction_provider,
             llm_tag_inspector=inspector,
             ocr_executor=ocr_executor,
             progress=not args.quiet,
@@ -129,6 +133,7 @@ def main() -> None:
             source_path=args.source_path,
             relative_path=args.relative_path,
             taxonomy_path=args.taxonomy,
+            extraction_provider=extraction_provider,
             llm_tag_inspector=inspector,
             ocr_executor=ocr_executor,
             checkpoint_path=args.checkpoint_path,

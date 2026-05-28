@@ -64,6 +64,7 @@ from sunshine_extraction.sample_pipeline import (
 
 from sunshine_extraction.graph.runtime import run_document_graph
 from sunshine_extraction.graph.utils import _progress, _write_jsonl
+from sunshine_extraction.providers.extraction import ExtractionProvider
 
 def run_document_batch(
     input_root: str | Path = DEFAULT_INPUT_ROOT,
@@ -73,6 +74,7 @@ def run_document_batch(
     plan_path: str | Path = DEFAULT_PLAN_PATH,
     taxonomy_path: str | Path = DEFAULT_TAXONOMY_PATH,
     limit: int | None = None,
+    extraction_provider: ExtractionProvider | None = None,
     embedding_provider: EmbeddingProvider | None = None,
     llm_tag_inspector: LLMTagInspector | None = None,
     ocr_executor: OcrExecutor | None = None,
@@ -152,6 +154,7 @@ def run_document_batch(
                         retry_attempts,
                         retry_delay_seconds,
                         progress,
+                        extraction_provider,
                         embedding_provider,
                         llm_tag_inspector,
                         ocr_executor,
@@ -176,6 +179,7 @@ def run_document_batch(
                         retry_attempts,
                         retry_delay_seconds,
                         progress,
+                        extraction_provider,
                         embedding_provider,
                         llm_tag_inspector,
                         ocr_executor,
@@ -252,6 +256,7 @@ def _run_batch_item(
     retry_attempts: int,
     retry_delay_seconds: float,
     progress: bool,
+    extraction_provider: ExtractionProvider | None,
     embedding_provider: EmbeddingProvider | None,
     llm_tag_inspector: LLMTagInspector | None,
     ocr_executor: OcrExecutor | None,
@@ -271,6 +276,7 @@ def _run_batch_item(
         sample_group=sample.sample_group,
         sample_number=sample.sample_number or index,
         index_metadata=sample.index_row.get("metadata", {}),
+        extraction_provider=extraction_provider,
         embedding_provider=embedding_provider,
         llm_tag_inspector=llm_tag_inspector,
         ocr_executor=ocr_executor,

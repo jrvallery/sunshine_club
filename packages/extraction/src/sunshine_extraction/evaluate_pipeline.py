@@ -21,6 +21,7 @@ from sunshine_extraction.embeddings import (
     provider_from_env,
 )
 from sunshine_extraction.graph.runtime import run_document_graph
+from sunshine_extraction.providers.extraction import extraction_provider_from_env
 from sunshine_extraction.sample_pipeline import (
     DEFAULT_TAXONOMY_PATH,
     LLMTagInspector,
@@ -103,6 +104,7 @@ def run_golden_pipeline_evaluation(
     taxonomy_path: str | Path = DEFAULT_TAXONOMY_PATH,
     embedding_provider: EmbeddingProvider | None = None,
     embedding_provider_name: str | None = None,
+    extraction_provider_name: str | None = None,
     llm_tag_inspector: LLMTagInspector | None = None,
     ocr_executor: OcrExecutor | None = None,
     ocr_fallback_provider: str | None = None,
@@ -118,6 +120,7 @@ def run_golden_pipeline_evaluation(
     graph_runs_dir.mkdir(parents=True, exist_ok=True)
     active_embedding_provider, provider_warnings = _resolve_eval_embedding_provider(embedding_provider, provider_name_override=embedding_provider_name)
     active_ocr_executor, ocr_warnings = _resolve_eval_ocr_executor(ocr_executor, fallback_provider_override=ocr_fallback_provider)
+    active_extraction_provider = extraction_provider_from_env(extraction_provider_name)
     run_metadata = _eval_run_metadata(
         labels_db=labels_db,
         output_dir=output_path,
@@ -125,6 +128,7 @@ def run_golden_pipeline_evaluation(
         taxonomy_path=taxonomy_path,
         semantic_index_path=semantic_index_path,
         embedding_provider=active_embedding_provider,
+        extraction_provider=active_extraction_provider,
         llm_tag_inspector=llm_tag_inspector,
         ocr_executor=active_ocr_executor,
         warnings=[*provider_warnings, *ocr_warnings],
@@ -168,6 +172,7 @@ def run_golden_pipeline_evaluation(
             taxonomy_path=taxonomy_path,
             sample_group="golden-eval",
             sample_number=index,
+            extraction_provider=active_extraction_provider,
             embedding_provider=active_embedding_provider,
             embedding_failure_mode="review",
             llm_tag_inspector=llm_tag_inspector,
@@ -1119,6 +1124,7 @@ def _eval_run_metadata(
     taxonomy_path: str | Path,
     semantic_index_path: str | Path | None,
     embedding_provider: EmbeddingProvider | None,
+    extraction_provider: Any | None,
     llm_tag_inspector: LLMTagInspector | None,
     ocr_executor: OcrExecutor | None,
     warnings: list[str] | None = None,
@@ -1134,6 +1140,7 @@ def _eval_run_metadata(
         "embedding_provider": _provider_name(embedding_provider),
         "embedding_model": str(getattr(embedding_provider, "model", "")) if embedding_provider is not None else None,
         "embedding_dimensions": getattr(embedding_provider, "dimensions", None),
+        "extraction_provider": _provider_name(extraction_provider),
         "llm_provider": str(getattr(llm_tag_inspector, "provider_name", "")) if llm_tag_inspector is not None else "disabled",
         "llm_model": str(getattr(llm_tag_inspector, "model", "disabled")) if llm_tag_inspector is not None else "disabled",
         "ocr_mode": _ocr_mode(ocr_executor),
@@ -1592,10 +1599,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--taxonomy-path", default=DEFAULT_TAXONOMY_PATH)
     parser.add_argument("--semantic-index-path", default=DEFAULT_INDEX_DB)
     parser.add_argument("--disable-semantic-index", action="store_true")
-    parser.add_argument("--embedding-provider", choices=["placeholder", "cortex", "openai"])
+    parser.add_argument("--extraction-provider", choices=["current", "docling"])
+    parser.add_argument("--embedding-provider", choices=["placeholder", "cortex"])
     parser.add_argument("--enable-llm-tags", action="store_true")
     parser.add_argument("--enable-ocr", action="store_true")
-    parser.add_argument("--ocr-fallback-provider", choices=["disabled", "openai", "cortex", "local", "openai-compatible"])
+    parser.add_argument("--ocr-fallback-provider", choices=["disabled", "cortex", "local"])
     parser.add_argument("--progress", action="store_true")
     return parser.parse_args()
 
@@ -1608,6 +1616,7 @@ def main() -> None:
         output_dir=args.output_dir,
         limit=args.limit,
         taxonomy_path=args.taxonomy_path,
+        extraction_provider_name=args.extraction_provider,
         embedding_provider_name=args.embedding_provider,
         llm_tag_inspector=llm_tag_inspector_from_env() if args.enable_llm_tags else LLMTagInspector(),
         ocr_executor=ocr_executor_from_env(fallback_provider_override=args.ocr_fallback_provider) if args.enable_ocr else None,

@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 
 from sunshine_extraction.embeddings import EmbeddingProviderError, PlaceholderEmbeddingProvider
+from sunshine_extraction.providers.extraction import CurrentExtractionProvider
 from sunshine_extraction.semantic_index import build_semantic_index
 from sunshine_extraction.langgraph_pipeline import run_document_batch, run_document_graph
 from sunshine_extraction.sample_pipeline import LLMTagInspector, OcrDocumentResult, OcrExecutor, OcrPageResult, SampleFile
@@ -430,6 +431,7 @@ def test_langgraph_batch_aggregates_artifacts_and_continues_after_file_failure(t
         output_dir=output_dir,
         corrected_path=corrected,
         plan_path=plan,
+        extraction_provider=CurrentExtractionProvider(),
         embedding_provider=PlaceholderEmbeddingProvider(dimensions=4),
         llm_tag_inspector=LLMTagInspector(),
         max_concurrency=2,

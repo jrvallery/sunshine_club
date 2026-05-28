@@ -577,6 +577,7 @@ def test_golden_pipeline_evaluation_runs_graph_and_writes_artifacts(tmp_path: Pa
     assert any("Calibrate confidence" in action for action in summary["production_readiness"]["required_next_actions"])
     assert any("same-family labels" in action for action in summary["production_readiness"]["required_next_actions"])
     assert summary["run_metadata"]["embedding_provider"] == "placeholder"
+    assert summary["run_metadata"]["extraction_provider"] == "current"
     assert summary["run_metadata"]["embedding_model"] == "local-placeholder"
     assert summary["run_metadata"]["embedding_dimensions"] == 4
     assert summary["run_metadata"]["ocr_mode"] == "tesseract"

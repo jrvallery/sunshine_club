@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from sunshine_extraction.providers.extraction import CurrentExtractionProvider, DoclingExtractionProvider
+from sunshine_extraction.providers.extraction import CurrentExtractionProvider, DoclingExtractionProvider, extraction_provider_from_env
 from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider
 from sunshine_extraction.sample_pipeline import SampleFile, llm_tag_inspector_from_env, ocr_executor_from_env
 from sunshine_extraction.services.provider_policy import assert_local_provider
@@ -41,6 +41,12 @@ def test_docling_provider_is_optional_and_local_only() -> None:
     assert status["provider"] == "docling"
     assert status["local_only"] is True
     assert "available" in status
+
+
+def test_extraction_provider_factory_selects_current_and_docling(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SUNSHINE_EXTRACTION_PROVIDER", "current")
+    assert isinstance(extraction_provider_from_env(), CurrentExtractionProvider)
+    assert isinstance(extraction_provider_from_env("docling"), DoclingExtractionProvider)
 
 
 def test_qdrant_vector_provider_is_optional_and_local_only() -> None:
