@@ -39,7 +39,7 @@ from sunshine_api.services.imports import (
     record_postgres_pipeline_run_state_if_configured,
 )
 from sunshine_api.services.run_commands import _batch_command, _batch_input_sample_count
-from sunshine_api.services.run_execution import _RUN_PROCESSES, _RUN_PROCESS_LOCK, _execute_run
+from sunshine_api.services.run_execution import _RUN_PROCESSES, _RUN_PROCESS_LOCK, _execute_run, _execute_temporal_batch_run
 from sunshine_api.services.run_reports import (
     _load_run_results_by_source,
     _progress_ratio,
@@ -80,6 +80,9 @@ def start_run(request: RunStartRequest) -> dict[str, Any]:
         ocr_fallback_provider=ocr_fallback_provider,
         semantic_index_path=request.semantic_index_path,
     )
+    execution_backend = request.execution_backend or os.environ.get("SUNSHINE_RUN_EXECUTION_BACKEND", "subprocess").strip().lower()
+    if execution_backend not in {"subprocess", "temporal"}:
+        raise HTTPException(status_code=400, detail="execution_backend must be subprocess or temporal")
     run = store.create_pipeline_run(
         preset_key=request.preset_key,
         run_role=request.run_role,
@@ -92,6 +95,7 @@ def start_run(request: RunStartRequest) -> dict[str, Any]:
         ocr_fallback_provider=ocr_fallback_provider,
         semantic_index_path=request.semantic_index_path,
     )
+    run["execution_backend"] = execution_backend
     postgres_record = record_postgres_pipeline_run_state_if_configured(run=run, status="queued", summary=run.get("summary") or {})
     if request.start:
         sample_count = _batch_input_sample_count(input_root)
@@ -111,9 +115,30 @@ def start_run(request: RunStartRequest) -> dict[str, Any]:
             )
             return {**failed_run, "postgres_record": postgres_record}
         store.update_pipeline_run_progress(run["id"], {"selected_sample_count": sample_count, "processed_count": 0})
-        thread = threading.Thread(target=_execute_run, args=(run["id"], command, output_dir, request.import_on_success), daemon=True)
+        if execution_backend == "temporal":
+            payload = _temporal_batch_payload(
+                input_root=input_root,
+                output_dir=output_dir,
+                semantic_index_path=request.semantic_index_path,
+            )
+            thread = threading.Thread(target=_execute_temporal_batch_run, args=(run["id"], payload, request.import_on_success), daemon=True)
+        else:
+            thread = threading.Thread(target=_execute_run, args=(run["id"], command, output_dir, request.import_on_success), daemon=True)
         thread.start()
     return {**run, "postgres_record": postgres_record}
+
+
+def _temporal_batch_payload(*, input_root: str, output_dir: str, semantic_index_path: str | None) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "input_root": input_root,
+        "output_dir": output_dir,
+        "progress": True,
+        "retry_attempts": 1,
+        "max_concurrency": 1,
+    }
+    if semantic_index_path:
+        payload["semantic_index_path"] = semantic_index_path
+    return payload
 
 
 @router.get("/admin/runs")

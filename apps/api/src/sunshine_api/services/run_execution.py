@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import asyncio
 import json
 import os
 import re
@@ -68,6 +69,54 @@ def _execute_run(run_id: int, command: list[str], output_dir: str, import_on_suc
     finally:
         with _RUN_PROCESS_LOCK:
             _RUN_PROCESSES.pop(run_id, None)
+
+
+def _execute_temporal_batch_run(run_id: int, payload: dict[str, Any], import_on_success: bool) -> None:
+    """Execute one dashboard batch run through Temporal instead of a subprocess.
+
+    This keeps the dashboard contract stable while allowing production
+    deployments to move durable execution into the worker.
+    """
+
+    store: ReviewStore | None = None
+    output_dir = str(payload["output_dir"])
+    try:
+        store = review_store()
+        store.mark_pipeline_run_started(run_id)
+        run = store.get_pipeline_run(run_id)
+        _record_postgres_run_state(run, status="running", summary={**(run.get("summary") or {}), "execution_backend": "temporal"})
+        result = _start_temporal_batch_workflow(payload, run_key=str(run.get("run_key") or f"run-{run_id}"))
+        summary = _read_run_summary(output_dir) or result.get("summary") or {}
+        if import_on_success and (Path(output_dir) / "sample-pipeline-results.jsonl").exists():
+            _import_success_outputs(store, run_id, output_dir)
+        store.mark_pipeline_run_finished(run_id, status="succeeded", summary={**summary, "temporal_result": result})
+        finished_run = store.get_pipeline_run(run_id)
+        _record_postgres_run_state(finished_run, status="succeeded", summary=summary or finished_run.get("summary") or {})
+    except Exception as error:  # noqa: BLE001 - background run errors must be captured for the UI.
+        if store is not None:
+            store.mark_pipeline_run_finished(run_id, status="failed", error=f"{type(error).__name__}: {error}")
+            failed_run = store.get_pipeline_run(run_id)
+            _record_postgres_run_state(failed_run, status="failed", summary=failed_run.get("summary") or {}, error=failed_run.get("error"))
+
+
+def _start_temporal_batch_workflow(payload: dict[str, Any], *, run_key: str) -> dict[str, Any]:
+    return asyncio.run(_start_temporal_batch_workflow_async(payload, run_key=run_key))
+
+
+async def _start_temporal_batch_workflow_async(payload: dict[str, Any], *, run_key: str) -> dict[str, Any]:
+    from temporalio.client import Client
+    from sunshine_worker.workflows import BatchPipelineWorkflow
+
+    address = os.environ.get("TEMPORAL_ADDRESS", "localhost:7233")
+    task_queue = os.environ.get("SUNSHINE_TEMPORAL_TASK_QUEUE", "sunshine-pipeline")
+    client = await Client.connect(address)
+    handle = await client.start_workflow(
+        BatchPipelineWorkflow.run,
+        payload,
+        id=f"sunshine-batch-{run_key}",
+        task_queue=task_queue,
+    )
+    return await handle.result()
 
 
 def _record_postgres_run_state(run: dict[str, Any], *, status: str, summary: dict[str, Any], error: str | None = None) -> None:

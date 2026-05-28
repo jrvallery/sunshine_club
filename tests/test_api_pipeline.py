@@ -388,6 +388,59 @@ def test_run_creation_records_queued_state_to_postgres_when_configured(tmp_path:
     assert captured["output_dir"] == str(tmp_path / "output")
 
 
+def test_run_creation_can_dispatch_temporal_backend(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SUNSHINE_REVIEW_DB_PATH", str(tmp_path / "review.sqlite"))
+    captured: dict[str, Any] = {}
+
+    class ImmediateThread:
+        def __init__(self, *, target, args, daemon: bool) -> None:
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+
+        def start(self) -> None:
+            captured["thread_daemon"] = self.daemon
+            self.target(*self.args)
+
+    def fake_execute(run_id: int, payload: dict[str, Any], import_on_success: bool) -> None:
+        captured["run_id"] = run_id
+        captured["payload"] = payload
+        captured["import_on_success"] = import_on_success
+
+    monkeypatch.setattr("sunshine_api.routers.runs._batch_input_sample_count", lambda _root: 1)
+    monkeypatch.setattr("sunshine_api.routers.runs._execute_temporal_batch_run", fake_execute)
+    monkeypatch.setattr("sunshine_api.routers.runs.threading.Thread", ImmediateThread)
+
+    response = TestClient(app).post(
+        "/admin/runs",
+        json={
+            "preset_key": "qa_samples_fast",
+            "execution_backend": "temporal",
+            "input_root": str(tmp_path / "input"),
+            "output_dir": str(tmp_path / "output"),
+            "semantic_index_path": str(tmp_path / "semantic.sqlite"),
+            "embedding_provider": "cortex",
+            "start": True,
+            "import_on_success": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["execution_backend"] == "temporal"
+    assert captured["thread_daemon"] is True
+    assert captured["run_id"] == payload["id"]
+    assert captured["import_on_success"] is True
+    assert captured["payload"] == {
+        "input_root": str(tmp_path / "input"),
+        "output_dir": str(tmp_path / "output"),
+        "progress": True,
+        "retry_attempts": 1,
+        "max_concurrency": 1,
+        "semantic_index_path": str(tmp_path / "semantic.sqlite"),
+    }
+
+
 def test_runs_endpoint_can_read_postgres_v2_source(monkeypatch) -> None:
     def fake_list(*, limit: int = 100) -> list[dict[str, Any]]:
         assert limit == 7

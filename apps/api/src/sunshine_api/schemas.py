@@ -108,6 +108,7 @@ class ReviewOcrQualityRequest(BaseModel):
 class RunStartRequest(BaseModel):
     preset_key: str
     run_role: Literal["baseline", "test", "evaluation"] | None = None
+    execution_backend: Literal["subprocess", "temporal"] | None = None
     input_root: str | None = None
     output_dir: str | None = None
     embedding_provider: Literal["cortex", "placeholder"] | None = None
