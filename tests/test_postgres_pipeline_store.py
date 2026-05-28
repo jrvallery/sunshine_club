@@ -71,6 +71,7 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
         "pipeline_quality_checks": 4,
         "pipeline_tagging_evidence": 8,
         "pipeline_file_metadata": 5,
+        "pipeline_artifacts": 1,
         "pipeline_parser_results": 1,
         "document_segments": 1,
         "review_items": 1,
@@ -89,6 +90,7 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
     assert "insert into pipeline_quality_checks" in executed_sql
     assert "insert into pipeline_tagging_evidence" in executed_sql
     assert "insert into pipeline_file_metadata" in executed_sql
+    assert "insert into pipeline_artifacts" in executed_sql
     assert "insert into pipeline_parser_results" in executed_sql
     assert "insert into document_segments" in executed_sql
     assert "insert into review_items_v2" in executed_sql
@@ -114,6 +116,8 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
     assert tagging_evidence_params[1:6] == ("/source/a.pdf", "Sunshine/a.pdf", "retrieval_result", "ok", "qdrant")
     file_metadata_params = next(params for query, params in connection.executed if "insert into pipeline_file_metadata" in query)
     assert file_metadata_params[1:6] == ("/source/a.pdf", "Sunshine/a.pdf", "/sample/a.pdf", "source_identity", "file-a")
+    artifact_params = next(params for query, params in connection.executed if "insert into pipeline_artifacts" in query)
+    assert artifact_params[1:5] == ("sample-pipeline-results.jsonl", str(output_dir / "sample-pipeline-results.jsonl"), "jsonl", True)
     parser_params = next(params for query, params in connection.executed if "insert into pipeline_parser_results" in query)
     assert parser_params[1:9] == (
         "/source/a.pdf",
@@ -446,6 +450,11 @@ def test_postgres_pipeline_store_reports_runtime_summary() -> None:
                     "review_items_v2": 1,
                     "model_usage": 3,
                     "provider_attempts": 4,
+                    "pipeline_provider_selections": 5,
+                    "pipeline_quality_checks": 5,
+                    "pipeline_tagging_evidence": 5,
+                    "pipeline_file_metadata": 5,
+                    "pipeline_artifacts": 5,
                     "pipeline_parser_results": 5,
                     "pipeline_run_events": 8,
                     "document_segments": 5,
@@ -521,6 +530,7 @@ def test_postgres_pipeline_store_reports_runtime_summary() -> None:
     assert summary["pipeline_runs"] == 2
     assert summary["pipeline_results"] == 7
     assert summary["pipeline_run_events"] == 8
+    assert summary["pipeline_artifacts"] == 5
     assert summary["pipeline_parser_results"] == 5
     assert summary["pipeline_chunk_embeddings"] == 6
     assert summary["provider_benchmark_runs"] == 2
@@ -698,6 +708,7 @@ def test_postgres_pipeline_store_deletes_run_with_cascade_counts() -> None:
                         "pipeline_quality_checks": 10,
                         "pipeline_tagging_evidence": 11,
                         "pipeline_file_metadata": 12,
+                        "pipeline_artifacts": 13,
                         "pipeline_parser_results": 9,
                         "document_segments": 6,
                         "review_items": 7,
@@ -729,6 +740,7 @@ def test_postgres_pipeline_store_deletes_run_with_cascade_counts() -> None:
         "pipeline_quality_checks": 10,
         "pipeline_tagging_evidence": 11,
         "pipeline_file_metadata": 12,
+        "pipeline_artifacts": 13,
         "pipeline_parser_results": 9,
         "document_segments": 6,
         "review_items": 7,
@@ -776,6 +788,7 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
                             "quality_check_count": 1,
                             "tagging_evidence_count": 1,
                             "file_metadata_count": 1,
+                            "artifact_count": 1,
                             "parser_result_count": 1,
                             "document_segment_count": 1,
                         }
@@ -980,6 +993,26 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
                         }
                     ]
                 )
+            if "from pipeline_artifacts pa" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "artifact-id",
+                            "run_id": "run-id",
+                            "run_key": "run-report",
+                            "name": "sample-pipeline-results.jsonl",
+                            "path": "/tmp/run/sample-pipeline-results.jsonl",
+                            "kind": "jsonl",
+                            "exists": True,
+                            "size_bytes": 123,
+                            "row_count": 1,
+                            "sha256": "b" * 64,
+                            "note": None,
+                            "result": {"name": "sample-pipeline-results.jsonl"},
+                            "created_at": None,
+                        }
+                    ]
+                )
             if "from pipeline_parser_results ppr" in normalized:
                 return _Cursor(
                     rows=[
@@ -1110,6 +1143,8 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     assert report["summary"]["quality_review_required_count"] == 0
     assert report["summary"]["tagging_evidence_count"] == 1
     assert report["summary"]["file_metadata_count"] == 1
+    assert report["summary"]["artifact_count"] == 1
+    assert report["summary"]["existing_artifact_count"] == 1
     assert report["summary"]["parser_result_count"] == 1
     assert report["summary"]["parser_status"] == {"extracted": 1}
     assert report["summary"]["parser_quality"] == {"ok": 1}
@@ -1132,6 +1167,8 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     assert report["summary"]["tagging_primary_tag"] == {"scrapbooks": 1}
     assert report["summary"]["file_metadata_type"] == {"file_probe": 1}
     assert report["summary"]["file_media_type"] == {"pdf": 1}
+    assert report["summary"]["artifact_kind"] == {"jsonl": 1}
+    assert report["summary"]["artifact_exists"] == {"true": 1}
     assert report["results"][0]["top_tag_candidate"] == "scrapbooks"
     assert report["review_items"][0]["segment_id"] == "scrapbook:segment-001"
     assert report["model_usage"][0]["provider"] == "cortex"
@@ -1142,6 +1179,7 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     assert report["quality_checks"][0]["check_type"] == "quality_gate"
     assert report["tagging_evidence"][0]["primary_tag"] == "scrapbooks"
     assert report["file_metadata"][0]["metadata_type"] == "file_probe"
+    assert report["artifacts"][0]["name"] == "sample-pipeline-results.jsonl"
     assert report["parser_results"][0]["provider"] == "docling"
     assert report["parser_results"][0]["page_text_coverage_rate"] == 0.92
     assert report["chunks"][0]["chunk_kind"] == "segment_text"
@@ -2367,7 +2405,24 @@ def _postgres_import_artifacts(tmp_path: Path) -> Path:
         ],
     )
     (output_dir / "artifact-manifest.json").write_text(
-        json.dumps({"artifacts": [{"name": "sample-pipeline-results.jsonl", "row_count": 1}]}),
+        json.dumps(
+            {
+                "artifact_count": 1,
+                "existing_artifact_count": 1,
+                "missing_artifact_count": 0,
+                "artifacts": [
+                    {
+                        "name": "sample-pipeline-results.jsonl",
+                        "path": str(output_dir / "sample-pipeline-results.jsonl"),
+                        "kind": "jsonl",
+                        "exists": True,
+                        "row_count": 1,
+                        "size_bytes": 123,
+                        "sha256": "b" * 64,
+                    }
+                ],
+            }
+        ),
         encoding="utf-8",
     )
     (output_dir / "graph-run-metadata.json").write_text(

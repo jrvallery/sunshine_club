@@ -267,7 +267,7 @@ function PostgresRunReportView({
   const runKey = String(report.run.run_key ?? "");
   const status = String(report.run.status ?? "-");
   const modelCalls = Number(report.summary.model_call_count ?? 0);
-  const postgresTabs = tabs.filter((tab) => ["overview", "files", "metadata", "review", "segments", "ocr", "extraction", "indexing", "tags", "models", "providers", "logs"].includes(tab.key));
+  const postgresTabs = tabs.filter((tab) => ["overview", "files", "metadata", "review", "segments", "ocr", "extraction", "indexing", "tags", "models", "providers", "logs", "artifacts"].includes(tab.key));
   const activePostgresTab = postgresTabs.some((tab) => tab.key === activeTab) ? activeTab : "overview";
   return (
     <main className="pageShell">
@@ -317,6 +317,7 @@ function PostgresRunReportView({
         <Metric label="Quality checks" value={String(report.summary.quality_check_count ?? report.quality_checks?.length ?? 0)} />
         <Metric label="Tag evidence" value={String(report.summary.tagging_evidence_count ?? report.tagging_evidence?.length ?? 0)} />
         <Metric label="Metadata rows" value={String(report.summary.file_metadata_count ?? report.file_metadata?.length ?? 0)} />
+        <Metric label="Artifacts" value={String(report.summary.artifact_count ?? report.artifacts?.length ?? 0)} />
         <Metric label="Graph events" value={String(report.summary.run_event_count ?? 0)} />
       </section>
 
@@ -340,6 +341,7 @@ function PostgresRunReportView({
       {activePostgresTab === "models" ? <JsonTable title="Model Calls" rows={report.model_usage ?? []} /> : null}
       {activePostgresTab === "providers" ? <PostgresProvidersTab report={report} /> : null}
       {activePostgresTab === "logs" ? <LogsTab events={report.run_events ?? []} postgresBacked /> : null}
+      {activePostgresTab === "artifacts" ? <PostgresArtifactsTab report={report} /> : null}
     </main>
   );
 }
@@ -1100,6 +1102,58 @@ function ArtifactsTab({ report }: { report: RunReport }) {
                 <td>{artifact.row_count ?? "-"}</td>
                 <td>{artifact.size_bytes ?? "-"}</td>
                 <td className="pathText">{artifact.path}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function PostgresArtifactsTab({ report }: { report: PostgresRunReport }) {
+  const rows = report.artifacts ?? [];
+  return (
+    <section className="panel">
+      <div className="sectionHeader">
+        <div>
+          <h2>Artifacts</h2>
+          <span>{rows.length} manifest rows imported from Postgres</span>
+        </div>
+      </div>
+      <div className="metrics compactMetrics">
+        <Metric label="Rows" value={String(report.summary.artifact_count ?? rows.length)} />
+        <Metric label="Existing" value={String(report.summary.existing_artifact_count ?? 0)} />
+        <Metric label="Missing" value={String(report.summary.missing_artifact_count ?? 0)} />
+        <Metric label="Total bytes" value={String(report.summary.artifact_total_size_bytes ?? 0)} />
+      </div>
+      <div className="reportGrid">
+        <Breakdown title="Artifact Kind" values={report.summary.artifact_kind ?? {}} />
+        <Breakdown title="Exists" values={report.summary.artifact_exists ?? {}} />
+      </div>
+      <div className="tableWrap" tabIndex={0} aria-label="Postgres artifact manifest table">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Exists</th>
+              <th>Kind</th>
+              <th>Rows</th>
+              <th>Size</th>
+              <th>Hash</th>
+              <th>Path</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((artifact, index) => (
+              <tr key={String(artifact.id ?? artifact.name ?? index)}>
+                <td>{String(artifact.name ?? "-")}</td>
+                <td>{artifact.exists ? "yes" : "no"}</td>
+                <td>{String(artifact.kind ?? "-")}</td>
+                <td>{String(artifact.row_count ?? "-")}</td>
+                <td>{String(artifact.size_bytes ?? "-")}</td>
+                <td className="snippetCell">{String(artifact.sha256 ?? artifact.note ?? "-")}</td>
+                <td><PathCell title={String(artifact.path ?? "-")} /></td>
               </tr>
             ))}
           </tbody>

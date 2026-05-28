@@ -156,6 +156,7 @@ def _migration_status() -> dict[str, Any]:
         "0010_pipeline_quality_checks.sql",
         "0011_pipeline_tagging_evidence.sql",
         "0012_pipeline_file_metadata.sql",
+        "0013_pipeline_artifacts.sql",
     ]
     return {
         "migration_dir": str(migration_dir),

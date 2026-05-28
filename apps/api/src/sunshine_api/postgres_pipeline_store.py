@@ -56,6 +56,7 @@ class PostgresPipelineStore:
                 "pipeline_quality_checks": self._import_quality_checks(connection, run_id, output_path),
                 "pipeline_tagging_evidence": self._import_tagging_evidence(connection, run_id, output_path),
                 "pipeline_file_metadata": self._import_file_metadata(connection, run_id, output_path),
+                "pipeline_artifacts": self._import_pipeline_artifacts(connection, run_id, output_path),
                 "pipeline_parser_results": self._import_parser_results(connection, run_id, output_path),
                 "document_segments": self._import_document_segments(connection, run_id, output_path),
                 "review_items": self._import_review_items(connection, run_id, output_path),
@@ -80,6 +81,7 @@ class PostgresPipelineStore:
                 "pipeline_quality_checks": _scalar_count(connection, "select count(*) from pipeline_quality_checks"),
                 "pipeline_tagging_evidence": _scalar_count(connection, "select count(*) from pipeline_tagging_evidence"),
                 "pipeline_file_metadata": _scalar_count(connection, "select count(*) from pipeline_file_metadata"),
+                "pipeline_artifacts": _scalar_count(connection, "select count(*) from pipeline_artifacts"),
                 "pipeline_parser_results": _scalar_count(connection, "select count(*) from pipeline_parser_results"),
                 "pipeline_run_events": _scalar_count(connection, "select count(*) from pipeline_run_events"),
                 "document_segments": _scalar_count(connection, "select count(*) from document_segments"),
@@ -236,6 +238,7 @@ class PostgresPipelineStore:
                     (select count(*) from pipeline_quality_checks pqc where pqc.run_id = r.id) as pipeline_quality_checks,
                     (select count(*) from pipeline_tagging_evidence pte where pte.run_id = r.id) as pipeline_tagging_evidence,
                     (select count(*) from pipeline_file_metadata pfm where pfm.run_id = r.id) as pipeline_file_metadata,
+                    (select count(*) from pipeline_artifacts pa where pa.run_id = r.id) as pipeline_artifacts,
                     (select count(*) from pipeline_parser_results ppr where ppr.run_id = r.id) as pipeline_parser_results,
                     (select count(*) from document_segments ds where ds.run_id = r.id) as document_segments,
                     (select count(*) from review_items_v2 ri where ri.run_id = r.id) as review_items
@@ -265,6 +268,7 @@ class PostgresPipelineStore:
                     "pipeline_quality_checks": _int_value(run_row.get("pipeline_quality_checks")),
                     "pipeline_tagging_evidence": _int_value(run_row.get("pipeline_tagging_evidence")),
                     "pipeline_file_metadata": _int_value(run_row.get("pipeline_file_metadata")),
+                    "pipeline_artifacts": _int_value(run_row.get("pipeline_artifacts")),
                     "pipeline_parser_results": _int_value(run_row.get("pipeline_parser_results")),
                     "document_segments": _int_value(run_row.get("document_segments")),
                     "review_items": _int_value(run_row.get("review_items")),
@@ -297,6 +301,7 @@ class PostgresPipelineStore:
             quality_checks = self._list_quality_checks(connection, run_key=run_key, limit=capped_limit)
             tagging_evidence = self._list_tagging_evidence(connection, run_key=run_key, limit=capped_limit)
             file_metadata = self._list_file_metadata(connection, run_key=run_key, limit=capped_limit)
+            artifacts = self._list_pipeline_artifacts(connection, run_key=run_key, limit=capped_limit)
             parser_results = self._list_parser_results(connection, run_key=run_key, limit=capped_limit)
             document_segments = self._list_document_segments(connection, run_key=run_key, limit=capped_limit)
             chunks = self._list_chunks(connection, run_key=run_key, limit=capped_limit)
@@ -313,6 +318,7 @@ class PostgresPipelineStore:
                     quality_checks=quality_checks,
                     tagging_evidence=tagging_evidence,
                     file_metadata=file_metadata,
+                    artifacts=artifacts,
                     parser_results=parser_results,
                     document_segments=document_segments,
                     chunks=chunks,
@@ -327,6 +333,7 @@ class PostgresPipelineStore:
                 "quality_checks": quality_checks,
                 "tagging_evidence": tagging_evidence,
                 "file_metadata": file_metadata,
+                "artifacts": artifacts,
                 "parser_results": parser_results,
                 "document_segments": document_segments,
                 "chunks": chunks,
@@ -1606,6 +1613,7 @@ class PostgresPipelineStore:
                 (select count(*) from pipeline_quality_checks pqc where pqc.run_id = r.id) as quality_check_count,
                 (select count(*) from pipeline_tagging_evidence pte where pte.run_id = r.id) as tagging_evidence_count,
                 (select count(*) from pipeline_file_metadata pfm where pfm.run_id = r.id) as file_metadata_count,
+                (select count(*) from pipeline_artifacts pa where pa.run_id = r.id) as artifact_count,
                 (select count(*) from pipeline_parser_results ppr where ppr.run_id = r.id) as parser_result_count,
                 (select count(*) from document_segments ds where ds.run_id = r.id) as document_segment_count
             from pipeline_runs r
@@ -1896,6 +1904,33 @@ class PostgresPipelineStore:
             join pipeline_runs r on r.id = pfm.run_id
             where r.run_key = %s
             order by pfm.created_at asc, pfm.source_path asc nulls last, pfm.metadata_type asc
+            limit %s
+            """,
+            (run_key, max(1, min(int(limit), 1000))),
+        ).fetchall()
+        return [_json_safe_row(_row_to_dict(row)) for row in rows]
+
+    def _list_pipeline_artifacts(self, connection: PostgresConnection, *, run_key: str, limit: int) -> list[dict[str, Any]]:
+        rows = connection.execute(
+            """
+            select
+                pa.id,
+                pa.run_id,
+                r.run_key,
+                pa.name,
+                pa.path,
+                pa.kind,
+                pa.exists,
+                pa.size_bytes,
+                pa.row_count,
+                pa.sha256,
+                pa.note,
+                pa.result,
+                pa.created_at
+            from pipeline_artifacts pa
+            join pipeline_runs r on r.id = pa.run_id
+            where r.run_key = %s
+            order by pa.name asc
             limit %s
             """,
             (run_key, max(1, min(int(limit), 1000))),
@@ -2612,6 +2647,45 @@ class PostgresPipelineStore:
                 imported += 1
         return imported
 
+    def _import_pipeline_artifacts(self, connection: PostgresConnection, run_id: str, output_path: Path) -> int:
+        manifest = _read_json(output_path / "artifact-manifest.json")
+        rows = manifest.get("artifacts") if isinstance(manifest.get("artifacts"), list) else []
+        connection.execute("delete from pipeline_artifacts where run_id = %s", (run_id,))
+        imported = 0
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            connection.execute(
+                """
+                insert into pipeline_artifacts (
+                    run_id, name, path, kind, exists, size_bytes, row_count, sha256, note, result
+                ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                on conflict (run_id, name) do update set
+                    path = excluded.path,
+                    kind = excluded.kind,
+                    exists = excluded.exists,
+                    size_bytes = excluded.size_bytes,
+                    row_count = excluded.row_count,
+                    sha256 = excluded.sha256,
+                    note = excluded.note,
+                    result = excluded.result
+                """,
+                (
+                    run_id,
+                    row.get("name"),
+                    row.get("path"),
+                    row.get("kind"),
+                    bool(row.get("exists")),
+                    row.get("size_bytes"),
+                    row.get("row_count"),
+                    row.get("sha256"),
+                    row.get("note"),
+                    json.dumps(row, sort_keys=True),
+                ),
+            )
+            imported += 1
+        return imported
+
     def _import_parser_results(self, connection: PostgresConnection, run_id: str, output_path: Path) -> int:
         rows = _read_jsonl(output_path / "sample-parser-results.jsonl")
         connection.execute("delete from pipeline_parser_results where run_id = %s", (run_id,))
@@ -2777,6 +2851,7 @@ def _run_summary_from_artifacts(output_path: Path) -> dict[str, Any]:
             "quality_checks": len(quality_check_rows),
             "tagging_evidence": len(tagging_evidence_rows),
             "file_metadata": len(file_metadata_rows),
+            "artifacts": len(manifest.get("artifacts") or []) if isinstance(manifest.get("artifacts"), list) else 0,
             "parser_results": len(parser_result_rows),
             "indexing": len(indexing_rows),
         },
@@ -2920,6 +2995,15 @@ def _count_values(rows: list[dict[str, Any]], field: str) -> dict[str, int]:
     counts: dict[str, int] = {}
     for row in rows:
         key = str(row.get(field) or "unknown")
+        counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _count_bool_values(rows: list[dict[str, Any]], field: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        value = row.get(field)
+        key = "true" if value is True else ("false" if value is False else "unknown")
         counts[key] = counts.get(key, 0) + 1
     return dict(sorted(counts.items()))
 
@@ -3208,6 +3292,7 @@ def _run_report_summary(
     quality_checks: list[dict[str, Any]],
     tagging_evidence: list[dict[str, Any]],
     file_metadata: list[dict[str, Any]],
+    artifacts: list[dict[str, Any]],
     parser_results: list[dict[str, Any]],
     document_segments: list[dict[str, Any]],
     chunks: list[dict[str, Any]],
@@ -3230,6 +3315,10 @@ def _run_report_summary(
         "quality_review_required_count": sum(1 for row in quality_checks if row.get("requires_review") is True),
         "tagging_evidence_count": len(tagging_evidence),
         "file_metadata_count": len(file_metadata),
+        "artifact_count": len(artifacts),
+        "existing_artifact_count": sum(1 for row in artifacts if row.get("exists") is True),
+        "missing_artifact_count": sum(1 for row in artifacts if row.get("exists") is False),
+        "artifact_total_size_bytes": sum(_int_value(row.get("size_bytes")) for row in artifacts),
         "parser_result_count": len(parser_results),
         "parser_review_required_count": sum(1 for row in parser_results if row.get("requires_review") is True),
         "run_event_count": len(run_events),
@@ -3263,6 +3352,8 @@ def _run_report_summary(
         "file_media_type": _count_values(file_metadata, "media_type"),
         "file_probe_status": _count_values([row for row in file_metadata if row.get("metadata_type") == "file_probe"], "status"),
         "import_status": _count_values([row for row in file_metadata if row.get("metadata_type") == "import_result"], "import_status"),
+        "artifact_kind": _count_values(artifacts, "kind"),
+        "artifact_exists": _count_bool_values(artifacts, "exists"),
         "parser_status": _count_values(parser_results, "status"),
         "parser_quality": _count_values(parser_results, "quality"),
         "parser_provider": _count_values(parser_results, "provider"),
