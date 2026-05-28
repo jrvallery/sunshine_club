@@ -285,6 +285,33 @@ def test_provider_benchmark_api_runs_current_provider(tmp_path: Path) -> None:
     assert latest.json()["parser_results"][0]["text_snippet"] == "Meeting minutes and Sunshine Club notes."
 
 
+def test_provider_benchmark_latest_returns_partial_incremental_artifacts(tmp_path: Path) -> None:
+    output_dir = tmp_path / "provider-benchmark"
+    output_dir.mkdir()
+    (output_dir / "provider-benchmark-results.jsonl").write_text(
+        '{"provider":"docling","status":"extracted","quality":"ok","sample_category":"image_scan","requires_review":false}\n',
+        encoding="utf-8",
+    )
+    (output_dir / "sample-parser-results.jsonl").write_text(
+        '{"parser_provider":"docling","status":"extracted","quality":"ok","sample_category":"image_scan","text_snippet":"Founders of Sunshine Club"}\n',
+        encoding="utf-8",
+    )
+
+    response = TestClient(app).get("/admin/provider-benchmarks/latest", params={"output_dir": str(output_dir)})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["exists"] is True
+    assert payload["partial"] is True
+    assert payload["summary"]["partial"] is True
+    assert payload["summary"]["result_count"] == 1
+    assert payload["summary"]["by_provider"] == {"docling": 1}
+    assert payload["summary"]["sample_categories"] == {"image_scan": 1}
+    assert payload["results"][0]["provider"] == "docling"
+    assert payload["parser_results"][0]["text_snippet"] == "Founders of Sunshine Club"
+
+
 def test_provider_benchmark_api_accepts_optional_local_providers(tmp_path: Path) -> None:
     source = tmp_path / "scan.pdf"
     source.write_bytes(b"fake pdf")

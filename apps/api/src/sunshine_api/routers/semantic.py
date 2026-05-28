@@ -179,8 +179,33 @@ def provider_benchmark_latest(output_dir: str) -> dict[str, Any]:
     results_path = output_path / "provider-benchmark-results.jsonl"
     parser_results_path = output_path / "sample-parser-results.jsonl"
     recommendations_path = output_path / "provider-benchmark-recommendations.jsonl"
-    if not summary_path.exists():
+    artifact_exists = summary_path.exists() or results_path.exists() or parser_results_path.exists() or recommendations_path.exists()
+    if not artifact_exists:
         return {"ok": False, "exists": False, "output_dir": str(output_path)}
+    partial = not summary_path.exists()
+    summary: dict[str, Any] = {}
+    if partial:
+        results = _read_eval_jsonl(results_path, limit=500)
+        parser_results = _read_eval_jsonl(parser_results_path, limit=500)
+        summary = {
+            "result_count": len(results),
+            "partial": True,
+            "by_provider": _count_rows(results, "provider"),
+            "by_status": _count_rows(results, "status"),
+            "by_quality": _count_rows(results, "quality"),
+            "review_required_count": sum(1 for row in results if row.get("requires_review")),
+            "sample_categories": _count_rows(results, "sample_category"),
+        }
+        return {
+            "ok": True,
+            "exists": True,
+            "partial": True,
+            "output_dir": str(output_path),
+            "summary": summary,
+            "recommendations": _read_eval_jsonl(recommendations_path, limit=100),
+            "results": results,
+            "parser_results": parser_results,
+        }
     try:
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as error:
@@ -188,6 +213,7 @@ def provider_benchmark_latest(output_dir: str) -> dict[str, Any]:
     return {
         "ok": True,
         "exists": True,
+        "partial": False,
         "output_dir": str(output_path),
         "summary": summary,
         "recommendations": _read_eval_jsonl(recommendations_path, limit=100),
@@ -366,6 +392,14 @@ def _read_eval_jsonl(path: Path, *, limit: int) -> list[dict[str, Any]]:
             if isinstance(row, dict):
                 rows.append(row)
     return rows
+
+
+def _count_rows(rows: list[dict[str, Any]], field: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        key = str(row.get(field) or "unknown")
+        counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def _read_eval_json(path: Path, *, limit: int) -> list[dict[str, Any]]:

@@ -16,6 +16,7 @@ type ExtractionProviderName = "current" | "docling" | "mineru" | "ragflow_deepdo
 type ProviderBenchmarkLatest = {
   ok: boolean;
   exists: boolean;
+  partial?: boolean;
   output_dir: string;
   summary?: Record<string, unknown>;
   recommendations?: Array<Record<string, unknown>>;
@@ -239,6 +240,7 @@ export default function PipelineEvalPage() {
             <section>
               <h3>Summary</h3>
               <KeyValue label="Output dir" value={providerBenchmark.data.output_dir} />
+              <KeyValue label="Status" value={providerBenchmark.data.partial ? "in progress or partial artifacts" : "complete"} />
               <KeyValue label="Samples" value={String(providerBenchmark.data.summary?.total_samples ?? providerBenchmark.data.results?.length ?? 0)} />
               <KeyValue label="Providers" value={providerList(providerBenchmark.data.summary)} />
               <KeyValue label="Recommended" value={recommendedProvider(providerBenchmark.data.recommendations)} />
