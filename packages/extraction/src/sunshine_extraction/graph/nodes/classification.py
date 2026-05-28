@@ -16,8 +16,15 @@ def _classify_content_type(state: DocumentPipelineState) -> dict[str, Any]:
     sample = state["sample"]
     suffix = sample.sample_path.suffix.lower()
     mime_type = mimetypes.guess_type(sample.sample_path.name)[0]
-    signals = {"suffix": suffix, "mime_type": mime_type}
-    if suffix in IMAGE_EXTENSIONS:
+    file_probe = state.get("file_probe", {})
+    signals = {"suffix": suffix, "mime_type": mime_type, "file_probe": file_probe}
+    if file_probe.get("media_type") == "pdf" and file_probe.get("image_only_pdf_likelihood", 0) >= 0.8:
+        final_class = "scanned_document"
+        confidence = 0.88
+    elif file_probe.get("media_type") == "pdf" and file_probe.get("warnings"):
+        final_class = "document"
+        confidence = 0.64
+    elif suffix in IMAGE_EXTENSIONS:
         final_class = "image"
         confidence = 0.9
     elif suffix in SPREADSHEET_EXTENSIONS:
@@ -44,6 +51,7 @@ def _classify_content_type(state: DocumentPipelineState) -> dict[str, Any]:
             "final_status": "classified",
             "confidence": confidence,
             "signals": signals,
+            "probe_status": file_probe.get("status"),
             "needs_review": confidence < 0.7,
         }
     }
@@ -88,5 +96,25 @@ def _plan_extraction(state: DocumentPipelineState) -> dict[str, Any]:
             "document_subtype": document_subtype,
             "ocr_required": strategy == "ocr_page_level",
             "defer_reason": defer_reason,
+            "probe_status": state.get("file_probe", {}).get("status"),
+            "provider_hints": _provider_hints(state.get("file_probe", {}), strategy),
         }
     }
+
+
+def _provider_hints(file_probe: dict[str, Any], strategy: str) -> dict[str, Any]:
+    if strategy == "ocr_page_level":
+        return {
+            "preferred_parser": "docling",
+            "fallback_ocr": "cortex",
+            "reason": "ocr_required_or_image_only_pdf",
+            "image_only_pdf_likelihood": file_probe.get("image_only_pdf_likelihood"),
+        }
+    if strategy == "text_extraction":
+        return {
+            "preferred_parser": "current",
+            "fallback_parser": "docling",
+            "reason": "embedded_text_or_native_text_expected",
+            "embedded_text_chars": file_probe.get("embedded_text_chars"),
+        }
+    return {"preferred_parser": "current", "reason": "strategy_default"}

@@ -304,6 +304,12 @@ Success criteria:
 - Unknowns route safely.
 - Probe is fast and does not call external models.
 
+Current implementation:
+
+- Graph has a local-only `probe_file` node after `identify_file`.
+- Native probe emits `sample-file-probes.jsonl` rows with MIME/media type, page count, PDF encryption status, sampled embedded text length, image-only PDF likelihood, and image dimensions.
+- Classification consumes probe signals so likely image-only PDFs become `scanned_document` and plan OCR instead of native text extraction.
+
 ### 4. `classify_content_type`
 
 Purpose:
@@ -1039,6 +1045,7 @@ Artifacts:
 - `sample-pipeline-results.jsonl`
 - `sample-review-queue.jsonl`
 - `sample-source-identity.jsonl`
+- `sample-file-probes.jsonl`
 - `sample-inputs.jsonl`
 - `sample-extraction-results.jsonl`
 - `sample-parser-results.jsonl`
@@ -1569,6 +1576,7 @@ Required artifacts:
 - `sample-pipeline-results.jsonl`
 - `sample-review-queue.jsonl`
 - `sample-source-identity.jsonl`
+- `sample-file-probes.jsonl`
 - `sample-inputs.jsonl`
 - `sample-extraction-results.jsonl`
 - `sample-parser-results.jsonl`

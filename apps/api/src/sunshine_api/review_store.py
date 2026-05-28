@@ -2209,6 +2209,7 @@ def _looks_like_dashboard_run_output(output_dir: Path) -> bool:
         "sample-pipeline-summary.json",
         "sample-pipeline-results.jsonl",
         "sample-source-identity.jsonl",
+        "sample-file-probes.jsonl",
         "sample-provider-attempts.jsonl",
         "sample-document-segments.jsonl",
         "sample-indexing.jsonl",

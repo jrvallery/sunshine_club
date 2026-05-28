@@ -3,7 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pypdf import PdfWriter
 
+from sunshine_extraction.providers.probe import NativeFileProbeProvider
 from sunshine_extraction.providers.extraction import CurrentExtractionProvider, DoclingExtractionProvider, extraction_provider_from_env
 from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider
 from sunshine_extraction.sample_pipeline import SampleFile, llm_tag_inspector_from_env, ocr_executor_from_env
@@ -111,6 +113,23 @@ def test_noop_vector_provider_records_unconfigured_indexing() -> None:
     assert result.indexed_chunk_ids == []
     assert result.skipped_chunk_ids == ["chunk-1"]
     assert "vector_store_not_configured" in result.warnings
+
+
+def test_native_probe_detects_image_only_pdf_likelihood(tmp_path: Path) -> None:
+    source = tmp_path / "blank.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    with source.open("wb") as handle:
+        writer.write(handle)
+
+    probe = NativeFileProbeProvider().probe(_sample(source))
+
+    assert probe["status"] == "probed"
+    assert probe["media_type"] == "pdf"
+    assert probe["page_count"] == 1
+    assert probe["embedded_text_chars"] == 0
+    assert probe["image_only_pdf_likelihood"] == 0.95
+    assert probe["metadata"]["local_only"] is True
 
 
 def test_hosted_provider_policy_blocks_openai() -> None:

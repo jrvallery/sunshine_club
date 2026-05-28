@@ -314,7 +314,8 @@ def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_
         placement_destination_correct = final_result.get("destination_path") == label.correct_destination_path
     placement_year_correct = None
     if label.correct_placement_year:
-        placement_year_correct = str(final_result.get("placement", {}).get("placement_year_label") or "") == label.correct_placement_year
+        placement = final_result.get("placement") if isinstance(final_result.get("placement"), dict) else {}
+        placement_year_correct = str(placement.get("placement_year_label") or "") == label.correct_placement_year
     unsafe_placement_proposal = (
         review_required
         and final_result.get("placement_status") == "resolved"

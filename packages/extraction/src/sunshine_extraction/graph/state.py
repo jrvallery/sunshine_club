@@ -33,6 +33,7 @@ class DocumentPipelineState(TypedDict, total=False):
 
     sample: SampleFile
     source_identity: dict[str, Any]
+    file_probe: dict[str, Any]
     content_class: dict[str, Any]
     extraction_plan: dict[str, Any]
     extraction_result: ExtractionResult

@@ -256,6 +256,31 @@ def test_run_report_reads_live_graph_run_artifacts_before_batch_finalize(tmp_pat
         + "\n",
         encoding="utf-8",
     )
+    (second_run_dir / "sample-file-probes.jsonl").write_text(
+        json.dumps(
+            {
+                "source_path": "/source/review.pdf",
+                "relative_path": "Review/review.pdf",
+                "sample_path": str(second_run_dir / "review.pdf"),
+                "provider": "native",
+                "status": "probed",
+                "mime_type": "application/pdf",
+                "extension": ".pdf",
+                "media_type": "pdf",
+                "size_bytes": 123,
+                "page_count": 12,
+                "embedded_text_chars": 0,
+                "image_only_pdf_likelihood": 0.95,
+                "encrypted": False,
+                "width": None,
+                "height": None,
+                "warnings": [],
+                "metadata": {"local_only": True},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     (second_run_dir / "sample-document-segments.jsonl").write_text(
         json.dumps(
             {
@@ -312,6 +337,8 @@ def test_run_report_reads_live_graph_run_artifacts_before_batch_finalize(tmp_pat
     assert payload["ocr"]["page_count"] == 1
     assert payload["source_identity"]["count"] == 1
     assert payload["source_identity"]["items"][0]["file_id"] == "file-review"
+    assert payload["file_probes"]["count"] == 1
+    assert payload["file_probes"]["by_media_type"]["pdf"] == 1
     assert payload["extraction"]["count"] == 1
     assert payload["provider_attempts"]["count"] == 1
     assert payload["provider_attempts"]["by_provider"]["current"] == 1

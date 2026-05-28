@@ -4,6 +4,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+from pypdf import PdfWriter
+
 from sunshine_extraction.embeddings import EmbeddingProviderError, PlaceholderEmbeddingProvider
 from sunshine_extraction.providers.extraction import CurrentExtractionProvider
 from sunshine_extraction.semantic_index import build_semantic_index
@@ -168,6 +170,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     structure_rows = [json.loads(line) for line in (output_dir / "sample-structure.jsonl").read_text().splitlines()]
     provider_attempt_rows = [json.loads(line) for line in (output_dir / "sample-provider-attempts.jsonl").read_text().splitlines()]
     source_identity_rows = [json.loads(line) for line in (output_dir / "sample-source-identity.jsonl").read_text().splitlines()]
+    probe_rows = [json.loads(line) for line in (output_dir / "sample-file-probes.jsonl").read_text().splitlines()]
 
     assert final_result["route_status"] == "route_candidate"
     assert final_result["top_tag_candidate"] == "annual_spring_tea"
@@ -196,10 +199,13 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert source_identity_rows[0]["size_bytes"] == source.stat().st_size
     assert len(source_identity_rows[0]["content_sha256"]) == 64
     assert result["file_id"] == source_identity_rows[0]["file_id"]
+    assert probe_rows[0]["media_type"] == "text"
+    assert probe_rows[0]["metadata"]["local_only"] is True
     assert {row["purpose"] for row in model_usage_rows} == {"chunk_embedding", "semantic_retrieval_embedding", "tag_inspection"}
     assert [event["node"] for event in audit_events] == [
         "load_file_context",
         "identify_file",
+        "probe_file",
         "classify_content_type",
         "plan_extraction",
         "extract_content",
@@ -218,6 +224,32 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
         "resolve_route_or_review",
         "persist_outputs",
     ]
+
+
+def test_langgraph_probe_routes_image_only_pdf_to_ocr(tmp_path: Path) -> None:
+    source = tmp_path / "scan.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    with source.open("wb") as handle:
+        writer.write(handle)
+    output_dir = tmp_path / "graph-out"
+
+    result = run_document_graph(
+        source,
+        source_path="/source/scan.pdf",
+        relative_path="Sunshine shared folders/Scrapbooks/scan.pdf",
+        output_dir=output_dir,
+        embedding_provider=PlaceholderEmbeddingProvider(dimensions=4),
+        llm_tag_inspector=_HistoryLLMTagInspector(),
+        ocr_executor=_SuccessfulOcrExecutor(),
+    )
+
+    probe_rows = [json.loads(line) for line in (output_dir / "sample-file-probes.jsonl").read_text().splitlines()]
+
+    assert probe_rows[0]["image_only_pdf_likelihood"] == 0.95
+    assert result["content_class"]["final_class"] == "scanned_document"
+    assert result["extraction_plan"]["strategy"] == "ocr_page_level"
+    assert result["extraction_plan"]["provider_hints"]["preferred_parser"] == "docling"
 
 
 def test_langgraph_confidence_calibration_routes_llm_disagreement_to_review(tmp_path: Path) -> None:

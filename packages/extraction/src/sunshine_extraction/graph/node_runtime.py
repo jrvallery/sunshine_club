@@ -70,6 +70,8 @@ def _node_summary(name: str, updates: dict[str, Any]) -> str:
         return f"loaded {updates['sample'].relative_path}"
     if name == "classify_content_type" and updates.get("content_class"):
         return f"classified {updates['content_class'].get('final_class')}"
+    if name == "probe_file" and updates.get("file_probe"):
+        return f"probed {updates['file_probe'].get('media_type')}"
     if name == "plan_extraction" and updates.get("extraction_plan"):
         return f"planned {updates['extraction_plan'].get('strategy')}"
     if name == "extract_content" and updates.get("extraction_result"):

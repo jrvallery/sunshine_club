@@ -20,6 +20,7 @@ from sunshine_extraction.graph.nodes.extraction import (
 )
 from sunshine_extraction.graph.nodes.loading import _after_load_file_context, _identify_file, _load_file_context
 from sunshine_extraction.graph.nodes.persistence import _persist_outputs
+from sunshine_extraction.graph.nodes.probing import _probe_file
 from sunshine_extraction.graph.nodes.routing import _resolve_route_or_review_node
 from sunshine_extraction.graph.nodes.tagging import _assign_deterministic_tags, _calibrate_tag_confidence_node, _combine_tag_evidence, _inspect_tags_with_llm
 from sunshine_extraction.graph.state import DocumentPipelineDeps, DocumentPipelineState
@@ -30,6 +31,7 @@ def build_document_graph(deps: DocumentPipelineDeps | None = None, *, checkpoint
     builder = StateGraph(DocumentPipelineState)
     builder.add_node("load_file_context", lambda state: _run_node("load_file_context", state, _load_file_context))
     builder.add_node("identify_file", lambda state: _run_node("identify_file", state, _identify_file))
+    builder.add_node("probe_file", lambda state: _run_node("probe_file", state, _probe_file))
     builder.add_node("classify_content_type", lambda state: _run_node("classify_content_type", state, _classify_content_type))
     builder.add_node("plan_extraction", lambda state: _run_node("plan_extraction", state, _plan_extraction))
     builder.add_node("extract_content", lambda state: _run_node("extract_content", state, lambda active: _extract_content_node(active, active_deps)))
@@ -54,7 +56,8 @@ def build_document_graph(deps: DocumentPipelineDeps | None = None, *, checkpoint
         _after_load_file_context,
         {"continue": "identify_file", "persist": "persist_outputs"},
     )
-    builder.add_edge("identify_file", "classify_content_type")
+    builder.add_edge("identify_file", "probe_file")
+    builder.add_edge("probe_file", "classify_content_type")
     builder.add_edge("classify_content_type", "plan_extraction")
     builder.add_edge("plan_extraction", "extract_content")
     builder.add_edge("extract_content", "validate_text_extraction")
