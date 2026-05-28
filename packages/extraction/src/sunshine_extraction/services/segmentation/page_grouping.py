@@ -20,7 +20,8 @@ def propose_document_segments(
 ) -> list[dict[str, Any]]:
     pages = ocr_pages or []
     page_count = _page_count(extraction, pages, document_structure or {})
-    segment_type, evidence = _segment_type_and_evidence(extraction, content_class or {})
+    normalized_pages = _normalized_pages(pages, page_count)
+    segment_type, evidence = _segment_type_and_evidence(extraction, content_class or {}, normalized_pages)
     if _should_emit_candidate_splits(page_count, segment_type):
         split_segments = _candidate_split_segments(
             extraction,
@@ -28,7 +29,7 @@ def propose_document_segments(
             segment_type=segment_type,
             evidence=evidence,
             page_count=page_count,
-            pages=_normalized_pages(pages, page_count),
+            pages=normalized_pages,
         )
         if split_segments:
             return [segment.as_row() for segment in split_segments]
@@ -80,7 +81,11 @@ def _page_count(extraction: ExtractionResult, pages: list[dict[str, Any]], docum
     return 0
 
 
-def _segment_type_and_evidence(extraction: ExtractionResult, content_class: dict[str, Any]) -> tuple[str, list[str]]:
+def _segment_type_and_evidence(
+    extraction: ExtractionResult,
+    content_class: dict[str, Any],
+    pages: list[dict[str, Any]],
+) -> tuple[str, list[str]]:
     signals = " ".join(
         [
             extraction.sample.relative_path,
@@ -97,11 +102,14 @@ def _segment_type_and_evidence(extraction: ExtractionResult, content_class: dict
         return "financial_packet_section", ["matched:financial_packet"]
     if "minutes" in signals or "agenda" in signals:
         return "meeting_packet_section", ["matched:meeting_packet"]
+    collection_evidence = _mixed_collection_evidence(pages)
+    if collection_evidence:
+        return "mixed_collection_page_group", collection_evidence
     return "single_document", ["default:single_document"]
 
 
 def _requires_segment_review(extraction: ExtractionResult, page_count: int, segment_type: str) -> bool:
-    if segment_type in {"scrapbook_page_group", "newspaper_article_group"} and page_count > 1:
+    if segment_type in {"scrapbook_page_group", "newspaper_article_group", "mixed_collection_page_group"} and page_count > 1:
         return True
     if page_count >= 10:
         return True
@@ -109,7 +117,7 @@ def _requires_segment_review(extraction: ExtractionResult, page_count: int, segm
 
 
 def _should_emit_candidate_splits(page_count: int, segment_type: str) -> bool:
-    return page_count > 1 and segment_type in {"scrapbook_page_group", "newspaper_article_group"}
+    return page_count > 1 and segment_type in {"scrapbook_page_group", "newspaper_article_group", "mixed_collection_page_group"}
 
 
 def _candidate_split_segments(
@@ -125,7 +133,12 @@ def _candidate_split_segments(
     if len(groups) < 2:
         groups = _page_level_groups(page_count) if page_count <= 50 else _fixed_page_windows(page_count, window_size=10)
 
-    child_type = "scrapbook_page" if segment_type == "scrapbook_page_group" else "newspaper_article"
+    child_type_by_parent = {
+        "scrapbook_page_group": "scrapbook_page",
+        "newspaper_article_group": "newspaper_article",
+        "mixed_collection_page_group": "mixed_collection_page",
+    }
+    child_type = child_type_by_parent.get(segment_type, "unknown_page_group")
     policy = "separator_page_groups" if any(
         any("blank_separator" in evidence_item for evidence_item in group["evidence"])
         for group in groups
@@ -175,6 +188,37 @@ def _normalized_pages(pages: list[dict[str, Any]], page_count: int) -> list[dict
         if isinstance(page.get("page_number"), int) or str(page.get("page_number") or "").isdigit()
     }
     return [by_number.get(index, {"page_number": index, "text": "", "text_length": 0, "word_count": 0}) for index in range(1, page_count + 1)]
+
+
+def _mixed_collection_evidence(pages: list[dict[str, Any]]) -> list[str]:
+    if len(pages) < 3:
+        return []
+    page_signal_count = 0
+    signal_types: set[str] = set()
+    for page in pages:
+        text = str(page.get("text") or "").lower()
+        if not text:
+            continue
+        signals = _page_collection_signals(text)
+        if signals:
+            page_signal_count += 1
+            signal_types.update(signals)
+    if page_signal_count >= 2 and len(signal_types) >= 2:
+        return [f"page_signal:{signal_type}" for signal_type in sorted(signal_types)]
+    return []
+
+
+def _page_collection_signals(text: str) -> set[str]:
+    signals: set[str] = set()
+    if any(term in text for term in ("scrapbook", "caption", "clipping", "photograph", "photo")):
+        signals.add("scrapbook_or_photo")
+    if any(term in text for term in ("newspaper", "ledger", "times-call", "times call", "article", "headline")):
+        signals.add("newspaper_or_article")
+    if any(term in text for term in ("continued from", "continued on", "page ", "column")):
+        signals.add("page_layout")
+    if any(term in text for term in ("founded", "history", "memorial", "tribute", "anniversary")):
+        signals.add("historical_context")
+    return signals
 
 
 def _separator_page_groups(pages: list[dict[str, Any]], page_count: int) -> list[dict[str, Any]]:

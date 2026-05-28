@@ -726,6 +726,8 @@ Initial segment types:
 - `photo_caption_group`
 - `meeting_packet_section`
 - `financial_packet_section`
+- `mixed_collection_page`
+- `mixed_collection_page_group`
 - `unknown_page_group`
 
 Success criteria:
@@ -748,6 +750,7 @@ Current implementation:
 
 - `domain/document_segments.py` defines logical child-document segment rows that preserve parent source path and page range.
 - `services/segmentation/page_grouping.py` emits review-only candidate page segments for multi-page scrapbook/newspaper inputs, separator-based groups when blank pages are detected, and fixed page windows for very large files.
+- Generic long scanned PDFs can also become `mixed_collection_page_group` proposals when OCR page text contains multiple collection signals such as scrapbook/photo, newspaper/article, page-layout, or historical-context evidence.
 - `graph/nodes/segmentation.py` runs segmentation after structure normalization.
 - `graph/nodes/chunking.py` attaches single-segment IDs to chunks when safe.
 - Segment proposals are artifacts only; no physical source files are split or modified.

@@ -522,6 +522,40 @@ def test_segmentation_uses_blank_pages_as_review_boundaries(tmp_path: Path) -> N
     assert segments[1]["metadata"]["policy"] == "separator_page_groups"
 
 
+def test_segmentation_proposes_mixed_collection_page_ranges_from_page_text(tmp_path: Path) -> None:
+    source = tmp_path / "packet.pdf"
+    source.write_text("fake", encoding="utf-8")
+    sample = _sample(source, relative_path="archive/history/scan_packet.pdf")
+    extraction = ExtractionResult(
+        sample=sample,
+        plan={"strategy": "ocr_page_level"},
+        extraction_status="extracted",
+        text="A mixed collection of historical pages",
+        metadata={},
+        page_count=4,
+        warnings=[],
+    )
+
+    segments = propose_document_segments(
+        extraction,
+        file_id="file-2",
+        ocr_pages=[
+            {"page_number": 1, "text": "Founders history and anniversary notes", "text_length": 36, "word_count": 5},
+            {"page_number": 2, "text": "Newspaper article headline from the Ledger", "text_length": 40, "word_count": 6},
+            {"page_number": 3, "text": "Photograph caption and scrapbook clipping", "text_length": 39, "word_count": 5},
+            {"page_number": 4, "text": "Plain closing notes", "text_length": 19, "word_count": 3},
+        ],
+    )
+
+    assert len(segments) == 4
+    assert segments[0]["segment_type"] == "mixed_collection_page"
+    assert segments[0]["requires_segment_review"] is True
+    assert segments[0]["metadata"]["policy"] == "page_level_review_candidates"
+    assert "matched:scrapbook" not in segments[0]["segment_boundary_evidence"]
+    assert "page_signal:newspaper_or_article" in segments[0]["segment_boundary_evidence"]
+    assert "page_signal:scrapbook_or_photo" in segments[0]["segment_boundary_evidence"]
+
+
 def test_segmentation_ids_are_stable_without_qa_sample_number(tmp_path: Path) -> None:
     source = tmp_path / "scrapbook.pdf"
     source.write_text("fake", encoding="utf-8")
