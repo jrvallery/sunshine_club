@@ -923,8 +923,9 @@ Success criteria:
 
 Current implementation:
 
-- `services/tagging/rules.py` exposes the deterministic rule-tagging service boundary while preserving existing rule behavior.
-- The graph writes deterministic and final tag candidates through `sample-tag-candidates.jsonl`; the next hardening step is moving the rule table itself out of legacy Python into data/config.
+- `services/tagging/rules.py` owns the deterministic rule-tagging policy while preserving existing rule behavior.
+- `services/tagging/taxonomy.py` owns taxonomy loading for primary/secondary tag options.
+- The graph writes deterministic and final tag candidates through `sample-tag-candidates.jsonl`; the next hardening step is moving the rule table itself out of Python into data/config.
 
 ### 18. `inspect_tags_with_llm`
 
@@ -1001,7 +1002,7 @@ Success criteria:
 
 Current implementation:
 
-- `services/tagging/evidence.py` exposes the tag evidence-combination service boundary.
+- `services/tagging/evidence.py` owns deterministic, semantic, and LLM evidence-combination policy.
 - Combined candidates retain deterministic, semantic, and LLM evidence in `sample-tag-candidates.jsonl` and in final result confidence inputs.
 
 ### 20. `calibrate_confidence`
@@ -1035,7 +1036,7 @@ Success criteria:
 
 Current implementation:
 
-- `services/confidence/calibration.py` defines the confidence calibration service boundary.
+- `services/confidence/calibration.py` owns confidence calibration policy and row shaping.
 - Graph runs write `sample-confidence-calibrations.jsonl` with top tag, base/calibrated confidence, review requirement, factors, quality, strategy, and candidate count.
 - Final route decisions consume the calibrated candidate output, so confidence factors remain tied to accepted/review outcomes.
 
