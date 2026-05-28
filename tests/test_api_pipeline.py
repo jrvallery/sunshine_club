@@ -410,6 +410,24 @@ def test_run_report_reads_live_graph_run_artifacts_before_batch_finalize(tmp_pat
         + "\n",
         encoding="utf-8",
     )
+    (second_run_dir / "sample-route-decisions.jsonl").write_text(
+        json.dumps(
+            {
+                "source_path": "/source/review.pdf",
+                "relative_path": "Review/review.pdf",
+                "sample_path": str(second_run_dir / "review.pdf"),
+                "route_status": "review_ocr_quality",
+                "review_reason": "ocr_quality_not_trusted",
+                "priority": "high",
+                "review_stage": "needs_ocr_review",
+                "accepted": False,
+                "evidence": ["route_status:review_ocr_quality", "quality:poor"],
+                "metadata": {"quality": "poor", "strategy": "ocr_page_level"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     (second_run_dir / "sample-import-results.jsonl").write_text(
         json.dumps(
             {
@@ -462,6 +480,10 @@ def test_run_report_reads_live_graph_run_artifacts_before_batch_finalize(tmp_pat
     assert payload["indexing"]["semantic_embedding_count"] == 1
     assert payload["placement"]["proposal_count"] == 1
     assert payload["placement"]["proposal_status"]["needs_review"] == 1
+    assert payload["routing"]["count"] == 1
+    assert payload["routing"]["by_status"]["review_ocr_quality"] == 1
+    assert payload["routing"]["by_priority"]["high"] == 1
+    assert payload["routing"]["by_review_stage"]["needs_ocr_review"] == 1
     assert payload["imports"]["count"] == 1
     assert payload["imports"]["by_status"]["skipped"] == 1
     assert payload["model_usage"]["summary"]["total_calls"] == 1

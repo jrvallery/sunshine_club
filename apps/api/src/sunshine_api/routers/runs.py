@@ -225,6 +225,7 @@ def run_report(run_id: int) -> dict[str, Any]:
     document_segments = store.list_document_segments(run_id) or _read_run_jsonl_with_live_fallback(output_dir, "sample-document-segments.jsonl", limit=500)
     indexing_rows = _read_run_jsonl_with_live_fallback(output_dir, "sample-indexing.jsonl", limit=200)
     placement_proposals = _read_run_jsonl_with_live_fallback(output_dir, "sample-placement-proposals.jsonl", limit=500)
+    route_decisions = _read_run_jsonl_with_live_fallback(output_dir, "sample-route-decisions.jsonl", limit=500)
     import_results = _read_run_jsonl_with_live_fallback(output_dir, "sample-import-results.jsonl", limit=100)
     model_usage_rows = store.list_model_usage(run_id) or _read_model_usage_artifact(output_dir, run_id=run_id)
     comparison = run_compare_previous(run_id)
@@ -340,6 +341,13 @@ def run_report(run_id: int) -> dict[str, Any]:
             "proposal_count": len(placement_proposals),
             "proposal_status": _count_nested_values(placement_proposals, "proposal", "placement_status"),
             "proposal_items": placement_proposals[:100],
+        },
+        "routing": {
+            "count": len(route_decisions),
+            "by_status": _count_values(route_decisions, "route_status"),
+            "by_priority": _count_values(route_decisions, "priority"),
+            "by_review_stage": _count_values(route_decisions, "review_stage"),
+            "items": route_decisions[:100],
         },
         "model_usage": _model_usage_report(model_usage_rows),
         "imports": {

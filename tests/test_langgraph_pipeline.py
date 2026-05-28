@@ -176,6 +176,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     probe_rows = [json.loads(line) for line in (output_dir / "sample-file-probes.jsonl").read_text().splitlines()]
     provider_selection_rows = [json.loads(line) for line in (output_dir / "sample-provider-selections.jsonl").read_text().splitlines()]
     placement_rows = [json.loads(line) for line in (output_dir / "sample-placement-proposals.jsonl").read_text().splitlines()]
+    route_rows = [json.loads(line) for line in (output_dir / "sample-route-decisions.jsonl").read_text().splitlines()]
     import_rows = [json.loads(line) for line in (output_dir / "sample-import-results.jsonl").read_text().splitlines()]
 
     assert final_result["route_status"] == "route_candidate"
@@ -219,6 +220,10 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert placement_rows[0]["primary_tag"] == "annual_spring_tea"
     assert placement_rows[0]["proposal"]["placement_status"] == "needs_review"
     assert placement_rows[0]["proposal"]["placement_rule"] == "by_year"
+    assert route_rows[0]["route_status"] == "route_candidate"
+    assert route_rows[0]["priority"] == "none"
+    assert route_rows[0]["review_stage"] == "accepted"
+    assert "top_tag:annual_spring_tea" in route_rows[0]["evidence"]
     assert import_rows[0]["import_status"] == "skipped"
     assert import_rows[0]["importer"] == "noop"
     assert {row["purpose"] for row in model_usage_rows} == {"chunk_embedding", "semantic_retrieval_embedding", "tag_inspection"}

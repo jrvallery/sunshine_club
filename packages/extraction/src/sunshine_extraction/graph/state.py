@@ -60,6 +60,7 @@ class DocumentPipelineState(TypedDict, total=False):
     confidence_calibration: dict[str, Any]
     placement_proposal: dict[str, Any]
     route: dict[str, Any]
+    route_decision: dict[str, Any]
     final_result: dict[str, Any]
     import_result: dict[str, Any]
 

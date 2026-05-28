@@ -1051,6 +1051,12 @@ Success criteria:
 - No low-quality extraction is accepted.
 - No unsupported file is lost.
 
+Current implementation:
+
+- Graph writes `sample-route-decisions.jsonl` from the `route_or_review` node.
+- Rows include route status, review reason, accepted flag, review priority, review stage, evidence, and metadata from quality/tag/placement/embedding state.
+- Run reports summarize route decisions by status, priority, and review stage, separate from final result distributions.
+
 ### 23. `persist_artifacts`
 
 Purpose:
@@ -1097,6 +1103,7 @@ Artifacts:
 - `sample-llm-tag-inspections.jsonl`
 - `sample-tag-candidates.jsonl`
 - `sample-placement-proposals.jsonl`
+- `sample-route-decisions.jsonl`
 - `sample-model-usage.jsonl`
 - `sample-import-results.jsonl`
 - `artifact-manifest.json`
@@ -1640,6 +1647,7 @@ Required artifacts:
 - `sample-llm-tag-inspections.jsonl`
 - `sample-tag-candidates.jsonl`
 - `sample-placement-proposals.jsonl`
+- `sample-route-decisions.jsonl`
 - `sample-model-usage.jsonl`
 - `sample-import-results.jsonl`
 - `sample-provider-attempts.jsonl`
