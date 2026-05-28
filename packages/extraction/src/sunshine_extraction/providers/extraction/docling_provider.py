@@ -140,7 +140,7 @@ def _export_markdown(document: Any) -> str:
 
 
 def _docling_structure(document: Any) -> dict[str, Any]:
-    page_rows = _docling_pages(getattr(document, "pages", None))
+    page_rows = _docling_pages(getattr(document, "pages", None), text_by_page=_docling_text_by_page(getattr(document, "texts", None)))
     pages = len(page_rows) if page_rows else _safe_len(getattr(document, "pages", None))
     tables = _safe_len(getattr(document, "tables", None))
     pictures = _safe_len(getattr(document, "pictures", None))
@@ -157,9 +157,10 @@ def _docling_structure(document: Any) -> dict[str, Any]:
     }
 
 
-def _docling_pages(pages: Any) -> list[dict[str, Any]]:
+def _docling_pages(pages: Any, *, text_by_page: dict[int, str] | None = None) -> list[dict[str, Any]]:
     if not pages:
         return []
+    page_text = text_by_page or {}
     rows: list[dict[str, Any]] = []
     try:
         iterator = list(pages.values()) if isinstance(pages, dict) else list(pages)
@@ -167,7 +168,7 @@ def _docling_pages(pages: Any) -> list[dict[str, Any]]:
         return []
     for fallback_index, page in enumerate(iterator, start=1):
         page_number = _safe_int(getattr(page, "page_no", None)) or _safe_int(getattr(page, "page_number", None)) or fallback_index
-        text = _safe_page_text(page)
+        text = _safe_page_text(page) or page_text.get(page_number, "")
         row = {
             "page_number": page_number,
             "text": text,
@@ -178,6 +179,55 @@ def _docling_pages(pages: Any) -> list[dict[str, Any]]:
         }
         rows.append(row)
     return rows
+
+
+def _docling_text_by_page(text_items: Any) -> dict[int, str]:
+    if not text_items:
+        return {}
+    try:
+        iterator = list(text_items.values()) if isinstance(text_items, dict) else list(text_items)
+    except TypeError:
+        return {}
+    by_page: dict[int, list[str]] = {}
+    for item in iterator:
+        text = _safe_text_item_text(item)
+        if not text:
+            continue
+        for page_number in _safe_text_item_page_numbers(item):
+            by_page.setdefault(page_number, []).append(text)
+    return {page_number: "\n\n".join(parts) for page_number, parts in by_page.items()}
+
+
+def _safe_text_item_text(item: Any) -> str:
+    for attr_name in ("text", "orig", "content", "caption"):
+        value = getattr(item, attr_name, None)
+        if value:
+            return str(value)
+    exporter = getattr(item, "export_to_text", None)
+    if callable(exporter):
+        try:
+            value = exporter()
+        except Exception:  # noqa: BLE001 - best-effort provider metadata.
+            return ""
+        return str(value or "")
+    return ""
+
+
+def _safe_text_item_page_numbers(item: Any) -> list[int]:
+    provenance = getattr(item, "prov", None) or getattr(item, "provenance", None)
+    if not provenance:
+        page_number = _safe_int(getattr(item, "page_no", None)) or _safe_int(getattr(item, "page_number", None))
+        return [page_number] if page_number is not None else []
+    try:
+        entries = list(provenance)
+    except TypeError:
+        entries = [provenance]
+    page_numbers: list[int] = []
+    for entry in entries:
+        page_number = _safe_int(getattr(entry, "page_no", None)) or _safe_int(getattr(entry, "page_number", None))
+        if page_number is not None:
+            page_numbers.append(page_number)
+    return page_numbers
 
 
 def _safe_page_text(page: Any) -> str:

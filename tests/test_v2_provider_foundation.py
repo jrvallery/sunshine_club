@@ -82,14 +82,49 @@ class _FakeDoclingDocument:
         return "# Sunshine Docling Text\n\nMeeting minutes."
 
 
+class _FakeDoclingProv:
+    def __init__(self, page_no: int) -> None:
+        self.page_no = page_no
+
+
+class _FakeDoclingTextItem:
+    def __init__(self, text: str, page_no: int) -> None:
+        self.text = text
+        self.prov = [_FakeDoclingProv(page_no)]
+
+
+class _FakeDoclingPageWithoutText:
+    def __init__(self, page_no: int) -> None:
+        self.page_no = page_no
+
+
+class _FakeDoclingDocumentWithTextProvenance:
+    pages = [_FakeDoclingPageWithoutText(1), _FakeDoclingPageWithoutText(2)]
+    tables = []
+    pictures = []
+    groups = []
+    texts = [
+        _FakeDoclingTextItem("Founders history paragraph.", 1),
+        _FakeDoclingTextItem("Newspaper clipping paragraph.", 2),
+        _FakeDoclingTextItem("Second clipping paragraph.", 2),
+    ]
+
+    def export_to_markdown(self) -> str:
+        return "Founders history paragraph.\n\nNewspaper clipping paragraph."
+
+
 class _FakeDoclingResult:
-    document = _FakeDoclingDocument()
+    def __init__(self, document=None) -> None:
+        self.document = document or _FakeDoclingDocument()
 
 
 class _FakeDoclingConverter:
+    def __init__(self, document=None) -> None:
+        self.document = document
+
     def convert(self, path: str) -> _FakeDoclingResult:
         assert path
-        return _FakeDoclingResult()
+        return _FakeDoclingResult(self.document)
 
 
 class _FakeLLMTagInspector:
@@ -979,6 +1014,25 @@ def test_docling_provider_extracts_with_injected_local_converter(tmp_path: Path)
     assert structure["pages"][1]["source"] == "docling"
     assert len(structure["tables"]) == 1
     assert len(structure["figures"]) == 3
+
+
+def test_docling_provider_recovers_page_text_from_text_item_provenance(tmp_path: Path) -> None:
+    source = tmp_path / "packet.pdf"
+    source.write_bytes(b"fake pdf")
+    sample = _sample(source)
+    provider = DoclingExtractionProvider(converter=_FakeDoclingConverter(_FakeDoclingDocumentWithTextProvenance()))
+
+    extraction, attempt = provider.extract(sample, {"strategy": "docling_layout"})
+    structure = normalize_document_structure(extraction, provider_attempts=[attempt.as_row()])
+
+    assert extraction.extraction_status == "extracted"
+    assert structure["page_count"] == 2
+    assert [page["text"] for page in structure["pages"]] == [
+        "Founders history paragraph.",
+        "Newspaper clipping paragraph.\n\nSecond clipping paragraph.",
+    ]
+    assert all(page["source"] == "docling" for page in structure["pages"])
+    assert attempt.metadata["structure"]["pages"][1]["text_length"] > 0
 
 
 def test_extraction_provider_factory_selects_current_and_docling(monkeypatch: pytest.MonkeyPatch) -> None:
