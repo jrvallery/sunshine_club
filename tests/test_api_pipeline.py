@@ -412,6 +412,74 @@ def test_golden_labels_can_read_postgres_v2_source(monkeypatch) -> None:
     assert "history_archive_general" in export.text
 
 
+def test_golden_label_mutations_can_use_postgres_v2_source(tmp_path: Path, monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+    source_file = tmp_path / "history.pdf"
+    source_file.write_text("history source", encoding="utf-8")
+
+    def fake_update(label_id: str, **kwargs) -> dict:
+        captured["update_label_id"] = label_id
+        captured["update_kwargs"] = kwargs
+        return {
+            "id": label_id,
+            "review_item_id": "review-1",
+            "run_id": "run-db-id",
+            "run_key": "qa_samples_full-1",
+            "preset_key": "qa_samples_full",
+            "source_path": str(source_file),
+            "relative_path": "History/history.pdf",
+            "segment_id": "seg-1",
+            "content_class": kwargs["content_class"],
+            "correct_primary_tag": kwargs["correct_primary_tag"],
+            "correct_secondary_tags": kwargs["correct_secondary_tags"],
+            "ocr_quality_label": kwargs["ocr_quality_label"],
+            "expected_review_required": kwargs["expected_review_required"],
+            "sensitive_record": kwargs["sensitive_record"],
+            "proposed_tag": "scrapbooks",
+            "proposed_secondary_tags": ["history_archive"],
+        }
+
+    def fake_delete(label_id: str) -> dict:
+        captured["delete_label_id"] = label_id
+        return {"deleted": True, "id": label_id, "source_path": str(source_file)}
+
+    def fake_file_path(label_id: str) -> Path:
+        captured["file_label_id"] = label_id
+        return source_file
+
+    monkeypatch.setattr("sunshine_api.routers.review.update_postgres_golden_label", fake_update)
+    monkeypatch.setattr("sunshine_api.routers.review.delete_postgres_golden_label", fake_delete)
+    monkeypatch.setattr("sunshine_api.routers.review.file_path_for_postgres_golden_label", fake_file_path)
+
+    edited = TestClient(app).patch(
+        "/admin/review/golden-labels/golden-1",
+        params={"source": "postgres"},
+        json={
+            "content_class": "document",
+            "correct_primary_tag": "history_archive_general",
+            "correct_secondary_tags": ["club_history"],
+            "ocr_quality_label": "ok",
+            "expected_review_required": False,
+            "sensitive_record": True,
+            "reviewer": "auditor",
+            "notes": "corrected",
+        },
+    )
+    file_response = TestClient(app).get("/admin/review/golden-labels/golden-1/file", params={"source": "postgres"})
+    deleted = TestClient(app).delete("/admin/review/golden-labels/golden-1", params={"source": "postgres"})
+
+    assert edited.status_code == 200
+    assert edited.json()["source"] == "postgres"
+    assert edited.json()["correct_primary_tag"] == "history_archive_general"
+    assert file_response.status_code == 200
+    assert file_response.text == "history source"
+    assert deleted.status_code == 200
+    assert deleted.json()["deleted"] is True
+    assert captured["update_label_id"] == "golden-1"
+    assert captured["delete_label_id"] == "golden-1"
+    assert captured["file_label_id"] == "golden-1"
+
+
 def test_semantic_index_build_can_use_postgres_golden_labels(tmp_path: Path, monkeypatch) -> None:
     captured = {}
 

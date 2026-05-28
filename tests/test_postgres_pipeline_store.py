@@ -757,6 +757,80 @@ def test_postgres_pipeline_store_lists_golden_labels_and_summary() -> None:
     assert connection.closed is True
 
 
+def test_postgres_pipeline_store_updates_deletes_and_resolves_golden_label_file(tmp_path: Path) -> None:
+    source_file = tmp_path / "a.pdf"
+    source_file.write_text("source", encoding="utf-8")
+
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.closed = False
+            self.committed = False
+            self.executed: list[tuple[str, tuple[Any, ...]]] = []
+
+        def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
+            self.executed.append((query, params))
+            normalized = " ".join(query.lower().split())
+            if "select gl.id" in normalized:
+                return _Cursor(
+                    {
+                        "id": "golden-id",
+                        "review_item_id": "review-id",
+                        "run_id": "run-id",
+                        "run_key": "run-1",
+                        "preset_key": "qa",
+                        "source_path": str(source_file),
+                        "relative_path": "Sunshine/a.pdf",
+                        "sample_path": None,
+                        "segment_id": "segment-1",
+                        "content_class": "scanned_document",
+                        "correct_primary_tag": "meeting_records",
+                        "correct_secondary_tags": ["meeting_minutes"],
+                        "ocr_quality_label": "poor",
+                        "expected_review_required": True,
+                        "sensitive_record": False,
+                        "correct_destination_path": None,
+                        "correct_placement_year": None,
+                        "correct_privacy": None,
+                        "reviewer": "james",
+                        "notes": "before",
+                        "proposed_tag": "meeting_records",
+                        "proposed_secondary_tags": ["meeting_minutes"],
+                    }
+                )
+            return _Cursor()
+
+        def commit(self) -> None:
+            self.committed = True
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+    store = PostgresPipelineStore("postgresql://local/test", connect_factory=lambda _url: connection)
+
+    edited = store.update_golden_label(
+        "golden-id",
+        content_class="document",
+        correct_primary_tag="history_archive_general",
+        correct_secondary_tags=["club_history"],
+        ocr_quality_label="ok",
+        expected_review_required=False,
+        sensitive_record=True,
+        reviewer="auditor",
+        notes="after",
+    )
+    path = store.file_path_for_golden_label("golden-id")
+    deleted = store.delete_golden_label("golden-id")
+
+    assert edited["id"] == "golden-id"
+    assert path == source_file
+    assert deleted == {"deleted": True, "id": "golden-id", "source_path": str(source_file)}
+    assert connection.committed is True
+    update_params = next(params for query, params in connection.executed if "update golden_labels_v2" in query)
+    assert update_params[:6] == ("document", "history_archive_general", '["club_history"]', "ok", False, True)
+    assert any("delete from golden_labels_v2" in query for query, _params in connection.executed)
+
+
 def test_postgres_pipeline_store_exports_golden_labels_to_sqlite(tmp_path: Path) -> None:
     class FakeConnection:
         def __init__(self) -> None:

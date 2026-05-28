@@ -15,12 +15,15 @@ from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 
 from sunshine_api.dependencies import review_store
 from sunshine_api.services.imports import (
+    delete_postgres_golden_label,
+    file_path_for_postgres_golden_label,
     get_postgres_review_item,
     list_postgres_golden_labels,
     list_postgres_review_items,
     postgres_golden_label_summary,
     postgres_review_summary,
     record_postgres_review_decision,
+    update_postgres_golden_label,
 )
 from sunshine_api.schemas import (
     DocumentPipelineRunRequest,
@@ -246,10 +249,34 @@ def golden_label_summary(source: str = "sqlite") -> dict[str, Any]:
 
 
 @router.patch("/admin/review/golden-labels/{label_id}")
-def update_golden_label(label_id: int, request: GoldenLabelUpdateRequest) -> dict[str, Any]:
+def update_golden_label(label_id: str, request: GoldenLabelUpdateRequest, source: str = "sqlite") -> dict[str, Any]:
+    if source == "postgres":
+        try:
+            return _postgres_golden_label_row(
+                update_postgres_golden_label(
+                    label_id,
+                    content_class=request.content_class,
+                    correct_primary_tag=request.correct_primary_tag,
+                    correct_secondary_tags=request.correct_secondary_tags,
+                    ocr_quality_label=request.ocr_quality_label,
+                    expected_review_required=request.expected_review_required,
+                    sensitive_record=request.sensitive_record,
+                    correct_destination_path=request.correct_destination_path,
+                    correct_placement_year=request.correct_placement_year,
+                    correct_privacy=request.correct_privacy,
+                    reviewer=request.reviewer,
+                    notes=request.notes,
+                )
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+    if source != "sqlite":
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
     try:
         return review_store().update_golden_label(
-            label_id,
+            _sqlite_int_id(label_id, "golden label"),
             content_class=request.content_class,
             correct_primary_tag=request.correct_primary_tag,
             correct_secondary_tags=request.correct_secondary_tags,
@@ -269,17 +296,38 @@ def update_golden_label(label_id: int, request: GoldenLabelUpdateRequest) -> dic
 
 
 @router.delete("/admin/review/golden-labels/{label_id}")
-def delete_golden_label(label_id: int) -> dict[str, Any]:
+def delete_golden_label(label_id: str, source: str = "sqlite") -> dict[str, Any]:
+    if source == "postgres":
+        try:
+            return delete_postgres_golden_label(label_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+    if source != "sqlite":
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
     try:
-        return review_store().delete_golden_label(label_id)
+        return review_store().delete_golden_label(_sqlite_int_id(label_id, "golden label"))
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @router.get("/admin/review/golden-labels/{label_id}/file")
-def golden_label_file(label_id: int) -> FileResponse:
+def golden_label_file(label_id: str, source: str = "sqlite") -> FileResponse:
+    if source == "postgres":
+        try:
+            path = file_path_for_postgres_golden_label(label_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except FileNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return FileResponse(path, filename=path.name)
+    if source != "sqlite":
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
     try:
-        path = review_store().file_path_for_golden_label(label_id)
+        path = review_store().file_path_for_golden_label(_sqlite_int_id(label_id, "golden label"))
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except FileNotFoundError as error:
@@ -676,6 +724,13 @@ def _postgres_review_text(row: dict[str, Any]) -> str:
         if value:
             return str(value)
     return ""
+
+
+def _sqlite_int_id(value: str, label: str) -> int:
+    try:
+        return int(value)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=f"{label} id must be an integer for sqlite source") from error
 
 
 def _postgres_golden_label_row(row: dict[str, Any]) -> dict[str, Any]:

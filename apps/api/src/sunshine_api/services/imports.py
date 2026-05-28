@@ -155,6 +155,70 @@ def export_postgres_golden_labels_sqlite(
     return store.export_golden_labels_sqlite(output_db, limit=limit)
 
 
+def get_postgres_golden_label(
+    label_id: str,
+    *,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> dict[str, Any]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.get_golden_label(label_id)
+
+
+def update_postgres_golden_label(
+    label_id: str,
+    *,
+    content_class: str | None = None,
+    correct_primary_tag: str | None = None,
+    correct_secondary_tags: list[str] | None = None,
+    ocr_quality_label: str | None = None,
+    expected_review_required: bool | None = None,
+    sensitive_record: bool | None = None,
+    correct_destination_path: str | None = None,
+    correct_placement_year: str | None = None,
+    correct_privacy: str | None = None,
+    reviewer: str | None = None,
+    notes: str | None = None,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> dict[str, Any]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.update_golden_label(
+        label_id,
+        content_class=content_class,
+        correct_primary_tag=correct_primary_tag,
+        correct_secondary_tags=correct_secondary_tags,
+        ocr_quality_label=ocr_quality_label,
+        expected_review_required=expected_review_required,
+        sensitive_record=sensitive_record,
+        correct_destination_path=correct_destination_path,
+        correct_placement_year=correct_placement_year,
+        correct_privacy=correct_privacy,
+        reviewer=reviewer,
+        notes=notes,
+    )
+
+
+def delete_postgres_golden_label(
+    label_id: str,
+    *,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> dict[str, Any]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.delete_golden_label(label_id)
+
+
+def file_path_for_postgres_golden_label(
+    label_id: str,
+    *,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> Path:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.file_path_for_golden_label(label_id)
+
+
 def get_postgres_review_item(
     item_id: str,
     *,
@@ -207,7 +271,10 @@ __all__ = [
     "import_langgraph_output_to_postgres",
     "import_langgraph_output_to_postgres_if_configured",
     "delete_postgres_pipeline_run_if_configured",
+    "delete_postgres_golden_label",
     "export_postgres_golden_labels_sqlite",
+    "file_path_for_postgres_golden_label",
+    "get_postgres_golden_label",
     "get_postgres_pipeline_run",
     "get_postgres_review_item",
     "get_postgres_run_report",
@@ -218,4 +285,5 @@ __all__ = [
     "postgres_runtime_summary",
     "postgres_review_summary",
     "record_postgres_review_decision",
+    "update_postgres_golden_label",
 ]

@@ -38,7 +38,7 @@ export default function GoldenLabelsPage() {
   });
   const updateLabel = useMutation({
     mutationFn: (payload: { id: number | string; body: Record<string, unknown> }) =>
-      patchJson<GoldenLabel>(`/api/admin/review/golden-labels/${payload.id}`, payload.body),
+      patchJson<GoldenLabel>(`/api/admin/review/golden-labels/${payload.id}${queryString({ source })}`, payload.body),
     onSuccess: async (label) => {
       setSelected(label);
       await Promise.all([
@@ -48,7 +48,7 @@ export default function GoldenLabelsPage() {
     }
   });
   const deleteLabel = useMutation({
-    mutationFn: (id: number | string) => deleteJson<{ deleted: boolean }>(`/api/admin/review/golden-labels/${id}`),
+    mutationFn: (id: number | string) => deleteJson<{ deleted: boolean }>(`/api/admin/review/golden-labels/${id}${queryString({ source })}`),
     onSuccess: async () => {
       setSelected(null);
       await Promise.all([
@@ -196,7 +196,7 @@ export default function GoldenLabelsPage() {
           onClose={() => setSelected(null)}
           onSave={(body) => updateLabel.mutate({ id: selected.id, body })}
           onDelete={() => deleteLabel.mutate(selected.id)}
-          editable={source === "sqlite"}
+          source={source}
         />
       ) : null}
     </main>
@@ -210,7 +210,7 @@ function GoldenLabelDrawer({
   onClose,
   onSave,
   onDelete,
-  editable
+  source
 }: {
   label: GoldenLabel;
   saving: boolean;
@@ -218,7 +218,7 @@ function GoldenLabelDrawer({
   onClose: () => void;
   onSave: (body: Record<string, unknown>) => void;
   onDelete: () => void;
-  editable: boolean;
+  source: "sqlite" | "postgres";
 }) {
   const [primary, setPrimary] = useState(label.correct_primary_tag);
   const [secondary, setSecondary] = useState(label.correct_secondary_tags);
@@ -249,7 +249,7 @@ function GoldenLabelDrawer({
           <p className="pathText">{label.source_path}</p>
           {label.source === "postgres" || label.segment_id ? <p className="muted">Segment {label.segment_id || "-"} Run {label.run_key || label.run_id || "-"}</p> : null}
           <div className="buttonRow">
-            <a className={editable ? "primaryButton" : "secondaryButton"} href={editable ? `/api/admin/review/golden-labels/${label.id}/file` : undefined} target="_blank">
+            <a className="primaryButton" href={`/api/admin/review/golden-labels/${label.id}/file${queryString({ source: label.source ?? source })}`} target="_blank">
               Open Source File
             </a>
           </div>
@@ -303,7 +303,7 @@ function GoldenLabelDrawer({
             <TextArea label="Notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={5} />
             <Button
               variant="primary"
-              disabled={saving || !editable}
+              disabled={saving}
               onClick={() =>
                 onSave({
                   content_class: contentClass || null,
@@ -320,10 +320,10 @@ function GoldenLabelDrawer({
                 })
               }
             >
-              {saving ? "Saving..." : editable ? "Save Label" : "SQLite labels only"}
+              {saving ? "Saving..." : "Save Label"}
             </Button>
-            <Button variant="danger" disabled={deleting || !editable} onClick={onDelete}>
-              {deleting ? "Deleting..." : editable ? "Delete Label" : "Delete disabled"}
+            <Button variant="danger" disabled={deleting} onClick={onDelete}>
+              {deleting ? "Deleting..." : "Delete Label"}
             </Button>
           </div>
         </section>

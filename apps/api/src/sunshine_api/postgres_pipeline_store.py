@@ -227,45 +227,103 @@ class PostgresPipelineStore:
         connection = self._connect_factory(self.database_url)
         try:
             rows = connection.execute(
-                """
-                select
-                    gl.id,
-                    gl.review_item_id,
-                    gl.run_id,
-                    r.run_key,
-                    r.preset_key,
-                    gl.source_path,
-                    gl.relative_path,
-                    gl.sample_path,
-                    gl.segment_id,
-                    gl.extracted_text_snippet,
-                    gl.content_class,
-                    gl.correct_primary_tag,
-                    gl.correct_secondary_tags,
-                    gl.ocr_quality_label,
-                    gl.expected_review_required,
-                    gl.sensitive_record,
-                    gl.correct_destination_path,
-                    gl.correct_placement_year,
-                    gl.correct_privacy,
-                    gl.reviewer,
-                    gl.notes,
-                    gl.proposed_tag,
-                    gl.proposed_secondary_tags,
-                    gl.proposed_confidence,
-                    gl.reviewed_at,
-                    gl.created_at,
-                    gl.updated_at
-                from golden_labels_v2 gl
-                left join pipeline_runs r on r.id = gl.run_id
-                order by gl.updated_at desc
-                limit %s
-                """,
+                _golden_label_select_sql("order by gl.updated_at desc limit %s"),
                 (max(1, min(int(limit), 10000)),),
             ).fetchall()
             return [_json_safe_row(_row_to_dict(row)) for row in rows]
         finally:
             connection.close()
+
+    def get_golden_label(self, label_id: str) -> dict[str, Any]:
+        connection = self._connect_factory(self.database_url)
+        try:
+            row = connection.execute(_golden_label_select_sql("where gl.id = %s"), (label_id,)).fetchone()
+            if row is None:
+                raise KeyError(f"Postgres golden label not found: {label_id}")
+            return _json_safe_row(_row_to_dict(row))
+        finally:
+            connection.close()
+
+    def update_golden_label(
+        self,
+        label_id: str,
+        *,
+        content_class: str | None = None,
+        correct_primary_tag: str | None = None,
+        correct_secondary_tags: list[str] | None = None,
+        ocr_quality_label: str | None = None,
+        expected_review_required: bool | None = None,
+        sensitive_record: bool | None = None,
+        correct_destination_path: str | None = None,
+        correct_placement_year: str | None = None,
+        correct_privacy: str | None = None,
+        reviewer: str | None = None,
+        notes: str | None = None,
+    ) -> dict[str, Any]:
+        existing = self.get_golden_label(label_id)
+        resolved_primary = (correct_primary_tag or existing.get("correct_primary_tag") or "").strip()
+        if not resolved_primary:
+            raise ValueError("correct_primary_tag is required")
+        resolved_secondary = _clean_json_tags(correct_secondary_tags) if correct_secondary_tags is not None else _clean_json_tags(existing.get("correct_secondary_tags"))
+        connection = self._connect_factory(self.database_url)
+        try:
+            connection.execute(
+                """
+                update golden_labels_v2
+                set content_class = %s,
+                    correct_primary_tag = %s,
+                    correct_secondary_tags = %s::jsonb,
+                    ocr_quality_label = %s,
+                    expected_review_required = %s,
+                    sensitive_record = %s,
+                    correct_destination_path = %s,
+                    correct_placement_year = %s,
+                    correct_privacy = %s,
+                    reviewer = %s,
+                    notes = %s,
+                    reviewed_at = coalesce(reviewed_at, now()),
+                    updated_at = now()
+                where id = %s
+                """,
+                (
+                    content_class if content_class is not None else existing.get("content_class"),
+                    resolved_primary,
+                    json.dumps(resolved_secondary, sort_keys=True),
+                    ocr_quality_label if ocr_quality_label is not None else existing.get("ocr_quality_label"),
+                    expected_review_required if expected_review_required is not None else existing.get("expected_review_required"),
+                    sensitive_record if sensitive_record is not None else existing.get("sensitive_record"),
+                    correct_destination_path if correct_destination_path is not None else existing.get("correct_destination_path"),
+                    correct_placement_year if correct_placement_year is not None else existing.get("correct_placement_year"),
+                    correct_privacy if correct_privacy is not None else existing.get("correct_privacy"),
+                    reviewer if reviewer is not None else existing.get("reviewer"),
+                    notes if notes is not None else existing.get("notes"),
+                    label_id,
+                ),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        return self.get_golden_label(label_id)
+
+    def delete_golden_label(self, label_id: str) -> dict[str, Any]:
+        existing = self.get_golden_label(label_id)
+        connection = self._connect_factory(self.database_url)
+        try:
+            connection.execute("delete from golden_labels_v2 where id = %s", (label_id,))
+            connection.commit()
+        finally:
+            connection.close()
+        return {"deleted": True, "id": label_id, "source_path": existing.get("source_path")}
+
+    def file_path_for_golden_label(self, label_id: str) -> Path:
+        label = self.get_golden_label(label_id)
+        for candidate in (label.get("sample_path"), label.get("source_path")):
+            if not candidate:
+                continue
+            path = Path(str(candidate))
+            if path.exists() and path.is_file():
+                return path
+        raise FileNotFoundError(f"No readable file found for Postgres golden label {label_id}")
 
     def golden_label_summary(self) -> dict[str, Any]:
         connection = self._connect_factory(self.database_url)
@@ -1202,6 +1260,56 @@ def _json_safe_row(row: dict[str, Any]) -> dict[str, Any]:
         else:
             safe[key] = value
     return safe
+
+
+def _golden_label_select_sql(suffix: str) -> str:
+    return f"""
+        select
+            gl.id,
+            gl.review_item_id,
+            gl.run_id,
+            r.run_key,
+            r.preset_key,
+            gl.source_path,
+            gl.relative_path,
+            gl.sample_path,
+            gl.segment_id,
+            gl.extracted_text_snippet,
+            gl.content_class,
+            gl.correct_primary_tag,
+            gl.correct_secondary_tags,
+            gl.ocr_quality_label,
+            gl.expected_review_required,
+            gl.sensitive_record,
+            gl.correct_destination_path,
+            gl.correct_placement_year,
+            gl.correct_privacy,
+            gl.reviewer,
+            gl.notes,
+            gl.proposed_tag,
+            gl.proposed_secondary_tags,
+            gl.proposed_confidence,
+            gl.reviewed_at,
+            gl.created_at,
+            gl.updated_at
+        from golden_labels_v2 gl
+        left join pipeline_runs r on r.id = gl.run_id
+        {suffix}
+        """
+
+
+def _clean_json_tags(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            parsed = [value]
+        value = parsed
+    if not isinstance(value, list):
+        return []
+    return sorted({str(tag).strip() for tag in value if str(tag).strip()})
 
 
 def _run_report_summary(
