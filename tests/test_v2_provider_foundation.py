@@ -129,6 +129,11 @@ class _FakeDoclingConverter:
         return _FakeDoclingResult(self.document)
 
 
+class _ExplodingDoclingConverter:
+    def convert(self, path: str) -> _FakeDoclingResult:
+        raise AssertionError(f"Docling converter should not run for {path}")
+
+
 class _FakeLLMTagInspector:
     model = "test-model"
     provider_name = "test"
@@ -1207,6 +1212,43 @@ def test_docling_provider_requires_local_model_cache_in_production(monkeypatch: 
     assert status["model_cache_required"] is True
     assert status["missing"] == ["rapidocr_model_cache"]
     assert status["error"] == "model_cache_missing"
+
+
+def test_docling_extract_fails_closed_when_required_model_cache_is_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sunshine_extraction.providers.extraction.docling_provider as docling_provider_module
+
+    source = tmp_path / "scan.pdf"
+    source.write_bytes(b"fake pdf")
+    sample = _sample(source)
+    monkeypatch.setenv("SUNSHINE_RUNTIME_MODE", "production")
+    monkeypatch.setattr(
+        docling_provider_module,
+        "_rapidocr_model_cache_status",
+        lambda: {
+            "provider": "rapidocr",
+            "ready": False,
+            "path": "/missing/models",
+            "required_files": ["det.pth"],
+            "present_files": [],
+            "missing_files": ["det.pth"],
+        },
+    )
+
+    extraction, attempt = DoclingExtractionProvider(converter=_ExplodingDoclingConverter()).extract(
+        sample,
+        {"strategy": "ocr_page_level"},
+    )
+
+    assert extraction.extraction_status == "failed"
+    assert extraction.text == ""
+    assert extraction.metadata["error"] == "model_cache_missing"
+    assert extraction.metadata["model_cache"]["missing_files"] == ["det.pth"]
+    assert extraction.warnings == ["docling_model_cache_missing"]
+    assert attempt.status == "failed"
+    assert attempt.metadata["model_cache_required"] is True
 
 
 def test_docling_provider_extracts_with_injected_local_converter(tmp_path: Path) -> None:

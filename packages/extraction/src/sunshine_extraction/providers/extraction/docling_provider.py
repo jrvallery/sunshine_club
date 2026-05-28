@@ -72,6 +72,39 @@ class DoclingExtractionProvider:
     ) -> tuple[ExtractionResult, ExtractionProviderAttempt]:
         del ocr_executor, ocr_artifacts
         started = time.monotonic()
+        cache_failure = _local_model_cache_failure()
+        if cache_failure:
+            extraction = ExtractionResult(
+                sample=sample,
+                plan={**plan, "provider": self.provider_name},
+                extraction_status="failed",
+                text="",
+                metadata={
+                    "provider": self.provider_name,
+                    "local_only": True,
+                    "error": cache_failure["error"],
+                    "model_cache": cache_failure["model_cache"],
+                    "model_cache_required": True,
+                },
+                page_count=None,
+                warnings=["docling_model_cache_missing"],
+            )
+            seconds = round(time.monotonic() - started, 6)
+            return extraction, ExtractionProviderAttempt(
+                provider=self.provider_name,
+                status="failed",
+                strategy=plan.get("strategy"),
+                seconds=seconds,
+                warnings=extraction.warnings,
+                metadata={
+                    "local_only": True,
+                    "text_length": 0,
+                    "page_count": None,
+                    "model_cache": cache_failure["model_cache"],
+                    "model_cache_required": True,
+                    "error": cache_failure["error"],
+                },
+            )
         try:
             converter = self._converter or self._build_converter()
             result = converter.convert(str(sample.sample_path))
@@ -301,3 +334,12 @@ def _local_model_cache_required() -> bool:
         or ("true" if (os.environ.get("SUNSHINE_RUNTIME_MODE") or os.environ.get("SUNSHINE_ENV") or "").strip().lower() == "production" else "")
     )
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _local_model_cache_failure() -> dict[str, Any] | None:
+    if not _local_model_cache_required():
+        return None
+    cache_status = _rapidocr_model_cache_status()
+    if cache_status.get("ready"):
+        return None
+    return {"error": "model_cache_missing", "model_cache": cache_status}
