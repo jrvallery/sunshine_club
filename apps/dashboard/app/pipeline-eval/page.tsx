@@ -4,13 +4,25 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
 import { Button } from "../../components/ui/Button";
-import { CheckboxField, SelectInput, TextInput } from "../../components/ui/FormControls";
+import { CheckboxField, SelectInput, TextArea, TextInput } from "../../components/ui/FormControls";
 import { KeyValue } from "../../components/ui/KeyValue";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { fetchJson, postJson, queryString } from "../../lib/api";
 import type { PipelineEvalComparison, PipelineEvalDrilldown, PipelineEvalRun, PipelineEvalRunResponse } from "../../lib/types";
 
 type DrilldownType = "failures" | "failure_groups" | "results" | "model_usage" | "artifact_manifest";
+type ExtractionProviderName = "current" | "docling" | "mineru" | "ragflow_deepdoc" | "unstructured";
+
+type ProviderBenchmarkLatest = {
+  ok: boolean;
+  exists: boolean;
+  output_dir: string;
+  summary?: Record<string, unknown>;
+  recommendations?: Array<Record<string, unknown>>;
+  results?: Array<Record<string, unknown>>;
+};
+
+const EXTRACTION_PROVIDERS: ExtractionProviderName[] = ["current", "docling", "mineru", "ragflow_deepdoc", "unstructured"];
 
 export default function PipelineEvalPage() {
   const queryClient = useQueryClient();
@@ -23,6 +35,11 @@ export default function PipelineEvalPage() {
   const [enableLlmTags, setEnableLlmTags] = useState(false);
   const [enableOcr, setEnableOcr] = useState(false);
   const [ocrFallbackProvider, setOcrFallbackProvider] = useState("disabled");
+  const [benchmarkOutputDir, setBenchmarkOutputDir] = useState(".local/provider-benchmarks");
+  const [benchmarkSampleManifest, setBenchmarkSampleManifest] = useState("docs/provider_benchmark_canonical_samples.example.json");
+  const [benchmarkSampleRoot, setBenchmarkSampleRoot] = useState("");
+  const [benchmarkPaths, setBenchmarkPaths] = useState("");
+  const [benchmarkProviders, setBenchmarkProviders] = useState<ExtractionProviderName[]>(["current", "docling"]);
 
   const evalRuns = useQuery({
     queryKey: ["pipeline-eval-runs"],
@@ -51,6 +68,11 @@ export default function PipelineEvalPage() {
         `/api/admin/pipeline-eval/runs/${activeRun?.id}/compare${queryString({ baseline_eval_run_id: baselineRun?.id })}`
       )
   });
+  const providerBenchmark = useQuery({
+    queryKey: ["provider-benchmark-latest", benchmarkOutputDir],
+    enabled: Boolean(benchmarkOutputDir),
+    queryFn: () => fetchJson<ProviderBenchmarkLatest>(`/api/admin/provider-benchmarks/latest${queryString({ output_dir: benchmarkOutputDir })}`)
+  });
   const runEval = useMutation({
     mutationFn: () =>
       postJson<PipelineEvalRunResponse>("/api/admin/pipeline-eval/run", {
@@ -77,6 +99,22 @@ export default function PipelineEvalPage() {
       setSelectedRun(payload.eval_run);
       await queryClient.invalidateQueries({ queryKey: ["pipeline-eval-runs"] });
       await queryClient.invalidateQueries({ queryKey: ["pipeline-eval-drilldown"] });
+    }
+  });
+  const runProviderBenchmark = useMutation({
+    mutationFn: () =>
+      postJson<ProviderBenchmarkLatest>("/api/admin/provider-benchmarks/run", {
+        output_dir: benchmarkOutputDir,
+        sample_manifest: benchmarkSampleManifest || undefined,
+        sample_root: benchmarkSampleRoot || undefined,
+        paths: benchmarkPaths
+          .split("\n")
+          .map((path) => path.trim())
+          .filter(Boolean),
+        providers: benchmarkProviders
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["provider-benchmark-latest"] });
     }
   });
   const summary = activeRun?.summary;
@@ -144,6 +182,73 @@ export default function PipelineEvalPage() {
             {importEval.isPending ? "Importing..." : "Import Existing Eval"}
           </Button>
         </div>
+      </section>
+
+      <section className="panel actionPanel">
+        <div>
+          <h2>Provider Benchmarks</h2>
+          <p className="muted">
+            Compares local extraction providers on the same files before changing OCR, Docling, or future scrapbook page-range segmentation defaults.
+          </p>
+        </div>
+        <div className="formGrid compactForm">
+          <TextInput label="Benchmark output dir" value={benchmarkOutputDir} onChange={(event) => setBenchmarkOutputDir(event.target.value)} />
+          <TextInput label="Sample manifest" value={benchmarkSampleManifest} onChange={(event) => setBenchmarkSampleManifest(event.target.value)} />
+          <TextInput label="Sample root" value={benchmarkSampleRoot} onChange={(event) => setBenchmarkSampleRoot(event.target.value)} />
+          <TextArea
+            label="Extra paths"
+            value={benchmarkPaths}
+            onChange={(event) => setBenchmarkPaths(event.target.value)}
+            rows={4}
+            placeholder="/mnt/sunshine/path/to/file.pdf"
+          />
+          <div className="checkboxGroup">
+            {EXTRACTION_PROVIDERS.map((provider) => (
+              <CheckboxField
+                key={provider}
+                label={provider}
+                checked={benchmarkProviders.includes(provider)}
+                onChange={(event) => setBenchmarkProviders(toggleProvider(benchmarkProviders, provider, event.target.checked))}
+              />
+            ))}
+          </div>
+          <Button variant="primary" disabled={runProviderBenchmark.isPending || !benchmarkProviders.length} onClick={() => runProviderBenchmark.mutate()}>
+            {runProviderBenchmark.isPending ? "Benchmarking..." : "Run Benchmark"}
+          </Button>
+          <Button disabled={providerBenchmark.isFetching} onClick={() => queryClient.invalidateQueries({ queryKey: ["provider-benchmark-latest"] })}>
+            {providerBenchmark.isFetching ? "Refreshing..." : "Refresh Latest"}
+          </Button>
+        </div>
+        {providerBenchmark.data?.exists ? (
+          <div className="drawerGrid">
+            <section>
+              <h3>Summary</h3>
+              <KeyValue label="Output dir" value={providerBenchmark.data.output_dir} />
+              <KeyValue label="Samples" value={String(providerBenchmark.data.summary?.total_samples ?? providerBenchmark.data.results?.length ?? 0)} />
+              <KeyValue label="Providers" value={providerList(providerBenchmark.data.summary)} />
+              <KeyValue label="Recommended" value={recommendedProvider(providerBenchmark.data.recommendations)} />
+            </section>
+            <section>
+              <h3>Promotion Notes</h3>
+              {(providerBenchmark.data.recommendations ?? []).slice(0, 8).map((row, index) => (
+                <KeyValue
+                  key={`${String(row.sample_category ?? row.provider ?? index)}-${index}`}
+                  label={String(row.sample_category ?? row.category ?? row.provider ?? `row ${index + 1}`)}
+                  value={recommendationValue(row)}
+                />
+              ))}
+              {!(providerBenchmark.data.recommendations ?? []).length ? <p className="muted">No recommendations written yet.</p> : null}
+            </section>
+            <section className="wideSection">
+              <h3>Result Rows</h3>
+              <ProviderBenchmarkRows rows={providerBenchmark.data.results ?? []} />
+            </section>
+          </div>
+        ) : (
+          <p className="muted">
+            {providerBenchmark.isError ? `Latest benchmark lookup failed: ${providerBenchmark.error.message}` : "No benchmark artifacts found for this output dir yet."}
+          </p>
+        )}
       </section>
 
       <section className="bands">
@@ -496,11 +601,87 @@ function EvalRows({ rows }: { rows: Array<Record<string, unknown>> }) {
   );
 }
 
+function ProviderBenchmarkRows({ rows }: { rows: Array<Record<string, unknown>> }) {
+  return (
+    <div className="tableWrap" tabIndex={0} aria-label="Provider benchmark results table">
+      <table>
+        <thead>
+          <tr>
+            <th>File</th>
+            <th>Provider</th>
+            <th>Status</th>
+            <th>Quality</th>
+            <th>Text</th>
+            <th>Warnings</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.slice(0, 100).map((row, index) => (
+            <tr key={`${String(row.source_path ?? row.path ?? index)}-${String(row.provider ?? index)}`}>
+              <td className="pathText">
+                <div className="cellStack">
+                  <strong>{String(row.filename ?? row.name ?? row.relative_path ?? row.path ?? row.source_path ?? "-")}</strong>
+                  <span>{String(row.sample_category ?? row.category ?? "-")}</span>
+                </div>
+              </td>
+              <td>{String(row.provider ?? "-")}</td>
+              <td>
+                <StatusBadge value={String(row.status ?? row.extraction_status ?? "-")} tone={String(row.status ?? "").includes("fail") ? "danger" : "default"} />
+              </td>
+              <td>{String(row.quality ?? row.ocr_quality ?? "-")}</td>
+              <td>{String(row.text_length ?? row.total_text_length ?? row.char_count ?? 0)}</td>
+              <td>{formatWarnings(row.warnings)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function expectedValue(row: Record<string, unknown>) {
   if (typeof row.count === "number" && row.reason) {
     return `${row.count} affected`;
   }
   return String(row.correct_primary_tag ?? row.expected_destination_path ?? row.provider ?? "-");
+}
+
+function toggleProvider(providers: ExtractionProviderName[], provider: ExtractionProviderName, checked: boolean) {
+  if (checked) {
+    return providers.includes(provider) ? providers : [...providers, provider];
+  }
+  return providers.filter((item) => item !== provider);
+}
+
+function providerList(summary: Record<string, unknown> | undefined) {
+  const providers = summary?.providers;
+  if (Array.isArray(providers)) {
+    return providers.map(String).join(", ") || "-";
+  }
+  const byProvider = summary?.by_provider;
+  if (byProvider && typeof byProvider === "object" && !Array.isArray(byProvider)) {
+    return Object.keys(byProvider).join(", ") || "-";
+  }
+  return "-";
+}
+
+function recommendedProvider(recommendations: Array<Record<string, unknown>> | undefined) {
+  const first = recommendations?.find((row) => row.recommended_provider || row.provider);
+  return String(first?.recommended_provider ?? first?.provider ?? "-");
+}
+
+function recommendationValue(row: Record<string, unknown>) {
+  const provider = String(row.recommended_provider ?? row.provider ?? "-");
+  const decision = String(row.decision ?? row.recommendation ?? row.status ?? "-");
+  const reason = String(row.reason ?? row.notes ?? row.evidence ?? "");
+  return [provider, decision, reason].filter((part) => part && part !== "-").join(": ") || "-";
+}
+
+function formatWarnings(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.map(String).filter(Boolean).join("; ") || "-";
+  }
+  return String(value ?? "-");
 }
 
 function reasonValue(row: Record<string, unknown>) {

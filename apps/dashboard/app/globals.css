@@ -1453,6 +1453,14 @@ td:first-child {
   width: auto;
 }
 
+.checkboxGroup {
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+}
+
 .runStartForm {
   margin-top: 16px;
 }

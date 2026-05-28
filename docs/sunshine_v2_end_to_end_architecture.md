@@ -751,6 +751,8 @@ Implementation note:
 - The first implementation pass creates the data model, artifact shape, and conservative review-only split proposals when strong boundary evidence exists.
 - If Docling produces reliable page/section boundaries during the spike, those rows should emit candidate page groups for dashboard review.
 - Future Docling/Cortex layout signals should plug into this stage as additional boundary evidence, not bypass it, so long scrapbook PDFs can later be promoted into accepted child documents without changing the graph shape.
+- Long scrapbook packets, newspaper packets, and mixed historical PDFs should be treated as parent containers first. The system may create logical child-document proposals by page range, but it must not split, delete, or rewrite the source PDF during automated processing.
+- This capability is allowed in the current V2 pass as review-only segmentation because the required page-level structure already exists. Physical PDF splitting/export is a later reviewed action after provider benchmarks prove enough boundary quality.
 
 Current implementation:
 
@@ -1557,8 +1559,8 @@ Important missing V2 dependencies:
 - Qdrant client, Compose service, readiness metadata, and a Settings-page provider health/provisioning surface exist for inspecting local infrastructure and triggering Qdrant rebuilds.
 - Postgres client and Compose service exist; V2 migrations now include run/results/model/provider/segment/chunk/embedding tables, and the API exposes a read-only Postgres runtime summary/listing surface. Dashboard runtime still needs to move from SQLite to Postgres as the authoritative store.
 - Local embedding/vector indexing stack is wired through providers, optional Qdrant indexing, and a Postgres-to-Qdrant rebuild service; production still needs a reviewed canonical collection policy.
-- Provider benchmark tooling exists for extraction providers and emits promotion recommendations; dashboard benchmark review and real Docling/MinerU/RAGFlow dependency benchmarking still need to be finished.
-- The provider benchmark API returns summary, result rows, and promotion recommendations from benchmark artifacts so the dashboard can present provider-comparison decisions without re-deriving them client-side.
+- Provider benchmark tooling exists for extraction providers and emits promotion recommendations; real Docling/MinerU/RAGFlow dependency benchmarking still needs to be finished.
+- The provider benchmark API returns summary, result rows, and promotion recommendations from benchmark artifacts, and the Pipeline Quality Eval dashboard now has a Provider Benchmarks panel for running and reviewing those artifacts.
 - Provider benchmarks can now run from a JSON sample manifest, and `docs/provider_benchmark_canonical_samples.example.json` defines the intended canonical local sample categories.
 
 ## Local-Only Infrastructure Decision
@@ -2023,6 +2025,7 @@ V2 is successful when:
 - Postgres is required for V2 production dashboard/run/review state.
 - A local vector database is required; Qdrant is the recommended default.
 - Docling remains the first recommended OSS parser/OCR provider to implement and benchmark.
+- Long scrapbook/newspaper/mixed PDFs are handled through immutable parent files plus review-only logical page-range segment proposals before any future physical split/export.
 
 ## Remaining Open Questions
 
