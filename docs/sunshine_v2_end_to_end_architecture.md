@@ -494,7 +494,8 @@ Current implementation:
 - `sample_pipeline.py` imports those contracts for legacy compatibility instead of redefining them.
 - `services/extraction.py` owns native text, metadata, spreadsheet metadata, OCR-page extraction dispatch, and text-validation repair/escalation behavior.
 - `providers/extraction/native_text.py`, `providers/extraction/photo_metadata.py`, and `providers/extraction/spreadsheet.py` own the current local extraction helpers for those strategies.
-- `providers/ocr.py` owns local Tesseract and Cortex OCR executor implementations used by graph extraction and repair nodes.
+- `providers/extraction/tesseract_ocr.py` and `providers/extraction/cortex_ocr.py` own local Tesseract and Cortex OCR executor implementations used by graph extraction and repair nodes.
+- `providers/extraction/ocr_common.py` owns shared OCR page/document row helpers; `providers/ocr.py` remains a compatibility import wrapper.
 - Production graph/provider code no longer imports `sample_pipeline.py`; that module remains a legacy CLI compatibility runner and test target.
 
 ### 8. `validate_extraction`

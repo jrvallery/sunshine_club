@@ -12,6 +12,14 @@ def __getattr__(name: str):
         from sunshine_extraction.providers.extraction.docling_provider import DoclingExtractionProvider
 
         return DoclingExtractionProvider
+    if name == "CortexNativeOcrExecutor":
+        from sunshine_extraction.providers.extraction.cortex_ocr import CortexNativeOcrExecutor
+
+        return CortexNativeOcrExecutor
+    if name == "LocalTesseractOcrExecutor":
+        from sunshine_extraction.providers.extraction.tesseract_ocr import LocalTesseractOcrExecutor
+
+        return LocalTesseractOcrExecutor
     if name == "extraction_provider_from_env":
         from sunshine_extraction.providers.extraction.factory import extraction_provider_from_env
 
@@ -32,9 +40,11 @@ def __getattr__(name: str):
 
 __all__ = [
     "CurrentExtractionProvider",
+    "CortexNativeOcrExecutor",
     "DoclingExtractionProvider",
     "ExtractionProvider",
     "ExtractionProviderAttempt",
+    "LocalTesseractOcrExecutor",
     "extract_photo_metadata",
     "extract_spreadsheet_metadata",
     "extract_text",

@@ -13,7 +13,8 @@ from sunshine_extraction.providers.chunking.legacy import chunk_content
 from sunshine_extraction.providers.extraction.native_text import extract_text
 from sunshine_extraction.providers.extraction.photo_metadata import extract_photo_metadata
 from sunshine_extraction.providers.extraction.spreadsheet import extract_spreadsheet_metadata
-from sunshine_extraction.providers.ocr import CortexNativeOcrExecutor, LocalTesseractOcrExecutor
+from sunshine_extraction.providers.extraction.cortex_ocr import CortexNativeOcrExecutor
+from sunshine_extraction.providers.extraction.tesseract_ocr import LocalTesseractOcrExecutor
 from sunshine_extraction.services.content import IMAGE_EXTENSIONS, SampleFile
 from sunshine_extraction.services.quality.gates import extraction_quality_gate
 from sunshine_extraction.services.quality.text_validation import validate_extracted_text, with_text_validation
