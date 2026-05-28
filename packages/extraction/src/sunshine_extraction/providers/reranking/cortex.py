@@ -8,6 +8,8 @@ from sunshine_extraction.config import DEFAULT_CORTEX_BASE_URL
 from sunshine_extraction.cortex import DEFAULT_CORTEX_RERANK_MODEL, CortexClient
 from sunshine_extraction.providers.extraction.ocr_common import cortex_root_base_url
 from sunshine_extraction.providers.reranking.base import RerankProviderAttempt
+from sunshine_extraction.providers.reranking.cache import rerank_cache_key
+from sunshine_extraction.services.cache import SQLiteModelCallCache
 
 
 class CortexRerankProvider:
@@ -20,11 +22,13 @@ class CortexRerankProvider:
         base_url: str = DEFAULT_CORTEX_BASE_URL,
         model: str = DEFAULT_CORTEX_RERANK_MODEL,
         timeout_seconds: float = 120,
+        cache: SQLiteModelCallCache | None = None,
     ) -> None:
         self.api_key = api_key
         self.base_url = cortex_root_base_url(base_url)
         self.model = model
         self.timeout_seconds = timeout_seconds
+        self.cache = cache
 
     def dependency_status(self) -> dict[str, Any]:
         return {
@@ -48,6 +52,18 @@ class CortexRerankProvider:
                 warnings=["no_documents_to_rerank"],
                 metadata={"local_only": True},
             )
+        cache_key = rerank_cache_key(
+            query_text=query_text,
+            documents=documents,
+            provider=self.provider_name,
+            model=self.model,
+            limit=limit,
+        )
+        if self.cache is not None:
+            cached = self.cache.get_json("reranking", cache_key)
+            if cached:
+                self.cache.record_hit("reranking", cache_key)
+                return _cached_rerank(cached, provider=self.provider_name, model=self.model)
         if not self.api_key:
             return documents[:limit], RerankProviderAttempt(
                 provider=self.provider_name,
@@ -79,7 +95,7 @@ class CortexRerankProvider:
                 metadata={"local_only": True, "base_url": self.base_url},
             )
         reranked = _reranked_documents(payload, documents, limit)
-        return reranked, RerankProviderAttempt(
+        attempt = RerankProviderAttempt(
             provider=self.provider_name,
             model=self.model,
             status="reranked",
@@ -89,6 +105,16 @@ class CortexRerankProvider:
             warnings=[],
             metadata={"local_only": True, "base_url": self.base_url},
         )
+        if self.cache is not None:
+            self.cache.set_json(
+                "reranking",
+                cache_key,
+                {
+                    "documents": reranked,
+                    "attempt": attempt.as_row(),
+                },
+            )
+        return reranked, attempt
 
 
 def _reranked_documents(payload: dict[str, Any], fallback: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
@@ -106,6 +132,25 @@ def _reranked_documents(payload: dict[str, Any], fallback: list[dict[str, Any]],
             merged["rerank_score"] = float(score)
         reranked.append(merged)
     return reranked or fallback[:limit]
+
+
+def _cached_rerank(payload: dict[str, Any], *, provider: str, model: str) -> tuple[list[dict[str, Any]], RerankProviderAttempt]:
+    documents = payload.get("documents")
+    if not isinstance(documents, list):
+        documents = []
+    attempt_payload = dict(payload.get("attempt") or {})
+    metadata = dict(attempt_payload.get("metadata") or {})
+    metadata.update({"cache_hit": True, "local_only": True})
+    return [dict(document) for document in documents if isinstance(document, dict)], RerankProviderAttempt(
+        provider=str(attempt_payload.get("provider") or provider),
+        model=str(attempt_payload.get("model") or model),
+        status=str(attempt_payload.get("status") or "reranked"),
+        query_count=0,
+        input_count=int(attempt_payload.get("input_count") or len(documents)),
+        output_count=int(attempt_payload.get("output_count") or len(documents)),
+        warnings=list(attempt_payload.get("warnings") or []),
+        metadata=metadata,
+    )
 
 
 __all__ = ["CortexRerankProvider"]

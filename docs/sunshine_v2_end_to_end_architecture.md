@@ -1006,6 +1006,7 @@ Current implementation:
 - The retrieval graph node can now apply an optional Cortex reranker after semantic retrieval when `SUNSHINE_RERANK_PROVIDER=cortex` or a reranker is injected. Rerank attempts are stored in retrieval metadata, reranked examples keep `rerank_score`, and model-usage rows record local rerank call counts.
 - Single-file and batch graph runtimes accept injected retrieval/rerank providers for controlled experiments, and the LangGraph CLI exposes `--rerank-provider cortex|disabled` for local provider comparison runs.
 - The local-infrastructure API and Settings dashboard report Cortex reranker readiness, and the provider registry treats local reranking as a first-class capability.
+- Cortex reranking uses the local SQLite model-call cache when configured through `SUNSHINE_MODEL_CACHE_PATH`; rerank cache hits remain visible in retrieval metadata without being counted as new model calls.
 - `graph/nodes/retrieval.py` owns the `retrieve_labeled_examples` node, separated from chunk embedding and vector indexing.
 - Graph runs write `sample-retrieval-results.jsonl` with provider, status, index path, query count, result count, warnings, and metadata.
 - Missing semantic indexes are explicit skipped retrieval attempts with `semantic_index_missing`, not silent absence.

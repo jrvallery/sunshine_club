@@ -112,6 +112,8 @@ def _maybe_rerank_examples(
         return examples, None, None
     started = time.monotonic()
     reranked_examples, attempt = reranker.rerank(query_text=query_text, documents=examples, limit=limit)
+    if attempt.query_count <= 0:
+        return reranked_examples, attempt, None
     usage = _model_usage_row(
         state,
         node="retrieve_labeled_examples",

@@ -136,7 +136,7 @@ def _model_call_cache_status() -> dict[str, Any]:
         "local_only": True,
         "path": str(path) if path else None,
         "exists": path.exists() if path else False,
-        "namespaces": ["embedding", "llm_tag_inspection"],
+        "namespaces": ["embedding", "llm_tag_inspection", "reranking"],
     }
 
 

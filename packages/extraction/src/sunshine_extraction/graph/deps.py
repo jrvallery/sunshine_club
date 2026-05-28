@@ -65,7 +65,7 @@ def _resolve_deps(
         "chunk_embedding_provider": chunk_embedding_provider or CurrentChunkEmbeddingProvider(embedding_provider, cache=active_model_call_cache),
         "vector_store": vector_store or _vector_store_from_env(),
         "semantic_retrieval_provider": semantic_retrieval_provider or _semantic_retrieval_provider_from_env(embedding_provider),
-        "rerank_provider": rerank_provider if rerank_provider is not None else _rerank_provider_from_env(),
+        "rerank_provider": rerank_provider if rerank_provider is not None else _rerank_provider_from_env(cache=active_model_call_cache),
         "llm_tag_inspection_provider": llm_tag_inspection_provider or CurrentLLMTagInspectionProvider(active_llm_tag_inspector, cache=active_model_call_cache),
         "embedding_provider": embedding_provider,
         "embedding_failure_mode": _embedding_failure_mode(embedding_failure_mode),
@@ -107,7 +107,7 @@ def _semantic_retrieval_provider_from_env(embedding_provider: EmbeddingProvider)
     return CurrentSemanticRetrievalProvider(embedding_provider)
 
 
-def _rerank_provider_from_env() -> RerankProvider | None:
+def _rerank_provider_from_env(*, cache: SQLiteModelCallCache | None = None) -> RerankProvider | None:
     provider_name = os.environ.get("SUNSHINE_RERANK_PROVIDER", "").strip().lower()
     if not provider_name or provider_name in {"disabled", "none", "off"}:
         return None
@@ -121,6 +121,7 @@ def _rerank_provider_from_env() -> RerankProvider | None:
         base_url=os.environ.get("CORTEX_BASE_URL", DEFAULT_CORTEX_BASE_URL),
         model=os.environ.get("SUNSHINE_RERANK_MODEL", DEFAULT_CORTEX_RERANK_MODEL),
         timeout_seconds=float(os.environ.get("SUNSHINE_RERANK_TIMEOUT_SECONDS", "120")),
+        cache=cache,
     )
 
 

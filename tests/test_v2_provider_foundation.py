@@ -37,6 +37,7 @@ from sunshine_extraction.providers.llm import CortexLLMTagInspector, CurrentLLMT
 from sunshine_extraction.providers.observability import LangfuseObservabilityProvider, NoopObservabilityProvider
 from sunshine_extraction.providers.reranking import CortexRerankProvider
 from sunshine_extraction.providers.reranking.base import RerankProviderAttempt
+from sunshine_extraction.providers.reranking.cache import rerank_cache_key
 from sunshine_extraction.providers.retrieval import CurrentSemanticRetrievalProvider, GoldenExampleRetrievalProvider, QdrantSemanticRetrievalProvider
 from sunshine_extraction.providers.retrieval.base import SemanticRetrievalProviderAttempt
 from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider, SQLiteGoldenVectorStoreProvider
@@ -652,6 +653,82 @@ def test_retrieve_labeled_examples_node_reranks_examples_when_provider_is_config
     assert result["model_usage"][-1]["metadata"]["call_count"] == 1
 
 
+def test_retrieve_labeled_examples_node_does_not_count_cached_rerank_as_model_call(tmp_path: Path) -> None:
+    source = tmp_path / "founders.txt"
+    source.write_text("Founders history", encoding="utf-8")
+    sample = _sample(source, relative_path="History/founders.txt")
+    extraction = ExtractionResult(
+        sample=sample,
+        plan={"strategy": "text_extraction", "document_subtype": "historical_summary"},
+        extraction_status="extracted",
+        text="Founders of Sunshine Club organized in 1902.",
+        metadata={},
+        page_count=1,
+        warnings=[],
+    )
+
+    class FakeRetrievalProvider:
+        provider_name = "fake"
+
+        def retrieve(
+            self,
+            *,
+            index_path: str | None,
+            query_text: str,
+            limit: int,
+            metadata_filter: dict[str, object] | None = None,
+        ) -> tuple[list[dict[str, object]], SemanticRetrievalProviderAttempt]:
+            del query_text, limit, metadata_filter
+            return [{"correct_primary_tag": "history_archive_general", "text": "founders history"}], SemanticRetrievalProviderAttempt(
+                provider="fake",
+                status="retrieved",
+                index_path=index_path,
+                query_count=1,
+                result_count=1,
+                warnings=[],
+                metadata={"local_only": True},
+            )
+
+    class CachedRerankProvider:
+        provider_name = "cortex"
+
+        def rerank(self, *, query_text: str, documents: list[dict[str, object]], limit: int) -> tuple[list[dict[str, object]], RerankProviderAttempt]:
+            del query_text, limit
+            return [{**documents[0], "rerank_score": 0.99}], RerankProviderAttempt(
+                provider="cortex",
+                model="rerank-local",
+                status="reranked",
+                query_count=0,
+                input_count=1,
+                output_count=1,
+                warnings=[],
+                metadata={"local_only": True, "cache_hit": True},
+            )
+
+    result = _retrieve_labeled_examples_node(
+        {
+            "source_path": str(source),
+            "relative_path": "History/founders.txt",
+            "filename": "founders.txt",
+            "content_class": {"final_class": "document"},
+            "extraction_plan": {"document_subtype": "historical_summary"},
+            "extraction_result": extraction,
+            "warnings": [],
+            "model_usage": [],
+        },
+        {
+            "semantic_index_path": "semantic.sqlite",
+            "semantic_retrieval_provider": FakeRetrievalProvider(),
+            "rerank_provider": CachedRerankProvider(),
+            "embedding_provider": PlaceholderEmbeddingProvider(dimensions=4),
+        },
+    )
+
+    assert result["semantic_examples"][0]["rerank_score"] == 0.99
+    assert result["retrieval_result"]["metadata"]["rerank"]["metadata"]["cache_hit"] is True
+    assert not any(row["purpose"] == "semantic_example_rerank" for row in result["model_usage"])
+
+
 def test_retrieval_and_rerank_provider_boundaries_are_local_only() -> None:
     golden = GoldenExampleRetrievalProvider(PlaceholderEmbeddingProvider(dimensions=4))
     qdrant = QdrantSemanticRetrievalProvider(url="http://127.0.0.1:6333", collection="sunshine-test")
@@ -670,6 +747,44 @@ def test_retrieval_and_rerank_provider_boundaries_are_local_only() -> None:
     assert rerank_attempt.provider == "cortex"
     assert rerank_attempt.status == "skipped"
     assert rerank_attempt.metadata["local_only"] is True
+
+
+def test_cortex_rerank_provider_uses_local_cache(tmp_path: Path) -> None:
+    cache = SQLiteModelCallCache(tmp_path / "model-cache.sqlite")
+    documents = [{"text": "newspaper clipping"}, {"text": "founders history"}]
+    cache_key = rerank_cache_key(
+        query_text="founders",
+        documents=documents,
+        provider="cortex",
+        model="rerank-local",
+        limit=2,
+    )
+    cache.set_json(
+        "reranking",
+        cache_key,
+        {
+            "documents": [{**documents[1], "rerank_score": 0.99}, {**documents[0], "rerank_score": 0.1}],
+            "attempt": {
+                "provider": "cortex",
+                "model": "rerank-local",
+                "status": "reranked",
+                "query_count": 1,
+                "input_count": 2,
+                "output_count": 2,
+                "warnings": [],
+                "metadata": {"local_only": True, "base_url": "http://cortex.local"},
+            },
+        },
+    )
+    provider = CortexRerankProvider(api_key="", base_url="http://cortex.local", model="rerank-local", cache=cache)
+
+    reranked, attempt = provider.rerank(query_text="founders", documents=documents, limit=2)
+
+    assert reranked[0]["text"] == "founders history"
+    assert reranked[0]["rerank_score"] == 0.99
+    assert attempt.status == "reranked"
+    assert attempt.query_count == 0
+    assert attempt.metadata["cache_hit"] is True
 
 
 def test_qdrant_retrieval_provider_queries_local_collection(monkeypatch: pytest.MonkeyPatch) -> None:
