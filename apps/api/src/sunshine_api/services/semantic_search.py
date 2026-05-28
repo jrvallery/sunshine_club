@@ -58,10 +58,17 @@ def _semantic_search_match(row: dict[str, Any]) -> dict[str, Any]:
         "source_path": citation.get("source_path") or row.get("source_path"),
         "relative_path": citation.get("relative_path") or row.get("relative_path"),
         "sample_path": citation.get("sample_path") or row.get("sample_path"),
-        "chunk_id": citation.get("chunk_id") or row.get("chunk_id"),
-        "chunk_index": citation.get("chunk_index") or row.get("chunk_index"),
-        "chunk_kind": citation.get("chunk_kind") or row.get("chunk_kind"),
-        "segment_id": citation.get("segment_id") or row.get("segment_id"),
+        "run_key": _row_value(row, citation, "run_key"),
+        "content_class": _row_value(row, citation, "content_class"),
+        "primary_tag": _row_value(row, citation, "primary_tag"),
+        "route_status": _row_value(row, citation, "route_status"),
+        "review_status": _row_value(row, citation, "review_status"),
+        "chunk_id": _row_value(row, citation, "chunk_id"),
+        "chunk_index": _row_value(row, citation, "chunk_index"),
+        "chunk_kind": _row_value(row, citation, "chunk_kind"),
+        "segment_id": _row_value(row, citation, "segment_id"),
+        "segment_type": _row_value(row, citation, "segment_type"),
+        "segment_title": _row_value(row, citation, "segment_title"),
         "page_start": citation.get("page_start"),
         "page_end": citation.get("page_end"),
         "text_snippet": citation.get("text_snippet") or row.get("text_snippet") or row.get("content"),
@@ -69,6 +76,19 @@ def _semantic_search_match(row: dict[str, Any]) -> dict[str, Any]:
         "citation": citation,
         "raw": row,
     }
+
+
+def _row_value(row: dict[str, Any], citation: dict[str, Any], key: str) -> Any:
+    value = citation.get(key)
+    if value is not None:
+        return value
+    value = row.get(key)
+    if value is not None:
+        return value
+    metadata = row.get("metadata")
+    if isinstance(metadata, dict):
+        return metadata.get(key)
+    return None
 
 
 __all__ = ["search_semantic_content"]

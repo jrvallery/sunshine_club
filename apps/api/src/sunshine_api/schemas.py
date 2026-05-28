@@ -141,7 +141,10 @@ class SemanticSearchRequest(BaseModel):
     run_key: str | None = None
     primary_tag: str | None = None
     content_class: str | None = None
+    route_status: str | None = None
     review_status: str | None = None
+    segment_type: str | None = None
+    chunk_kind: str | None = None
 
 
 class SemanticEvalRequest(BaseModel):

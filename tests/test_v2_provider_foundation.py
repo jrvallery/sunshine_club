@@ -800,6 +800,11 @@ def test_qdrant_retrieval_provider_queries_local_collection(monkeypatch: pytest.
         payload = {
             "source_path": "/source/minutes.pdf",
             "relative_path": "Minutes/1992-1993.pdf",
+            "run_key": "run-1",
+            "content_class": "scanned_document",
+            "primary_tag": "meeting_records",
+            "route_status": "route_candidate",
+            "review_status": "accepted",
             "correct_primary_tag": "meeting_records",
             "text": "minutes " * 80,
             "metadata": {
@@ -861,6 +866,11 @@ def test_qdrant_retrieval_provider_queries_local_collection(monkeypatch: pytest.
     assert examples[0]["score"] == 0.87
     assert examples[0]["citation"]["source_path"] == "/source/minutes.pdf"
     assert examples[0]["citation"]["relative_path"] == "Minutes/1992-1993.pdf"
+    assert examples[0]["citation"]["run_key"] == "run-1"
+    assert examples[0]["citation"]["content_class"] == "scanned_document"
+    assert examples[0]["citation"]["primary_tag"] == "meeting_records"
+    assert examples[0]["citation"]["route_status"] == "route_candidate"
+    assert examples[0]["citation"]["review_status"] == "accepted"
     assert examples[0]["citation"]["chunk_id"] == "file-1:chunk-003"
     assert examples[0]["citation"]["segment_id"] == "file-1:pages-00003-00004:segment-002"
     assert examples[0]["citation"]["page_start"] == 3

@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from sunshine_api.main import app
 from sunshine_api.services.imports import import_langgraph_output_to_postgres_if_configured
 from sunshine_api.services.model_usage import _model_usage_report, _read_model_usage_artifact
+from sunshine_api.services.semantic_search import search_semantic_content
 
 
 def test_api_pipeline_run_file_processes_one_file(tmp_path: Path, monkeypatch) -> None:
@@ -369,6 +370,9 @@ def test_semantic_search_endpoint_wraps_local_qdrant_service(monkeypatch) -> Non
             "limit": 3,
             "run_key": "run-1",
             "primary_tag": "history_archive_general",
+            "route_status": "route_candidate",
+            "segment_type": "scrapbook_page",
+            "chunk_kind": "segment_text",
             "metadata_filter": {"chunk_kind": "segment_text"},
         },
     )
@@ -384,8 +388,69 @@ def test_semantic_search_endpoint_wraps_local_qdrant_service(monkeypatch) -> Non
             "chunk_kind": "segment_text",
             "run_key": "run-1",
             "primary_tag": "history_archive_general",
+            "route_status": "route_candidate",
+            "segment_type": "scrapbook_page",
         },
     }
+
+
+def test_semantic_search_service_returns_run_and_segment_metadata() -> None:
+    class FakeRetrievalProvider:
+        def retrieve(self, *, index_path: str | None, query_text: str, limit: int, metadata_filter: dict | None = None):
+            del index_path
+            from sunshine_extraction.providers.retrieval.base import SemanticRetrievalProviderAttempt
+
+            return [
+                {
+                    "score": 0.94,
+                    "source_path": "/mnt/sunshine/source.pdf",
+                    "relative_path": "History/source.pdf",
+                    "run_key": "run-1",
+                    "content_class": "scanned_document",
+                    "primary_tag": "history_archive_general",
+                    "route_status": "review_segment_boundary",
+                    "review_status": "pending",
+                    "metadata": {
+                        "chunk_id": "file-1:segment-1:chunk-001",
+                        "chunk_kind": "segment_text",
+                        "segment_id": "file-1:pages-00001-00002:segment-001",
+                        "segment_type": "scrapbook_page",
+                        "segment_title": "Scrapbook pages 1-2",
+                    },
+                    "citation": {
+                        "page_start": 1,
+                        "page_end": 2,
+                        "text_snippet": "Founders of Sunshine Club",
+                    },
+                    "retrieval_explanation": "qdrant_vector_match | pages:1-2",
+                }
+            ], SemanticRetrievalProviderAttempt(
+                provider="qdrant",
+                status="retrieved",
+                index_path="sunshine-test",
+                query_count=1,
+                result_count=1,
+                warnings=[],
+                metadata={"metadata_filter": metadata_filter or {}, "limit": limit, "query_text": query_text},
+            )
+
+    payload = search_semantic_content(
+        query="founders",
+        limit=5,
+        metadata_filter={"run_key": "run-1", "segment_type": "scrapbook_page"},
+        retrieval_provider=FakeRetrievalProvider(),
+    )
+
+    match = payload["matches"][0]
+    assert payload["metadata_filter"] == {"run_key": "run-1", "segment_type": "scrapbook_page"}
+    assert match["run_key"] == "run-1"
+    assert match["content_class"] == "scanned_document"
+    assert match["primary_tag"] == "history_archive_general"
+    assert match["route_status"] == "review_segment_boundary"
+    assert match["review_status"] == "pending"
+    assert match["segment_type"] == "scrapbook_page"
+    assert match["segment_title"] == "Scrapbook pages 1-2"
+    assert match["text_snippet"] == "Founders of Sunshine Club"
 
 
 def test_postgres_segment_review_decision_endpoint_wraps_service(monkeypatch) -> None:

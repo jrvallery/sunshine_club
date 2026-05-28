@@ -82,7 +82,7 @@ def qdrant_rebuild(request: QdrantRebuildRequest) -> dict[str, Any]:
 @router.post("/admin/search/semantic")
 def semantic_search(request: SemanticSearchRequest) -> dict[str, Any]:
     metadata_filter = dict(request.metadata_filter or {})
-    for key in ("run_key", "primary_tag", "content_class", "review_status"):
+    for key in ("run_key", "primary_tag", "content_class", "route_status", "review_status", "segment_type", "chunk_kind"):
         value = getattr(request, key)
         if value:
             metadata_filter[key] = value
