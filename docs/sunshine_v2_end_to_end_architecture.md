@@ -1556,6 +1556,7 @@ Important missing V2 dependencies:
 - Local embedding/vector indexing stack is wired through providers, optional Qdrant indexing, and a Postgres-to-Qdrant rebuild service; production still needs a reviewed canonical collection policy.
 - Provider benchmark tooling exists for extraction providers and emits promotion recommendations; dashboard benchmark review and real Docling/MinerU/RAGFlow dependency benchmarking still need to be finished.
 - The provider benchmark API returns summary, result rows, and promotion recommendations from benchmark artifacts so the dashboard can present provider-comparison decisions without re-deriving them client-side.
+- Provider benchmarks can now run from a JSON sample manifest, and `docs/provider_benchmark_canonical_samples.example.json` defines the intended canonical local sample categories.
 
 ## Local-Only Infrastructure Decision
 
@@ -2021,7 +2022,7 @@ V2 is successful when:
 
 ## Remaining Open Questions
 
-- Which provider benchmark sample should be canonical?
+- The canonical provider benchmark sample is represented by a local JSON manifest with categories for born-digital text, image scans, scanned PDFs, scrapbook packets, newspaper packets, and financial/table-heavy documents. The checked-in file is an example template only; real customer paths stay local.
 - How much raw provider output should be stored per file?
 - What is the single-file latency target?
 - Which self-hosted dashboard/review framework, if any, should replace or augment the current custom dashboard?

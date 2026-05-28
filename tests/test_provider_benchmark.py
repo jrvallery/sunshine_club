@@ -51,3 +51,32 @@ def test_provider_benchmark_supports_optional_local_parser_boundaries(tmp_path: 
     assert result["summary"]["provider_availability"]["mineru"]["local_only"] is True
     assert {row["status"] for row in result["results"]} == {"skipped"}
     assert {row["promotion_status"] for row in result["recommendations"]} == {"blocked_dependency_unavailable"}
+
+
+def test_provider_benchmark_loads_canonical_sample_manifest(tmp_path: Path) -> None:
+    source = tmp_path / "minutes.txt"
+    source.write_text("Meeting minutes and Sunshine Club notes.", encoding="utf-8")
+    manifest = tmp_path / "provider-benchmark-samples.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "samples": [
+                    {
+                        "path": "minutes.txt",
+                        "category": "born_digital_text",
+                        "label": "meeting minutes text fixture",
+                        "metadata": {"risk": "low"},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmark_extraction_providers([], provider_names=["current"], sample_manifest=manifest)
+
+    assert result["summary"]["sample_count"] == 1
+    assert result["summary"]["sample_manifest"] == str(manifest)
+    assert result["summary"]["sample_categories"] == {"born_digital_text": 1}
+    assert result["results"][0]["sample_category"] == "born_digital_text"
+    assert result["results"][0]["sample_label"] == "meeting minutes text fixture"

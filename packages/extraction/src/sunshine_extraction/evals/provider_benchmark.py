@@ -15,25 +15,32 @@ from sunshine_extraction.providers.extraction import (
 )
 from sunshine_extraction.services.content import SampleFile
 from sunshine_extraction.services.extraction import OcrArtifacts, ocr_executor_from_env, extraction_quality_gate
+from sunshine_extraction.evals.provider_benchmark_samples import load_provider_benchmark_samples
 
 
 def benchmark_extraction_providers(
-    input_paths: list[str | Path],
+    input_paths: list[str | Path] | None = None,
     *,
     provider_names: list[str] | None = None,
     output_dir: str | Path | None = None,
+    sample_manifest: str | Path | None = None,
+    sample_root: str | Path | None = None,
 ) -> dict[str, Any]:
+    samples = _benchmark_samples(input_paths or [], sample_manifest=sample_manifest, sample_root=sample_root)
     providers = _providers(provider_names)
     output_path = Path(output_dir) if output_dir is not None else None
     if output_path is not None:
         output_path.mkdir(parents=True, exist_ok=True)
     rows: list[dict[str, Any]] = []
-    for index, input_path in enumerate(input_paths, start=1):
-        sample = _sample(Path(input_path), index)
+    for index, sample_spec in enumerate(samples, start=1):
+        sample = _sample(Path(sample_spec["path"]), index, sample_spec=sample_spec)
         plan = _default_plan(sample)
         for provider in providers:
-            rows.append(_benchmark_one(sample, plan, provider))
+            rows.append(_benchmark_one(sample, plan, provider, sample_spec=sample_spec))
     summary = _summary(rows)
+    summary["sample_count"] = len(samples)
+    summary["sample_manifest"] = str(sample_manifest) if sample_manifest else None
+    summary["sample_categories"] = _count(rows, "sample_category")
     recommendations = _provider_recommendations(rows)
     summary["recommendations"] = recommendations
     if output_path is not None:
@@ -43,7 +50,7 @@ def benchmark_extraction_providers(
     return {"summary": summary, "results": rows, "recommendations": recommendations}
 
 
-def _benchmark_one(sample: SampleFile, plan: dict[str, Any], provider: ExtractionProvider) -> dict[str, Any]:
+def _benchmark_one(sample: SampleFile, plan: dict[str, Any], provider: ExtractionProvider, *, sample_spec: dict[str, Any]) -> dict[str, Any]:
     status = provider.dependency_status()
     ocr_artifacts = OcrArtifacts(pages=[], documents=[])
     extraction, attempt = provider.extract(sample, plan, ocr_executor=ocr_executor_from_env(), ocr_artifacts=ocr_artifacts)
@@ -52,6 +59,8 @@ def _benchmark_one(sample: SampleFile, plan: dict[str, Any], provider: Extractio
         "source_path": sample.source_path,
         "relative_path": sample.relative_path,
         "sample_path": str(sample.sample_path),
+        "sample_category": sample_spec.get("category") or "uncategorized",
+        "sample_label": sample_spec.get("label") or sample.sample_path.name,
         "provider": attempt.provider,
         "provider_available": bool(status.get("available", True)),
         "local_only": bool(status.get("local_only", True)),
@@ -67,6 +76,19 @@ def _benchmark_one(sample: SampleFile, plan: dict[str, Any], provider: Extractio
         "dependency_status": status,
         "metadata": attempt.metadata,
     }
+
+
+def _benchmark_samples(
+    input_paths: list[str | Path],
+    *,
+    sample_manifest: str | Path | None,
+    sample_root: str | Path | None,
+) -> list[dict[str, Any]]:
+    if sample_manifest:
+        return load_provider_benchmark_samples(sample_manifest, sample_root=sample_root)
+    if not input_paths:
+        raise ValueError("Provider benchmark requires explicit paths or sample_manifest")
+    return [{"path": Path(path), "category": _category_from_path(Path(path)), "label": Path(path).name, "metadata": {}} for path in input_paths]
 
 
 def _providers(provider_names: list[str] | None) -> list[ExtractionProvider]:
@@ -100,14 +122,25 @@ def _default_plan(sample: SampleFile) -> dict[str, Any]:
     return {"strategy": "deferred_technical", "document_subtype": "unknown", "defer_reason": "unsupported_benchmark_type"}
 
 
-def _sample(path: Path, index: int) -> SampleFile:
+def _category_from_path(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix in {".txt", ".md", ".csv", ".json", ".jsonl", ".html", ".htm"}:
+        return "born_digital_text"
+    if suffix in {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp"}:
+        return "image_scan"
+    if suffix == ".pdf":
+        return "pdf"
+    return "technical_deferred"
+
+
+def _sample(path: Path, index: int, *, sample_spec: dict[str, Any]) -> SampleFile:
     return SampleFile(
         sample_path=path,
         source_path=str(path),
         relative_path=path.name,
         sample_group="provider-benchmark",
         sample_number=index,
-        index_row={"metadata": {}},
+        index_row={"metadata": {"benchmark_category": sample_spec.get("category"), **(sample_spec.get("metadata") or {})}},
     )
 
 

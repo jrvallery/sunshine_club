@@ -140,6 +140,8 @@ class PipelineEvalImportRequest(BaseModel):
 
 
 class ProviderBenchmarkRequest(BaseModel):
-    paths: list[str] = Field(min_length=1)
+    paths: list[str] | None = None
     providers: list[Literal["current", "docling", "mineru", "ragflow_deepdoc", "unstructured"]] = Field(default_factory=lambda: ["current", "docling"])
     output_dir: str | None = None
+    sample_manifest: str | None = None
+    sample_root: str | None = None

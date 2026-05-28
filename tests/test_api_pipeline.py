@@ -131,6 +131,28 @@ def test_provider_benchmark_api_accepts_optional_local_providers(tmp_path: Path)
     assert payload["summary"]["local_only"] is True
 
 
+def test_provider_benchmark_api_accepts_sample_manifest(tmp_path: Path) -> None:
+    source = tmp_path / "minutes.txt"
+    source.write_text("Meeting minutes and Sunshine Club notes.", encoding="utf-8")
+    manifest = tmp_path / "provider-benchmark-samples.json"
+    manifest.write_text(
+        json.dumps({"samples": [{"path": "minutes.txt", "category": "born_digital_text", "label": "text sample"}]}),
+        encoding="utf-8",
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/admin/provider-benchmarks/run",
+        json={"sample_manifest": str(manifest), "providers": ["current"]},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["sample_count"] == 1
+    assert payload["summary"]["sample_categories"] == {"born_digital_text": 1}
+    assert payload["results"][0]["sample_label"] == "text sample"
+
+
 def test_model_usage_report_infers_calls_from_legacy_artifacts(tmp_path: Path) -> None:
     output_dir = tmp_path / "legacy-run"
     output_dir.mkdir()

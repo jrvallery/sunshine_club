@@ -156,11 +156,16 @@ def pipeline_eval_run_compare(eval_run_id: int, baseline_eval_run_id: int) -> di
 
 @router.post("/admin/provider-benchmarks/run")
 def provider_benchmark_run(request: ProviderBenchmarkRequest) -> dict[str, Any]:
-    result = benchmark_extraction_providers(
-        request.paths,
-        provider_names=list(request.providers),
-        output_dir=request.output_dir,
-    )
+    try:
+        result = benchmark_extraction_providers(
+            request.paths or [],
+            provider_names=list(request.providers),
+            output_dir=request.output_dir,
+            sample_manifest=request.sample_manifest,
+            sample_root=request.sample_root,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     return {"ok": True, **result}
 
 

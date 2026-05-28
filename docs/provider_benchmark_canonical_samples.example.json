@@ -1,0 +1,35 @@
+{
+  "description": "Template for the local-only canonical extraction-provider benchmark sample set. Copy this file outside the repo and replace paths with local Sunshine corpus files.",
+  "samples": [
+    {
+      "category": "born_digital_text",
+      "label": "Born-digital text document",
+      "path": "/mnt/sunshine/path/to/born-digital-document.pdf"
+    },
+    {
+      "category": "image_scan",
+      "label": "Single scanned image with printed text",
+      "path": "/mnt/sunshine/path/to/scanned-image.jpg"
+    },
+    {
+      "category": "scanned_pdf",
+      "label": "Image-only scanned PDF",
+      "path": "/mnt/sunshine/path/to/scanned-document.pdf"
+    },
+    {
+      "category": "scrapbook_packet",
+      "label": "Long scrapbook packet with mixed photos and text",
+      "path": "/mnt/sunshine/path/to/scrapbook-packet.pdf"
+    },
+    {
+      "category": "newspaper_packet",
+      "label": "Newspaper clipping or packet",
+      "path": "/mnt/sunshine/path/to/newspaper-packet.pdf"
+    },
+    {
+      "category": "financial_table",
+      "label": "Financial report or table-heavy document",
+      "path": "/mnt/sunshine/path/to/financial-report.pdf"
+    }
+  ]
+}
