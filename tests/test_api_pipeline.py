@@ -384,8 +384,10 @@ def test_run_creation_records_queued_state_to_postgres_when_configured(tmp_path:
 
     assert response.status_code == 200
     assert response.json()["postgres_record"]["record_status"] == "recorded"
+    assert response.json()["execution_backend"] == "subprocess"
     assert captured["status"] == "queued"
     assert captured["output_dir"] == str(tmp_path / "output")
+    assert captured["summary"] == {"execution_backend": "subprocess"}
 
 
 def test_run_creation_can_dispatch_temporal_backend(tmp_path: Path, monkeypatch) -> None:

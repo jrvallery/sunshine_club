@@ -94,23 +94,27 @@ def start_run(request: RunStartRequest) -> dict[str, Any]:
         llm_tag_provider=llm_tag_provider,
         ocr_fallback_provider=ocr_fallback_provider,
         semantic_index_path=request.semantic_index_path,
+        execution_backend=execution_backend,
     )
-    run["execution_backend"] = execution_backend
-    postgres_record = record_postgres_pipeline_run_state_if_configured(run=run, status="queued", summary=run.get("summary") or {})
+    postgres_record = record_postgres_pipeline_run_state_if_configured(
+        run=run,
+        status="queued",
+        summary={**(run.get("summary") or {}), "execution_backend": execution_backend},
+    )
     if request.start:
         sample_count = _batch_input_sample_count(input_root)
         if sample_count == 0:
             store.mark_pipeline_run_finished(
                 run["id"],
                 status="failed",
-                summary={"selected_sample_count": 0, "processed_count": 0, "error_count": 1},
+                summary={"selected_sample_count": 0, "processed_count": 0, "error_count": 1, "execution_backend": execution_backend},
                 error="No runnable QA sample indexes found in input_root. Batch runs require grouped index.jsonl files; use the file browser for single-file runs.",
             )
             failed_run = store.get_pipeline_run(run["id"])
             record_postgres_pipeline_run_state_if_configured(
                 run=failed_run,
                 status="failed",
-                summary=failed_run.get("summary") or {},
+                summary={**(failed_run.get("summary") or {}), "execution_backend": execution_backend},
                 error=failed_run.get("error"),
             )
             return {**failed_run, "postgres_record": postgres_record}
@@ -155,6 +159,7 @@ def runs(limit: int = 100, source: str = "sqlite") -> list[dict[str, Any]]:
 
 def _postgres_run_for_dashboard(row: dict[str, Any]) -> dict[str, Any]:
     summary = row.get("summary") if isinstance(row.get("summary"), dict) else {}
+    execution_backend = summary.get("execution_backend") or summary.get("graph_runtime", {}).get("execution_backend")
     run_metadata = {
         "source": "postgres",
         "result_count": row.get("result_count"),
@@ -162,6 +167,7 @@ def _postgres_run_for_dashboard(row: dict[str, Any]) -> dict[str, Any]:
         "model_usage_count": row.get("model_usage_count"),
         "provider_attempt_count": row.get("provider_attempt_count"),
         "document_segment_count": row.get("document_segment_count"),
+        "execution_backend": execution_backend,
     }
     return {
         "id": row.get("run_key") or row.get("id"),
@@ -180,6 +186,7 @@ def _postgres_run_for_dashboard(row: dict[str, Any]) -> dict[str, Any]:
         "ocr_fallback_provider": row.get("extraction_provider"),
         "semantic_index_path": None,
         "run_metadata": run_metadata,
+        "execution_backend": execution_backend,
         "started_at": row.get("started_at"),
         "completed_at": row.get("finished_at"),
         "processed_count": summary.get("processed_count") or summary.get("total_results") or row.get("result_count"),

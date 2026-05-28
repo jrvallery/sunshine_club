@@ -33,7 +33,7 @@ def _execute_run(run_id: int, command: list[str], output_dir: str, import_on_suc
         store = review_store()
         store.mark_pipeline_run_started(run_id)
         run = store.get_pipeline_run(run_id)
-        _record_postgres_run_state(run, status="running", summary=run.get("summary") or {})
+        _record_postgres_run_state(run, status="running", summary=_summary_with_backend(run, run.get("summary") or {}))
         process = subprocess.Popen(
             command,
             cwd=Path.cwd(),
@@ -56,16 +56,16 @@ def _execute_run(run_id: int, command: list[str], output_dir: str, import_on_suc
                 _import_success_outputs(store, run_id, output_dir)
             store.mark_pipeline_run_finished(run_id, status="succeeded", summary=summary)
             finished_run = store.get_pipeline_run(run_id)
-            _record_postgres_run_state(finished_run, status="succeeded", summary=summary or finished_run.get("summary") or {})
+            _record_postgres_run_state(finished_run, status="succeeded", summary=_summary_with_backend(finished_run, summary or finished_run.get("summary") or {}))
         else:
             store.mark_pipeline_run_finished(run_id, status="failed", summary=summary, error=f"Command exited {process.returncode}")
             failed_run = store.get_pipeline_run(run_id)
-            _record_postgres_run_state(failed_run, status="failed", summary=summary or failed_run.get("summary") or {}, error=failed_run.get("error"))
+            _record_postgres_run_state(failed_run, status="failed", summary=_summary_with_backend(failed_run, summary or failed_run.get("summary") or {}), error=failed_run.get("error"))
     except Exception as error:  # noqa: BLE001 - background run errors must be captured for the UI.
         if store is not None:
             store.mark_pipeline_run_finished(run_id, status="failed", error=f"{type(error).__name__}: {error}")
             failed_run = store.get_pipeline_run(run_id)
-            _record_postgres_run_state(failed_run, status="failed", summary=failed_run.get("summary") or {}, error=failed_run.get("error"))
+            _record_postgres_run_state(failed_run, status="failed", summary=_summary_with_backend(failed_run, failed_run.get("summary") or {}), error=failed_run.get("error"))
     finally:
         with _RUN_PROCESS_LOCK:
             _RUN_PROCESSES.pop(run_id, None)
@@ -84,19 +84,19 @@ def _execute_temporal_batch_run(run_id: int, payload: dict[str, Any], import_on_
         store = review_store()
         store.mark_pipeline_run_started(run_id)
         run = store.get_pipeline_run(run_id)
-        _record_postgres_run_state(run, status="running", summary={**(run.get("summary") or {}), "execution_backend": "temporal"})
+        _record_postgres_run_state(run, status="running", summary=_summary_with_backend(run, run.get("summary") or {}))
         result = _start_temporal_batch_workflow(payload, run_key=str(run.get("run_key") or f"run-{run_id}"))
         summary = _read_run_summary(output_dir) or result.get("summary") or {}
         if import_on_success and (Path(output_dir) / "sample-pipeline-results.jsonl").exists():
             _import_success_outputs(store, run_id, output_dir)
-        store.mark_pipeline_run_finished(run_id, status="succeeded", summary={**summary, "temporal_result": result})
+        store.mark_pipeline_run_finished(run_id, status="succeeded", summary={**_summary_with_backend(run, summary), "temporal_result": result})
         finished_run = store.get_pipeline_run(run_id)
-        _record_postgres_run_state(finished_run, status="succeeded", summary=summary or finished_run.get("summary") or {})
+        _record_postgres_run_state(finished_run, status="succeeded", summary=_summary_with_backend(finished_run, summary or finished_run.get("summary") or {}))
     except Exception as error:  # noqa: BLE001 - background run errors must be captured for the UI.
         if store is not None:
             store.mark_pipeline_run_finished(run_id, status="failed", error=f"{type(error).__name__}: {error}")
             failed_run = store.get_pipeline_run(run_id)
-            _record_postgres_run_state(failed_run, status="failed", summary=failed_run.get("summary") or {}, error=failed_run.get("error"))
+            _record_postgres_run_state(failed_run, status="failed", summary=_summary_with_backend(failed_run, failed_run.get("summary") or {}), error=failed_run.get("error"))
 
 
 def _start_temporal_batch_workflow(payload: dict[str, Any], *, run_key: str) -> dict[str, Any]:
@@ -124,6 +124,12 @@ def _record_postgres_run_state(run: dict[str, Any], *, status: str, summary: dic
         record_postgres_pipeline_run_state_if_configured(run=run, status=status, summary=summary, error=error)
     except Exception:  # noqa: BLE001 - SQLite run state and filesystem artifacts remain authoritative for the dev runner.
         return
+
+
+def _summary_with_backend(run: dict[str, Any], summary: dict[str, Any]) -> dict[str, Any]:
+    metadata = run.get("run_metadata") if isinstance(run.get("run_metadata"), dict) else {}
+    execution_backend = run.get("execution_backend") or metadata.get("execution_backend") or "subprocess"
+    return {**summary, "execution_backend": execution_backend}
 
 
 def _record_postgres_run_progress(store: ReviewStore, run_id: int, summary: dict[str, Any]) -> None:

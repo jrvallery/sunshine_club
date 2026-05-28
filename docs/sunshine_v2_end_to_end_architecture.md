@@ -2083,8 +2083,8 @@ Current implementation:
 - `apps/worker/src/sunshine_worker/workflows.py` defines `SingleFilePipelineWorkflow` and `BatchPipelineWorkflow` as durable workflow boundaries.
 - `apps/worker/src/sunshine_worker/temporal_worker.py` registers both workflows and activities on the local `sunshine-pipeline` task queue.
 - The local-infrastructure API reports Temporal SDK/worker registration, Qdrant indexing/retrieval, observability, and V2 Postgres migration coverage.
-- Dashboard batch runs can now select `execution_backend=temporal` or set `SUNSHINE_RUN_EXECUTION_BACKEND=temporal` to dispatch through `BatchPipelineWorkflow` while retaining the subprocess/dev runner as the default. The Temporal path updates the same dashboard/Postgres run lifecycle and can import successful artifacts.
-- Remaining production work is operational: run the Temporal service/worker continuously, expose backend selection cleanly in the dashboard, and decide when to flip the default from subprocess to Temporal.
+- Dashboard batch runs can now select `execution_backend=temporal` in the run dialog or set `SUNSHINE_RUN_EXECUTION_BACKEND=temporal` to dispatch through `BatchPipelineWorkflow` while retaining the subprocess/dev runner as the default. The selected backend is stored in run metadata, shown in run history/details, mirrored into Postgres run summaries, and used by the same import/report lifecycle.
+- Remaining production work is operational: run the Temporal service/worker continuously, collect enough reliability evidence from dashboard-triggered Temporal runs, and decide when to flip the default from subprocess to Temporal.
 
 ## Milestone Acceptance Criteria
 

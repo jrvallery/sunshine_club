@@ -1423,6 +1423,7 @@ class ReviewStore:
         llm_tag_provider: str | None,
         ocr_fallback_provider: str | None,
         semantic_index_path: str | None = None,
+        execution_backend: str | None = None,
     ) -> dict[str, Any]:
         run_key = f"{preset_key}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
         run_metadata = _run_metadata(
@@ -1434,6 +1435,7 @@ class ReviewStore:
             llm_tag_provider=llm_tag_provider,
             ocr_fallback_provider=ocr_fallback_provider,
             semantic_index_path=semantic_index_path,
+            execution_backend=execution_backend,
         )
         with self._connect() as connection:
             cursor = connection.execute(
@@ -2268,6 +2270,7 @@ def _run_metadata(
     llm_tag_provider: str | None,
     ocr_fallback_provider: str | None,
     semantic_index_path: str | None,
+    execution_backend: str | None,
 ) -> dict[str, Any]:
     resolved_run_role = run_role or _run_role_for_preset(Path(output_dir), input_root=input_root)
     return {
@@ -2282,6 +2285,7 @@ def _run_metadata(
         "llm_tag_provider": llm_tag_provider,
         "ocr_fallback_provider": ocr_fallback_provider,
         "semantic_index_path": semantic_index_path,
+        "execution_backend": execution_backend or "subprocess",
         "git_commit": _git_commit(),
     }
 
@@ -3121,6 +3125,7 @@ def _pipeline_run_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "semantic_index_path": row["semantic_index_path"],
         "run_metadata": run_metadata,
         "run_role": run_metadata.get("run_role") or "test",
+        "execution_backend": run_metadata.get("execution_backend") or "subprocess",
         "started_at": row["started_at"],
         "completed_at": row["completed_at"],
         "processed_count": row["processed_count"],

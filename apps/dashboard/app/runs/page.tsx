@@ -145,6 +145,7 @@ export default function RunsPage() {
                 <th>Run</th>
                 <th>Role</th>
                 <th>Preset</th>
+                <th>Backend</th>
                 <th>Status</th>
                 <th>Processed</th>
                 <th>Started</th>
@@ -170,6 +171,7 @@ export default function RunsPage() {
                     <StatusBadge value={run.run_role ?? "test"} />
                   </td>
                   <td>{run.preset_key}</td>
+                  <td>{runExecutionBackend(run)}</td>
                   <td>
                     <StatusBadge value={run.status} tone={run.status === "failed" ? "danger" : "default"} />
                   </td>
@@ -239,6 +241,7 @@ export default function RunsPage() {
               <RunProgressBar progress={progress.data} run={activeRun} />
               <KeyValue label="Preset" value={activeRun.preset_key} />
               <KeyValue label="Role" value={activeRun.run_role ?? "test"} />
+              <KeyValue label="Backend" value={runExecutionBackend(activeRun)} />
               <KeyValue label="Processed" value={formatRunProgress(progress.data, activeRun)} />
               <KeyValue label="Started" value={activeRun.started_at ?? "-"} />
               <KeyValue label="Updated" value={progress.data?.updated_at ?? activeRun.updated_at ?? "-"} />
@@ -301,6 +304,7 @@ function RunStartDialog({
   const [llmTagProvider, setLlmTagProvider] = useState(normalizeLlmProvider(preset.llm_tag_provider));
   const [ocrFallbackProvider, setOcrFallbackProvider] = useState(normalizeOcrProvider(preset.ocr_fallback_provider));
   const [semanticIndexPath, setSemanticIndexPath] = useState("");
+  const [executionBackend, setExecutionBackend] = useState("subprocess");
   const [importOnSuccess, setImportOnSuccess] = useState(false);
 
   return (
@@ -325,6 +329,7 @@ function RunStartDialog({
         <ProviderSelect label="Embedding path" value={embeddingProvider} onChange={setEmbeddingProvider} options={["cortex", "placeholder"]} />
         <ProviderSelect label="LLM tag path" value={llmTagProvider} onChange={setLlmTagProvider} options={["cortex"]} />
         <ProviderSelect label="OCR fallback path" value={ocrFallbackProvider} onChange={setOcrFallbackProvider} options={["cortex", "disabled"]} />
+        <ProviderSelect label="Execution backend" value={executionBackend} onChange={setExecutionBackend} options={["subprocess", "temporal"]} />
         <TextInput
           label="Semantic index path"
           value={semanticIndexPath}
@@ -347,6 +352,7 @@ function RunStartDialog({
               llm_tag_provider: llmTagProvider,
               ocr_fallback_provider: ocrFallbackProvider,
               semantic_index_path: semanticIndexPath || null,
+              execution_backend: executionBackend,
               import_on_success: importOnSuccess
             })
           }
@@ -391,6 +397,12 @@ function ProviderSelect({
 }
 
 function providerLabel(value: string) {
+  if (value === "subprocess") {
+    return "Subprocess";
+  }
+  if (value === "temporal") {
+    return "Temporal";
+  }
   if (value === "placeholder") {
     return "Placeholder";
   }
@@ -398,6 +410,12 @@ function providerLabel(value: string) {
     return "Disabled";
   }
   return "Cortex";
+}
+
+function runExecutionBackend(run: PipelineRun) {
+  const metadata = run.run_metadata ?? {};
+  const backend = run.execution_backend ?? metadata.execution_backend;
+  return typeof backend === "string" && backend ? backend : "subprocess";
 }
 
 function normalizeEmbeddingProvider(value?: string | null) {

@@ -232,6 +232,7 @@ export type PipelineRun = {
   ocr_fallback_provider?: string | null;
   semantic_index_path?: string | null;
   run_metadata?: Record<string, unknown>;
+  execution_backend?: string | null;
   started_at?: string | null;
   completed_at?: string | null;
   processed_count?: number | null;
