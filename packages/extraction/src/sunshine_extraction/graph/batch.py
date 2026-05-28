@@ -24,6 +24,7 @@ from sunshine_extraction.graph.utils import _progress, _write_jsonl
 from sunshine_extraction.providers.chunking import ChunkingProvider
 from sunshine_extraction.providers.extraction import ExtractionProvider
 from sunshine_extraction.services.artifacts import extraction_result_row, sample_input_row
+from sunshine_extraction.services.artifacts.review_queue import build_review_queue_rows
 from sunshine_extraction.services.artifact_manifest import write_artifact_manifest
 from sunshine_extraction.services.extraction import OcrExecutor
 from sunshine_extraction.services.ocr_summary import build_ocr_summary
@@ -338,9 +339,9 @@ def _append_batch_rows(artifact_rows: dict[str, list[dict[str, Any]]], result: d
         artifact_rows["sample-import-results.jsonl"].append(result["import_result"])
     if result.get("final_result"):
         artifact_rows["sample-pipeline-results.jsonl"].append(result["final_result"])
-        review_row = _review_queue_row(result["final_result"])
-        if review_row:
-            artifact_rows["sample-review-queue.jsonl"].append(review_row)
+        artifact_rows["sample-review-queue.jsonl"].extend(
+            build_review_queue_rows(result["final_result"], result.get("document_segments", []))
+        )
     for event in result.get("audit_events", []):
         artifact_rows["graph-audit-events.jsonl"].append(
             {
@@ -389,26 +390,6 @@ def _update_batch_summary_counters(counters: dict[str, Counter[str]], result: di
     counters["by_route_status"][str(result.get("route_status") or "unknown")] += 1
     for warning in result.get("warnings", []):
         counters["by_warning"][str(warning)] += 1
-
-
-def _review_queue_row(final_result: dict[str, Any]) -> dict[str, Any] | None:
-    route_status = final_result.get("route_status")
-    if route_status == "route_candidate":
-        return None
-    return {
-        "sample_path": final_result.get("sample_path"),
-        "source_path": final_result.get("source_path"),
-        "relative_path": final_result.get("relative_path"),
-        "route_status": route_status,
-        "review_reason": final_result.get("review_reason"),
-        "final_class": final_result.get("final_class"),
-        "extraction_strategy": final_result.get("extraction_strategy"),
-        "extraction_status": final_result.get("extraction_status"),
-        "quality": final_result.get("quality"),
-        "top_tag_candidate": final_result.get("top_tag_candidate"),
-        "tag_confidence": final_result.get("tag_confidence"),
-        "warnings": final_result.get("warnings", []),
-    }
 
 
 def _chunk_count_bucket(chunk_count: int) -> str:

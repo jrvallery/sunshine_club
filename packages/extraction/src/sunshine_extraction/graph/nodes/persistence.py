@@ -11,6 +11,7 @@ from sunshine_extraction.graph.state import DocumentPipelineDeps, DocumentPipeli
 from sunshine_extraction.graph.utils import _json_safe, _write_jsonl
 from sunshine_extraction.services.artifact_manifest import write_artifact_manifest
 from sunshine_extraction.services.artifacts import extraction_result_row, sample_input_row, write_pipeline_result
+from sunshine_extraction.services.artifacts.review_queue import build_review_queue_rows
 from sunshine_extraction.services.extraction import ExtractionResult
 from sunshine_extraction.services.placement import quarantine_placement_for_review_route
 from sunshine_extraction.services.tagging import llm_inspection_row
@@ -27,7 +28,7 @@ def _persist_outputs(state: DocumentPipelineState) -> dict[str, Any]:
     artifacts: dict[str, list[dict[str, Any]]] = {
         "graph-audit-events.jsonl": state.get("audit_events", []),
         "sample-pipeline-results.jsonl": [final_result],
-        "sample-review-queue.jsonl": [_review_queue_row(final_result)] if _review_queue_row(final_result) else [],
+        "sample-review-queue.jsonl": build_review_queue_rows(final_result, state.get("document_segments", [])),
     }
     artifacts["sample-source-identity.jsonl"] = [state["source_identity"]] if state.get("source_identity") else []
     artifacts["sample-file-probes.jsonl"] = [state["file_probe"]] if state.get("file_probe") else []
@@ -79,25 +80,6 @@ def _import_run_results_node(state: DocumentPipelineState, deps: DocumentPipelin
     _write_jsonl(output_dir / "sample-import-results.jsonl", [import_result])
     write_artifact_manifest(output_dir, run_id=state.get("dashboard_run_id") or state.get("run_id"))
     return {"import_result": import_result}
-
-def _review_queue_row(final_result: dict[str, Any]) -> dict[str, Any] | None:
-    route_status = final_result.get("route_status")
-    if route_status == "route_candidate":
-        return None
-    return {
-        "sample_path": final_result.get("sample_path"),
-        "source_path": final_result.get("source_path"),
-        "relative_path": final_result.get("relative_path"),
-        "route_status": route_status,
-        "review_reason": final_result.get("review_reason"),
-        "final_class": final_result.get("final_class"),
-        "extraction_strategy": final_result.get("extraction_strategy"),
-        "extraction_status": final_result.get("extraction_status"),
-        "quality": final_result.get("quality"),
-        "top_tag_candidate": final_result.get("top_tag_candidate"),
-        "tag_confidence": final_result.get("tag_confidence"),
-        "warnings": final_result.get("warnings", []),
-    }
 
 def _final_result_from_state(state: DocumentPipelineState) -> dict[str, Any]:
     if state.get("extraction_result") and state.get("extraction_quality"):

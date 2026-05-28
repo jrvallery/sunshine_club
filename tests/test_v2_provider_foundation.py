@@ -37,6 +37,7 @@ from sunshine_extraction.providers.retrieval import CurrentSemanticRetrievalProv
 from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider, SQLiteGoldenVectorStoreProvider
 from sunshine_extraction.domain.documents import IMAGE_EXTENSIONS, SPREADSHEET_EXTENSIONS, TEXT_EXTENSIONS, SampleFile
 from sunshine_extraction.services.artifacts.writers import extraction_result_row, sample_input_row, write_pipeline_result
+from sunshine_extraction.services.artifacts.review_queue import build_review_queue_rows
 from sunshine_extraction.services.artifact_manifest import build_artifact_manifest
 from sunshine_extraction.services.cache import SQLiteModelCallCache
 from sunshine_extraction.services.classification.extraction_plan import provider_hints
@@ -1186,6 +1187,45 @@ def test_segmented_packets_create_segment_text_chunks_from_page_structure(tmp_pa
     assert chunks[0]["segment_id"] == "file-4:pages-00001-00001:segment-001"
     assert chunks[1]["metadata"]["page_start"] == 2
     assert chunks[1]["metadata"]["chunking_policy"] == "segment_page_text"
+
+
+def test_segment_boundary_review_queue_rows_are_segment_scoped() -> None:
+    rows = build_review_queue_rows(
+        {
+            "sample_path": "/samples/packet.pdf",
+            "source_path": "/source/packet.pdf",
+            "relative_path": "archive/packet.pdf",
+            "route_status": "review_segment_boundary",
+            "review_reason": "segment_boundary_requires_review",
+            "final_class": "scanned_document",
+            "top_tag_candidate": "scrapbooks",
+            "secondary_tags": ["history_archive"],
+            "tag_confidence": 0.62,
+            "warnings": ["document_segmentation_review_recommended"],
+        },
+        [
+            {
+                "segment_id": "file-1:pages-00001-00002:segment-001",
+                "segment_title": "packet.pdf pp1-2",
+                "segment_type": "scrapbook_page_group",
+                "page_start": 1,
+                "page_end": 2,
+                "segment_confidence": 0.45,
+                "requires_segment_review": True,
+                "segment_boundary_evidence": ["matched:scrapbook"],
+            },
+            {
+                "segment_id": "file-1:pages-00003-00003:segment-002",
+                "requires_segment_review": False,
+            },
+        ],
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["segment_id"] == "file-1:pages-00001-00002:segment-001"
+    assert rows[0]["review_reason"] == "segment_boundary_requires_review"
+    assert rows[0]["page_start"] == 1
+    assert rows[0]["segment_boundary_evidence"] == ["matched:scrapbook"]
 
 
 def test_segmentation_ids_are_stable_without_qa_sample_number(tmp_path: Path) -> None:

@@ -1378,6 +1378,8 @@ def _review_notes(row: dict[str, Any]) -> str | None:
     warnings = row.get("warnings")
     parts = [
         f"route_status={row.get('route_status')}" if row.get("route_status") else None,
+        f"segment={row.get('segment_id')}" if row.get("segment_id") else None,
+        f"pages={row.get('page_start')}-{row.get('page_end')}" if row.get("page_start") or row.get("page_end") else None,
         f"quality={row.get('quality')}" if row.get("quality") else None,
         f"tag_confidence={row.get('tag_confidence')}" if row.get("tag_confidence") is not None else None,
         "warnings=" + ";".join(map(str, warnings)) if isinstance(warnings, list) and warnings else None,

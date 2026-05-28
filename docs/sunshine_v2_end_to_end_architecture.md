@@ -1304,6 +1304,7 @@ Current implementation:
 - `GET /admin/system/postgres-runtime/runs/{run_key}/report` exposes a Postgres-native run report read model with normalized per-file results, review items, model usage, provider attempts, document segments, and summary counts. This gives the dashboard a single local source for inspecting scrapbook/newspaper page-range split proposals without reading raw JSONL files.
 - Dashboard run reports now fetch the Postgres V2 report by run key when available, show Postgres runtime/segment-review summary counts, prefer normalized Postgres rows for file/review tables, and include a `Segments` tab for logical page-range proposals.
 - Segment proposals now feed chunking when page-level structure text is available. Multi-page scrapbook/newspaper/mixed packets emit `segment_text` chunks with segment IDs and page ranges, so downstream embeddings, retrieval, and tagging can operate on proposed child documents instead of only the parent PDF.
+- Review queue artifacts are segment-aware for segment-boundary routes. When a long packet produces review-required page-range candidates, `sample-review-queue.jsonl` emits one row per reviewable segment with segment ID, title, type, page range, confidence, and boundary evidence, allowing Postgres review rows and golden labels to attach corrections to the child-document candidate.
 
 ### 24. `import_run_results`
 
