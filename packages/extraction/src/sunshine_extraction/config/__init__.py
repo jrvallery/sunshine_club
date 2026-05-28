@@ -1,0 +1,37 @@
+"""Configuration package for Sunshine extraction workflows."""
+
+from sunshine_extraction.config.defaults import (
+    DEFAULT_CORRECTED_PATH,
+    DEFAULT_CORTEX_BASE_URL,
+    DEFAULT_CORTEX_MODEL,
+    DEFAULT_CORTEX_OCR_MODEL,
+    DEFAULT_INPUT_ROOT,
+    DEFAULT_MANIFEST_ROOT,
+    DEFAULT_OPENAI_OCR_MODEL,
+    DEFAULT_OPENAI_TAG_MODEL,
+    DEFAULT_OUTPUT_DIR,
+    DEFAULT_PLAN_PATH,
+    DEFAULT_TAXONOMY_PATH,
+    EXPECTED_STRATEGIES,
+    INITIAL_SAMPLE_LIMITS,
+)
+from sunshine_extraction.config.models import ProviderConfig
+from sunshine_extraction.config.provider_registry import DEFAULT_PROVIDER_REGISTRY
+
+__all__ = [
+    "DEFAULT_CORRECTED_PATH",
+    "DEFAULT_CORTEX_BASE_URL",
+    "DEFAULT_CORTEX_MODEL",
+    "DEFAULT_CORTEX_OCR_MODEL",
+    "DEFAULT_INPUT_ROOT",
+    "DEFAULT_MANIFEST_ROOT",
+    "DEFAULT_OPENAI_OCR_MODEL",
+    "DEFAULT_OPENAI_TAG_MODEL",
+    "DEFAULT_OUTPUT_DIR",
+    "DEFAULT_PLAN_PATH",
+    "DEFAULT_TAXONOMY_PATH",
+    "EXPECTED_STRATEGIES",
+    "DEFAULT_PROVIDER_REGISTRY",
+    "INITIAL_SAMPLE_LIMITS",
+    "ProviderConfig",
+]
