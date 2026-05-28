@@ -1293,6 +1293,7 @@ Current implementation:
 - `services/env.py` owns `.env` loading and Cortex environment alias normalization, so graph/eval/semantic-index entry points no longer import environment setup from the legacy sample runner.
 - `services/samples.py` owns QA sample discovery and corrected-plan/content lookup helpers used by batch orchestration.
 - `services/ocr_summary.py` owns OCR artifact summary calculation used by both the legacy sample runner and graph batch runner.
+- `providers/observability/` defines no-op and self-hosted Langfuse observability boundaries, and graph node execution emits every audit event through the configured observability provider while preserving JSONL audit artifacts.
 
 ## Target Folder Structure
 

@@ -16,6 +16,7 @@ from sunshine_extraction.graph.deps import SEMANTIC_INDEX_FROM_ENV, _resolve_dep
 from sunshine_extraction.graph.utils import _json_safe, _write_jsonl
 from sunshine_extraction.providers.chunking import ChunkingProvider
 from sunshine_extraction.providers.extraction import ExtractionProvider
+from sunshine_extraction.providers.observability import ObservabilityProvider
 from sunshine_extraction.providers.vectorstores import VectorStoreProvider
 from sunshine_extraction.services.extraction import OcrExecutor
 from sunshine_extraction.services.imports import RunResultsImporter
@@ -41,6 +42,7 @@ def run_document_graph(
     llm_tag_inspector: LLMTagInspector | None = None,
     ocr_executor: OcrExecutor | None = None,
     run_results_importer: RunResultsImporter | None = None,
+    observability_provider: ObservabilityProvider | None = None,
     dashboard_run_id: int | None = None,
     semantic_index_path: str | Path | None | object = SEMANTIC_INDEX_FROM_ENV,
     progress: bool = False,
@@ -92,6 +94,7 @@ def run_document_graph(
         llm_tag_inspector=llm_tag_inspector,
         ocr_executor=ocr_executor,
         run_results_importer=run_results_importer,
+        observability_provider=observability_provider,
         semantic_index_path=semantic_index_path,
     )
     config = {"configurable": {"thread_id": active_thread_id}}

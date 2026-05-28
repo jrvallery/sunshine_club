@@ -143,10 +143,24 @@ class _SuccessfulOcrExecutor(OcrExecutor):
         return document, [page]
 
 
+class _RecordingObservabilityProvider:
+    provider_name = "recording"
+
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict]] = []
+
+    def dependency_status(self) -> dict:
+        return {"provider": self.provider_name, "available": True, "local_only": True}
+
+    def record_event(self, name: str, payload: dict) -> None:
+        self.events.append((name, payload))
+
+
 def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Path) -> None:
     source = tmp_path / "tea.txt"
     source.write_text("Annual Sunshine Tea guest list and event notes.", encoding="utf-8")
     output_dir = tmp_path / "graph-out"
+    observability = _RecordingObservabilityProvider()
 
     result = run_document_graph(
         source,
@@ -155,6 +169,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
         output_dir=output_dir,
         embedding_provider=PlaceholderEmbeddingProvider(dimensions=4),
         llm_tag_inspector=_TeaLLMTagInspector(),
+        observability_provider=observability,
     )
 
     final_result = result["final_result"]
@@ -293,6 +308,8 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
         "persist_outputs",
         "import_run_results",
     ]
+    assert [event[0] for event in observability.events] == ["graph.node"] * len(audit_events)
+    assert [event[1]["node"] for event in observability.events] == [event["node"] for event in audit_events]
 
 
 def test_langgraph_probe_routes_image_only_pdf_to_ocr(tmp_path: Path) -> None:

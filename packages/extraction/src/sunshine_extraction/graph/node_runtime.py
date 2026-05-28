@@ -7,9 +7,16 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sunshine_extraction.graph.state import DocumentPipelineState
+from sunshine_extraction.providers.observability import ObservabilityProvider
 
 
-def _run_node(name: str, state: DocumentPipelineState, func: Any) -> DocumentPipelineState:
+def _run_node(
+    name: str,
+    state: DocumentPipelineState,
+    func: Any,
+    *,
+    observability_provider: ObservabilityProvider | None = None,
+) -> DocumentPipelineState:
     started = time.monotonic()
     before_warning_count = len(state.get("warnings", []))
     before_error_count = len(state.get("errors", []))
@@ -53,6 +60,11 @@ def _run_node(name: str, state: DocumentPipelineState, func: Any) -> DocumentPip
         "errors": merged.get("errors", [])[before_error_count:],
         "summary": summary,
     }
+    if observability_provider is not None:
+        try:
+            observability_provider.record_event("graph.node", event)
+        except Exception:  # noqa: BLE001 - observability must never break pipeline execution.
+            pass
     merged["audit_events"] = [*state.get("audit_events", []), event]
     return merged
 

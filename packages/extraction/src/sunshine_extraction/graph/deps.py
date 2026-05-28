@@ -16,6 +16,7 @@ from sunshine_extraction.providers.chunking import ChunkingProvider, CurrentChun
 from sunshine_extraction.providers.embeddings import ChunkEmbeddingProvider, CurrentChunkEmbeddingProvider
 from sunshine_extraction.providers.extraction import ExtractionProvider, extraction_provider_from_env
 from sunshine_extraction.providers.llm import CurrentLLMTagInspectionProvider, LLMTagInspectionProvider
+from sunshine_extraction.providers.observability import ObservabilityProvider, observability_provider_from_env
 from sunshine_extraction.providers.retrieval import CurrentSemanticRetrievalProvider, SemanticRetrievalProvider
 from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider, VectorStoreProvider
 from sunshine_extraction.services.extraction import OcrExecutor, ocr_executor_from_env
@@ -34,6 +35,7 @@ def _resolve_deps(
     vector_store: VectorStoreProvider | None = None,
     semantic_retrieval_provider: SemanticRetrievalProvider | None = None,
     llm_tag_inspection_provider: LLMTagInspectionProvider | None = None,
+    observability_provider: ObservabilityProvider | None = None,
     embedding_failure_mode: str | None = None,
     llm_tag_inspector: LLMTagInspector | None = None,
     ocr_executor: OcrExecutor | None = None,
@@ -58,6 +60,7 @@ def _resolve_deps(
         "llm_tag_inspector": active_llm_tag_inspector,
         "ocr_executor": ocr_executor or ocr_executor_from_env(),
         "run_results_importer": run_results_importer or run_results_importer_from_env(),
+        "observability_provider": observability_provider or observability_provider_from_env(),
         "semantic_index_path": _resolve_semantic_index_path(semantic_index_path),
     }
 

@@ -11,6 +11,7 @@ from sunshine_extraction.providers.chunking import ChunkingProvider
 from sunshine_extraction.providers.embeddings import ChunkEmbeddingProvider
 from sunshine_extraction.providers.extraction import ExtractionProvider
 from sunshine_extraction.providers.llm import LLMTagInspectionProvider
+from sunshine_extraction.providers.observability import ObservabilityProvider
 from sunshine_extraction.providers.retrieval import SemanticRetrievalProvider
 from sunshine_extraction.providers.vectorstores import VectorStoreProvider
 from sunshine_extraction.services.content import SampleFile
@@ -91,3 +92,4 @@ class DocumentPipelineDeps(TypedDict, total=False):
     ocr_executor: OcrExecutor
     semantic_index_path: str | None
     run_results_importer: RunResultsImporter
+    observability_provider: ObservabilityProvider
