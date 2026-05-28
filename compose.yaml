@@ -18,6 +18,19 @@ services:
       timeout: 5s
       retries: 20
 
+  qdrant:
+    image: qdrant/qdrant:v1.13.4
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   temporal:
     image: temporalio/auto-setup:1.27.2
     depends_on:
@@ -51,10 +64,15 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      qdrant:
+        condition: service_healthy
       temporal:
         condition: service_started
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-sunshine}:${POSTGRES_PASSWORD:-local}@db:5432/${POSTGRES_DB:-sunshine_club}
+      SUNSHINE_VECTOR_STORE: qdrant
+      SUNSHINE_QDRANT_URL: http://qdrant:6333
+      SUNSHINE_QDRANT_COLLECTION: sunshine_chunks
       TEMPORAL_ADDRESS: temporal:7233
       SUNSHINE_NAS_ROOT: /mnt/sunshine
     ports:
@@ -83,10 +101,15 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      qdrant:
+        condition: service_healthy
       temporal:
         condition: service_started
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-sunshine}:${POSTGRES_PASSWORD:-local}@db:5432/${POSTGRES_DB:-sunshine_club}
+      SUNSHINE_VECTOR_STORE: qdrant
+      SUNSHINE_QDRANT_URL: http://qdrant:6333
+      SUNSHINE_QDRANT_COLLECTION: sunshine_chunks
       TEMPORAL_ADDRESS: temporal:7233
       SUNSHINE_NAS_ROOT: /mnt/sunshine
     volumes:
@@ -98,3 +121,4 @@ services:
 
 volumes:
   postgres_data:
+  qdrant_data:
