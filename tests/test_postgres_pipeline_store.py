@@ -73,6 +73,12 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
     assert "insert into provider_attempts" in executed_sql
     assert "insert into document_segments" in executed_sql
     assert "insert into review_items_v2" in executed_sql
+    run_params = next(params for query, params in connection.executed if "insert into pipeline_runs" in query)
+    run_summary = json.loads(run_params[3])
+    assert run_summary["artifact_manifest"]["artifacts"][0]["name"] == "sample-pipeline-results.jsonl"
+    assert run_summary["graph_runtime"]["latency_status"] == "ok"
+    assert run_summary["providers"]["embedding_provider"] == "cortex"
+    assert run_params[4:11] == ("cortex", "local-embedding", None, None, "current", "qdrant", "sunshine-test")
     assert any("[0.1,0.2,0.3]" in str(params) for _query, params in connection.executed)
     provider_attempt_params = next(params for query, params in connection.executed if "insert into provider_attempts" in query)
     assert provider_attempt_params[1:4] == ("/source/a.pdf", "Sunshine/a.pdf", "current")
@@ -218,6 +224,56 @@ def test_postgres_pipeline_store_lists_review_items() -> None:
     assert rows[0]["run_key"] == "run-1"
     assert rows[0]["proposed_tag"] == "meeting_records"
     assert connection.executed[0][1] == ("run-1", 10)
+    assert connection.closed is True
+
+
+def test_postgres_pipeline_store_gets_run_detail_by_key() -> None:
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
+            normalized = " ".join(query.lower().split())
+            if "from pipeline_runs r" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "run-id",
+                            "run_key": "run-detail",
+                            "preset_key": "qa",
+                            "output_dir": "/tmp/run",
+                            "status": "succeeded",
+                            "local_only": True,
+                            "embedding_provider": "cortex",
+                            "llm_provider": None,
+                            "extraction_provider": "current",
+                            "vector_store_provider": "qdrant",
+                            "vector_store_collection": "sunshine-test",
+                            "started_at": None,
+                            "finished_at": None,
+                            "created_at": None,
+                            "updated_at": None,
+                            "summary": {"graph_runtime": {"latency_status": "ok"}},
+                            "result_count": 1,
+                            "review_required_count": 0,
+                            "model_usage_count": 1,
+                            "provider_attempt_count": 1,
+                            "document_segment_count": 1,
+                        }
+                    ]
+                )
+            return _Cursor()
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+    store = PostgresPipelineStore("postgresql://local/test", connect_factory=lambda _url: connection)
+
+    run = store.get_pipeline_run(run_key="run-detail")
+
+    assert run["run_key"] == "run-detail"
+    assert run["summary"]["graph_runtime"]["latency_status"] == "ok"
     assert connection.closed is True
 
 
@@ -417,5 +473,23 @@ def _postgres_import_artifacts(tmp_path: Path) -> Path:
                 "warnings": [],
             }
         ],
+    )
+    _write_jsonl(
+        output_dir / "sample-indexing.jsonl",
+        [
+            {
+                "provider": "qdrant",
+                "collection": "sunshine-test",
+                "status": "indexed",
+            }
+        ],
+    )
+    (output_dir / "artifact-manifest.json").write_text(
+        json.dumps({"artifacts": [{"name": "sample-pipeline-results.jsonl", "row_count": 1}]}),
+        encoding="utf-8",
+    )
+    (output_dir / "graph-run-metadata.json").write_text(
+        json.dumps({"graph_runtime": {"latency_status": "ok", "runtime_ms": 42}}),
+        encoding="utf-8",
     )
     return output_dir

@@ -42,7 +42,8 @@ class PostgresPipelineStore:
 
         connection = self._connect_factory(self.database_url)
         try:
-            run_id = self._upsert_run(connection, run_key=run_key, preset_key=preset_key, output_dir=output_path)
+            run_summary = _run_summary_from_artifacts(output_path)
+            run_id = self._upsert_run(connection, run_key=run_key, preset_key=preset_key, output_dir=output_path, summary=run_summary)
             counts = {
                 "pipeline_results": self._import_results(connection, run_id, output_path),
                 "pipeline_chunks": self._import_chunks(connection, run_id, output_path),
@@ -82,6 +83,17 @@ class PostgresPipelineStore:
             return self._list_pipeline_runs(connection, limit=limit)
         finally:
             connection.close()
+
+    def get_pipeline_run(self, *, run_key: str) -> dict[str, Any]:
+        connection = self._connect_factory(self.database_url)
+        try:
+            rows = self._list_pipeline_runs(connection, limit=500)
+            for row in rows:
+                if row.get("run_key") == run_key:
+                    return row
+        finally:
+            connection.close()
+        raise KeyError(f"Postgres pipeline run not found: {run_key}")
 
     def list_review_items(self, *, run_key: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
         connection = self._connect_factory(self.database_url)
@@ -159,19 +171,45 @@ class PostgresPipelineStore:
         ).fetchall()
         return [_json_safe_row(_row_to_dict(row)) for row in rows]
 
-    def _upsert_run(self, connection: PostgresConnection, *, run_key: str, preset_key: str | None, output_dir: Path) -> str:
+    def _upsert_run(self, connection: PostgresConnection, *, run_key: str, preset_key: str | None, output_dir: Path, summary: dict[str, Any]) -> str:
+        graph_runtime = summary.get("graph_runtime") if isinstance(summary.get("graph_runtime"), dict) else {}
+        providers = summary.get("providers") if isinstance(summary.get("providers"), dict) else {}
         row = connection.execute(
             """
-            insert into pipeline_runs (run_key, preset_key, output_dir, status, local_only, summary)
-            values (%s, %s, %s, 'succeeded', true, '{}'::jsonb)
+            insert into pipeline_runs (
+                run_key, preset_key, output_dir, status, local_only, summary,
+                embedding_provider, embedding_model, llm_provider, llm_model,
+                extraction_provider, vector_store_provider, vector_store_collection
+            )
+            values (%s, %s, %s, 'succeeded', true, %s::jsonb, %s, %s, %s, %s, %s, %s, %s)
             on conflict (run_key) do update set
                 preset_key = excluded.preset_key,
                 output_dir = excluded.output_dir,
                 status = excluded.status,
+                summary = excluded.summary,
+                embedding_provider = excluded.embedding_provider,
+                embedding_model = excluded.embedding_model,
+                llm_provider = excluded.llm_provider,
+                llm_model = excluded.llm_model,
+                extraction_provider = excluded.extraction_provider,
+                vector_store_provider = excluded.vector_store_provider,
+                vector_store_collection = excluded.vector_store_collection,
                 updated_at = now()
             returning id
             """,
-            (run_key, preset_key, str(output_dir)),
+            (
+                run_key,
+                preset_key,
+                str(output_dir),
+                json.dumps(summary, sort_keys=True),
+                providers.get("embedding_provider"),
+                providers.get("embedding_model"),
+                providers.get("llm_provider"),
+                providers.get("llm_model"),
+                providers.get("extraction_provider"),
+                providers.get("vector_store_provider"),
+                providers.get("vector_store_collection") or graph_runtime.get("policy", {}).get("qdrant_collection"),
+            ),
         ).fetchone()
         return str(row[0] if isinstance(row, tuple) else row["id"])
 
@@ -392,6 +430,70 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
             if line.strip():
                 rows.append(json.loads(line))
     return rows
+
+
+def _run_summary_from_artifacts(output_path: Path) -> dict[str, Any]:
+    result_rows = _read_jsonl(output_path / "sample-pipeline-results.jsonl")
+    model_usage_rows = _read_jsonl(output_path / "sample-model-usage.jsonl")
+    provider_attempt_rows = _read_jsonl(output_path / "sample-provider-attempts.jsonl")
+    indexing_rows = _read_jsonl(output_path / "sample-indexing.jsonl")
+    manifest = _read_json(output_path / "artifact-manifest.json")
+    run_metadata = _read_json(output_path / "graph-run-metadata.json")
+    graph_runtime = run_metadata.get("graph_runtime") if isinstance(run_metadata.get("graph_runtime"), dict) else {}
+    providers = _provider_summary(model_usage_rows, provider_attempt_rows, indexing_rows)
+    return {
+        "artifact_manifest": manifest,
+        "graph_run_metadata": run_metadata,
+        "graph_runtime": graph_runtime,
+        "providers": providers,
+        "counts": {
+            "pipeline_results": len(result_rows),
+            "review_required": sum(1 for row in result_rows if row.get("route_status") != "route_candidate"),
+            "model_usage": len(model_usage_rows),
+            "provider_attempts": len(provider_attempt_rows),
+            "indexing": len(indexing_rows),
+        },
+        "distributions": {
+            "route_status": _count_values(result_rows, "route_status"),
+            "quality": _count_values(result_rows, "quality"),
+            "final_class": _count_values(result_rows, "final_class"),
+        },
+        "local_only": True,
+    }
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {"error": "invalid_json", "path": str(path)}
+    return value if isinstance(value, dict) else {"value": value}
+
+
+def _provider_summary(model_usage_rows: list[dict[str, Any]], provider_attempt_rows: list[dict[str, Any]], indexing_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    embedding = next((row for row in model_usage_rows if row.get("purpose") == "chunk_embedding"), {})
+    llm = next((row for row in model_usage_rows if row.get("purpose") == "tag_inspection"), {})
+    extraction = next((row for row in provider_attempt_rows if row.get("capability", "extraction") == "extraction"), {})
+    indexing = next((row for row in indexing_rows if row.get("provider")), {})
+    return {
+        "embedding_provider": embedding.get("provider"),
+        "embedding_model": embedding.get("model"),
+        "llm_provider": llm.get("provider"),
+        "llm_model": llm.get("model"),
+        "extraction_provider": extraction.get("provider"),
+        "vector_store_provider": indexing.get("provider"),
+        "vector_store_collection": indexing.get("collection"),
+    }
+
+
+def _count_values(rows: list[dict[str, Any]], field: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        key = str(row.get(field) or "unknown")
+        counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def _scalar_count(connection: PostgresConnection, query: str) -> int:

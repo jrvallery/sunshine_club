@@ -39,6 +39,16 @@ def list_postgres_pipeline_runs(
     return store.list_pipeline_runs(limit=limit)
 
 
+def get_postgres_pipeline_run(
+    *,
+    run_key: str,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> dict[str, Any]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.get_pipeline_run(run_key=run_key)
+
+
 def list_postgres_review_items(
     *,
     run_key: str | None = None,
@@ -52,6 +62,7 @@ def list_postgres_review_items(
 
 __all__ = [
     "import_langgraph_output_to_postgres",
+    "get_postgres_pipeline_run",
     "list_postgres_pipeline_runs",
     "list_postgres_review_items",
     "postgres_runtime_summary",

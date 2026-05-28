@@ -1266,8 +1266,10 @@ Current implementation:
 - `services/artifacts/writers.py` owns normalized sample input, extraction result, and pipeline result row construction; `services/artifacts/manifest.py` exposes manifest generation through the V2 package path.
 - `PostgresPipelineStore` imports run-owned chunks and chunk embeddings from graph artifacts into the Postgres V2 runtime schema.
 - `PostgresPipelineStore` imports review-required queue rows into `review_items_v2`, preserving run ownership, source path, proposed class/tag, proposed secondary tags, and review reason.
+- `PostgresPipelineStore` imports run-owned `artifact-manifest.json`, `graph-run-metadata.json`, provider summary, counts, and distributions into `pipeline_runs.summary`.
 - `PostgresPipelineStore` exposes read-only runtime summary and recent-run listing methods so dashboard/API migration can inspect V2 Postgres state without using SQLite.
 - `PostgresPipelineStore` exposes a read-only review-item listing by run key; `GET /admin/system/postgres-runtime/review-items` and the Settings dashboard can inspect imported V2 review queues directly from Postgres.
+- `GET /admin/system/postgres-runtime/runs/{run_key}` exposes imported Postgres run detail by run key, including the run summary.
 
 ### 24. `import_run_results`
 
@@ -1560,7 +1562,7 @@ Important missing V2 dependencies:
 - Docling is declared as an optional Python extra and has a local provider boundary; the actual local dependency install/runtime benchmark still needs to be performed.
 - MinerU, RAGFlow DeepDoc, and Unstructured have local provider boundaries for benchmarking, but are not declared as installed dependencies yet.
 - Qdrant client, Compose service, readiness metadata, executable vector-store policy, and a Settings-page provider health/provisioning surface exist for inspecting local infrastructure and triggering Qdrant rebuilds.
-- Postgres client and Compose service exist; V2 migrations now include run/results/model/provider/segment/review/chunk/embedding tables, and the API exposes read-only Postgres runtime, run listing, and review-item listing surfaces. Dashboard runtime still needs to move from SQLite to Postgres as the authoritative store.
+- Postgres client and Compose service exist; V2 migrations now include run/results/model/provider/segment/review/chunk/embedding tables, and the API exposes read-only Postgres runtime, run detail, run listing, and review-item listing surfaces. Dashboard runtime still needs to move from SQLite to Postgres as the authoritative store.
 - Local embedding/vector indexing stack is wired through providers, optional dev Qdrant indexing, production-required Qdrant policy, and a Postgres-to-Qdrant rebuild service. Production/V2 mode fail-closes if Qdrant is explicitly disabled.
 - Provider benchmark tooling exists for extraction providers and emits promotion recommendations; real Docling/MinerU/RAGFlow dependency benchmarking still needs to be finished.
 - The provider benchmark API returns summary, result rows, and promotion recommendations from benchmark artifacts, and the Pipeline Quality Eval dashboard now has a Provider Benchmarks panel for running and reviewing those artifacts.

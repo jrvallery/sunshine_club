@@ -69,10 +69,16 @@ type PostgresReviewItems = {
   items: Array<Record<string, unknown>>;
 };
 
+type PostgresRunDetail = {
+  ok: boolean;
+  run: Record<string, unknown>;
+};
+
 export default function SettingsPage() {
   const queryClient = useQueryClient();
   const [rebuildRunKey, setRebuildRunKey] = useState("");
   const [rebuildLimit, setRebuildLimit] = useState("");
+  const [postgresRunKey, setPostgresRunKey] = useState("");
   const health = useQuery({ queryKey: ["api-health"], queryFn: () => fetchJson<Health>("/api/healthz") });
   const summary = useQuery({ queryKey: ["review-summary"], queryFn: () => fetchJson<ReviewSummary>("/api/admin/review/summary") });
   const semanticIndex = useQuery({ queryKey: ["semantic-index-status"], queryFn: () => fetchJson<SemanticIndexStatus>("/api/admin/semantic-index/status") });
@@ -88,6 +94,12 @@ export default function SettingsPage() {
   const postgresReviewItems = useQuery({
     queryKey: ["postgres-review-items"],
     queryFn: () => fetchJson<PostgresReviewItems>("/api/admin/system/postgres-runtime/review-items?limit=10"),
+    retry: false
+  });
+  const postgresRunDetail = useQuery({
+    queryKey: ["postgres-run-detail", postgresRunKey],
+    enabled: Boolean(postgresRunKey),
+    queryFn: () => fetchJson<PostgresRunDetail>(`/api/admin/system/postgres-runtime/runs/${encodeURIComponent(postgresRunKey)}`),
     retry: false
   });
   const rebuildQdrant = useMutation({
@@ -221,6 +233,11 @@ export default function SettingsPage() {
                         <strong>{String(run.run_key ?? "-")}</strong>
                         <span>{String(run.output_dir ?? "-")}</span>
                       </div>
+                      {run.run_key ? (
+                        <button className="linkButton" onClick={() => setPostgresRunKey(String(run.run_key))}>
+                          Inspect Postgres detail
+                        </button>
+                      ) : null}
                     </td>
                     <td>{String(run.status ?? "-")}</td>
                     <td>{String(run.result_count ?? 0)}</td>
@@ -231,6 +248,24 @@ export default function SettingsPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        ) : null}
+        {postgresRunDetail.data?.run ? (
+          <div className="drawerGrid">
+            <section>
+              <h3>Postgres Run Detail</h3>
+              <KeyValue label="Run key" value={String(postgresRunDetail.data.run.run_key ?? "-")} />
+              <KeyValue label="Status" value={String(postgresRunDetail.data.run.status ?? "-")} />
+              <KeyValue label="Extraction provider" value={String(postgresRunDetail.data.run.extraction_provider ?? "-")} />
+              <KeyValue label="Vector store" value={String(postgresRunDetail.data.run.vector_store_provider ?? "-")} />
+              <KeyValue label="Results" value={String(postgresRunDetail.data.run.result_count ?? 0)} />
+            </section>
+            <section>
+              <h3>Summary Metadata</h3>
+              <KeyValue label="Latency" value={postgresRunLatency(postgresRunDetail.data.run.summary)} />
+              <KeyValue label="Artifact count" value={postgresRunArtifactCount(postgresRunDetail.data.run.summary)} />
+              <KeyValue label="Review required" value={postgresRunReviewCount(postgresRunDetail.data.run.summary)} />
+            </section>
           </div>
         ) : null}
         {postgresReviewItems.data?.items.length ? (
@@ -341,6 +376,41 @@ function formatBytes(value: unknown) {
     return `${Math.round(bytes / 1024)} KB`;
   }
   return `${bytes} B`;
+}
+
+function postgresRunLatency(summary: unknown) {
+  if (!summary || typeof summary !== "object" || Array.isArray(summary)) {
+    return "-";
+  }
+  const runtime = (summary as Record<string, unknown>).graph_runtime;
+  if (!runtime || typeof runtime !== "object" || Array.isArray(runtime)) {
+    return "-";
+  }
+  const row = runtime as Record<string, unknown>;
+  return `${String(row.latency_status ?? "-")} (${String(row.runtime_ms ?? "-")} ms)`;
+}
+
+function postgresRunArtifactCount(summary: unknown) {
+  if (!summary || typeof summary !== "object" || Array.isArray(summary)) {
+    return "-";
+  }
+  const manifest = (summary as Record<string, unknown>).artifact_manifest;
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+    return "-";
+  }
+  const artifacts = (manifest as Record<string, unknown>).artifacts;
+  return Array.isArray(artifacts) ? String(artifacts.length) : "-";
+}
+
+function postgresRunReviewCount(summary: unknown) {
+  if (!summary || typeof summary !== "object" || Array.isArray(summary)) {
+    return "-";
+  }
+  const counts = (summary as Record<string, unknown>).counts;
+  if (!counts || typeof counts !== "object" || Array.isArray(counts)) {
+    return "-";
+  }
+  return String((counts as Record<string, unknown>).review_required ?? "-");
 }
 
 function ProviderStatus({ title, status }: { title: string; status?: Record<string, unknown> }) {

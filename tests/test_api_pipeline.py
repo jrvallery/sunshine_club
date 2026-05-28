@@ -79,6 +79,22 @@ def test_postgres_review_items_endpoint_wraps_service(monkeypatch) -> None:
     assert captured == {"run_key": "run-1", "limit": 5}
 
 
+def test_postgres_run_detail_endpoint_wraps_service(monkeypatch) -> None:
+    captured = {}
+
+    def fake_get_run(*, run_key: str) -> dict:
+        captured["run_key"] = run_key
+        return {"run_key": run_key, "summary": {"graph_runtime": {"latency_status": "ok"}}}
+
+    monkeypatch.setattr("sunshine_api.routers.health.get_postgres_pipeline_run", fake_get_run)
+
+    response = TestClient(app).get("/admin/system/postgres-runtime/runs/run-1")
+
+    assert response.status_code == 200
+    assert response.json()["run"]["summary"]["graph_runtime"]["latency_status"] == "ok"
+    assert captured == {"run_key": "run-1"}
+
+
 def test_local_infrastructure_status_is_local_only(monkeypatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://sunshine:local@localhost:5432/sunshine_club")
     monkeypatch.setenv("SUNSHINE_QDRANT_URL", "http://127.0.0.1:6333")
