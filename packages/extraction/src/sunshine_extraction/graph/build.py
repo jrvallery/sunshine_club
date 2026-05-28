@@ -16,6 +16,7 @@ from sunshine_extraction.graph.nodes.extraction import (
     _normalize_document_structure_node,
     _propose_document_segments_node,
     _quality_gate,
+    _select_extraction_provider_node,
     _validate_text_extraction_node,
 )
 from sunshine_extraction.graph.nodes.loading import _after_load_file_context, _identify_file, _load_file_context
@@ -34,6 +35,7 @@ def build_document_graph(deps: DocumentPipelineDeps | None = None, *, checkpoint
     builder.add_node("probe_file", lambda state: _run_node("probe_file", state, _probe_file))
     builder.add_node("classify_content_type", lambda state: _run_node("classify_content_type", state, _classify_content_type))
     builder.add_node("plan_extraction", lambda state: _run_node("plan_extraction", state, _plan_extraction))
+    builder.add_node("select_extraction_provider", lambda state: _run_node("select_extraction_provider", state, lambda active: _select_extraction_provider_node(active, active_deps)))
     builder.add_node("extract_content", lambda state: _run_node("extract_content", state, lambda active: _extract_content_node(active, active_deps)))
     builder.add_node("validate_text_extraction", lambda state: _run_node("validate_text_extraction", state, lambda active: _validate_text_extraction_node(active, active_deps)))
     builder.add_node("quality_gate", lambda state: _run_node("quality_gate", state, _quality_gate))
@@ -59,7 +61,8 @@ def build_document_graph(deps: DocumentPipelineDeps | None = None, *, checkpoint
     builder.add_edge("identify_file", "probe_file")
     builder.add_edge("probe_file", "classify_content_type")
     builder.add_edge("classify_content_type", "plan_extraction")
-    builder.add_edge("plan_extraction", "extract_content")
+    builder.add_edge("plan_extraction", "select_extraction_provider")
+    builder.add_edge("select_extraction_provider", "extract_content")
     builder.add_edge("extract_content", "validate_text_extraction")
     builder.add_edge("validate_text_extraction", "quality_gate")
     builder.add_conditional_edges(

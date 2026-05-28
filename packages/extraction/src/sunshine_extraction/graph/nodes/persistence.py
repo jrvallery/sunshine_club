@@ -29,6 +29,7 @@ def _persist_outputs(state: DocumentPipelineState) -> dict[str, Any]:
     }
     artifacts["sample-source-identity.jsonl"] = [state["source_identity"]] if state.get("source_identity") else []
     artifacts["sample-file-probes.jsonl"] = [state["file_probe"]] if state.get("file_probe") else []
+    artifacts["sample-provider-selections.jsonl"] = [state["extraction_provider_selection"]] if state.get("extraction_provider_selection") else []
     if state.get("sample") and state.get("content_class") and state.get("extraction_plan"):
         artifacts["sample-inputs.jsonl"] = [sample_input_row(state["sample"], state["content_class"], state["extraction_plan"])]
     if state.get("extraction_result") and state.get("extraction_quality"):

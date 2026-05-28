@@ -281,6 +281,25 @@ def test_run_report_reads_live_graph_run_artifacts_before_batch_finalize(tmp_pat
         + "\n",
         encoding="utf-8",
     )
+    (second_run_dir / "sample-provider-selections.jsonl").write_text(
+        json.dumps(
+            {
+                "source_path": "/source/review.pdf",
+                "relative_path": "Review/review.pdf",
+                "sample_path": str(second_run_dir / "review.pdf"),
+                "selected_provider": "current",
+                "provider_chain": ["docling", "cortex_ocr", "current"],
+                "provider_selection_reason": "preferred_docling_unavailable_fell_back_to_configured",
+                "preferred_provider": "docling",
+                "configured_provider": "current",
+                "local_only_required": True,
+                "skipped_providers": [{"provider": "docling", "reason": "dependency_unavailable"}],
+                "metadata": {"strategy": "ocr_page_level", "media_type": "pdf"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     (second_run_dir / "sample-document-segments.jsonl").write_text(
         json.dumps(
             {
@@ -339,6 +358,8 @@ def test_run_report_reads_live_graph_run_artifacts_before_batch_finalize(tmp_pat
     assert payload["source_identity"]["items"][0]["file_id"] == "file-review"
     assert payload["file_probes"]["count"] == 1
     assert payload["file_probes"]["by_media_type"]["pdf"] == 1
+    assert payload["provider_selections"]["count"] == 1
+    assert payload["provider_selections"]["by_selected_provider"]["current"] == 1
     assert payload["extraction"]["count"] == 1
     assert payload["provider_attempts"]["count"] == 1
     assert payload["provider_attempts"]["by_provider"]["current"] == 1

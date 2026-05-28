@@ -418,6 +418,13 @@ Success criteria:
 - Provider selection is visible in run report.
 - Fallback chain is auditable.
 
+Current implementation:
+
+- Graph has an explicit `select_extraction_provider` node between planning and extraction.
+- Selection writes `sample-provider-selections.jsonl` with selected provider, preferred provider, configured provider, provider chain, skipped providers, and selection reason.
+- Image-only/OCR plans prefer Docling, fall back to the configured local provider when Docling is unavailable, and keep Cortex OCR in the recorded provider chain.
+- Extraction consumes the selected provider so future local Docling installs can be used without changing graph shape.
+
 ### 7. `extract_document`
 
 Purpose:
@@ -1046,6 +1053,7 @@ Artifacts:
 - `sample-review-queue.jsonl`
 - `sample-source-identity.jsonl`
 - `sample-file-probes.jsonl`
+- `sample-provider-selections.jsonl`
 - `sample-inputs.jsonl`
 - `sample-extraction-results.jsonl`
 - `sample-parser-results.jsonl`
@@ -1577,6 +1585,7 @@ Required artifacts:
 - `sample-review-queue.jsonl`
 - `sample-source-identity.jsonl`
 - `sample-file-probes.jsonl`
+- `sample-provider-selections.jsonl`
 - `sample-inputs.jsonl`
 - `sample-extraction-results.jsonl`
 - `sample-parser-results.jsonl`

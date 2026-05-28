@@ -216,6 +216,7 @@ def run_report(run_id: int) -> dict[str, Any]:
     ocr_pages = _read_run_jsonl_with_live_fallback(output_dir, "sample-ocr-pages.jsonl", limit=200)
     source_identity = _read_run_jsonl_with_live_fallback(output_dir, "sample-source-identity.jsonl", limit=500)
     file_probes = _read_run_jsonl_with_live_fallback(output_dir, "sample-file-probes.jsonl", limit=500)
+    provider_selections = _read_run_jsonl_with_live_fallback(output_dir, "sample-provider-selections.jsonl", limit=500)
     extraction_results = _read_run_jsonl_with_live_fallback(output_dir, "sample-extraction-results.jsonl", limit=200)
     provider_attempts = store.list_provider_attempts(run_id) or _read_run_jsonl_with_live_fallback(output_dir, "sample-provider-attempts.jsonl", limit=500)
     document_segments = store.list_document_segments(run_id) or _read_run_jsonl_with_live_fallback(output_dir, "sample-document-segments.jsonl", limit=500)
@@ -260,6 +261,12 @@ def run_report(run_id: int) -> dict[str, Any]:
             "by_media_type": _count_values(file_probes, "media_type"),
             "by_status": _count_values(file_probes, "status"),
             "items": file_probes[:100],
+        },
+        "provider_selections": {
+            "count": len(provider_selections),
+            "by_selected_provider": _count_values(provider_selections, "selected_provider"),
+            "by_reason": _count_values(provider_selections, "provider_selection_reason"),
+            "items": provider_selections[:100],
         },
         "review_queue": {
             "count": len(review_items) if review_items else len(review_queue),

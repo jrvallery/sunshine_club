@@ -106,6 +106,7 @@ def run_document_batch(
     artifact_rows: dict[str, list[dict[str, Any]]] = {
         "sample-source-identity.jsonl": [],
         "sample-file-probes.jsonl": [],
+        "sample-provider-selections.jsonl": [],
         "sample-inputs.jsonl": [],
         "sample-extraction-results.jsonl": [],
         "sample-provider-attempts.jsonl": [],
@@ -315,6 +316,8 @@ def _append_batch_rows(artifact_rows: dict[str, list[dict[str, Any]]], result: d
         artifact_rows["sample-source-identity.jsonl"].append(result["source_identity"])
     if result.get("file_probe"):
         artifact_rows["sample-file-probes.jsonl"].append(result["file_probe"])
+    if result.get("extraction_provider_selection"):
+        artifact_rows["sample-provider-selections.jsonl"].append(result["extraction_provider_selection"])
     if extraction_result and extraction_quality:
         artifact_rows["sample-extraction-results.jsonl"].append(extraction_result_row(extraction_result, extraction_quality))
     artifact_rows["sample-provider-attempts.jsonl"].extend(result.get("provider_attempts", []))

@@ -171,6 +171,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     provider_attempt_rows = [json.loads(line) for line in (output_dir / "sample-provider-attempts.jsonl").read_text().splitlines()]
     source_identity_rows = [json.loads(line) for line in (output_dir / "sample-source-identity.jsonl").read_text().splitlines()]
     probe_rows = [json.loads(line) for line in (output_dir / "sample-file-probes.jsonl").read_text().splitlines()]
+    provider_selection_rows = [json.loads(line) for line in (output_dir / "sample-provider-selections.jsonl").read_text().splitlines()]
 
     assert final_result["route_status"] == "route_candidate"
     assert final_result["top_tag_candidate"] == "annual_spring_tea"
@@ -201,6 +202,8 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert result["file_id"] == source_identity_rows[0]["file_id"]
     assert probe_rows[0]["media_type"] == "text"
     assert probe_rows[0]["metadata"]["local_only"] is True
+    assert provider_selection_rows[0]["selected_provider"] == "current"
+    assert provider_selection_rows[0]["provider_chain"] == ["current"]
     assert {row["purpose"] for row in model_usage_rows} == {"chunk_embedding", "semantic_retrieval_embedding", "tag_inspection"}
     assert [event["node"] for event in audit_events] == [
         "load_file_context",
@@ -208,6 +211,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
         "probe_file",
         "classify_content_type",
         "plan_extraction",
+        "select_extraction_provider",
         "extract_content",
         "validate_text_extraction",
         "quality_gate",
@@ -250,6 +254,10 @@ def test_langgraph_probe_routes_image_only_pdf_to_ocr(tmp_path: Path) -> None:
     assert result["content_class"]["final_class"] == "scanned_document"
     assert result["extraction_plan"]["strategy"] == "ocr_page_level"
     assert result["extraction_plan"]["provider_hints"]["preferred_parser"] == "docling"
+    assert result["extraction_provider_selection"]["preferred_provider"] == "docling"
+    assert result["extraction_provider_selection"]["selected_provider"] == "current"
+    assert result["extraction_provider_selection"]["provider_chain"] == ["docling", "cortex_ocr", "current"]
+    assert result["extraction_provider_selection"]["provider_selection_reason"] == "preferred_docling_unavailable_fell_back_to_configured"
 
 
 def test_langgraph_confidence_calibration_routes_llm_disagreement_to_review(tmp_path: Path) -> None:

@@ -6,6 +6,9 @@ from typing import Any
 
 from sunshine_extraction.graph.model_usage import _ocr_model_usage_rows
 from sunshine_extraction.graph.state import DocumentPipelineDeps, DocumentPipelineState
+from sunshine_extraction.providers.extraction.current import CurrentExtractionProvider
+from sunshine_extraction.providers.extraction.docling_provider import DoclingExtractionProvider
+from sunshine_extraction.providers.extraction.router import select_extraction_provider
 from sunshine_extraction.services.extraction import (
     OcrArtifacts,
     chunk_content,
@@ -16,11 +19,27 @@ from sunshine_extraction.services.segmentation.page_grouping import attach_segme
 from sunshine_extraction.services.structure import normalize_document_structure
 
 
-def _extract_content_node(state: DocumentPipelineState, deps: DocumentPipelineDeps) -> dict[str, Any]:
-    ocr_artifacts = OcrArtifacts(pages=[], documents=[])
-    extraction, provider_attempt = deps["extraction_provider"].extract(
+def _select_extraction_provider_node(state: DocumentPipelineState, deps: DocumentPipelineDeps) -> dict[str, Any]:
+    selection = select_extraction_provider(
         state["sample"],
         state["extraction_plan"],
+        state.get("file_probe", {}),
+        deps["extraction_provider"],
+    )
+    return {"extraction_provider_selection": selection}
+
+
+def _extract_content_node(state: DocumentPipelineState, deps: DocumentPipelineDeps) -> dict[str, Any]:
+    ocr_artifacts = OcrArtifacts(pages=[], documents=[])
+    provider = _provider_for_selection(state.get("extraction_provider_selection", {}), deps)
+    extraction_plan = {
+        **state["extraction_plan"],
+        "selected_provider": state.get("extraction_provider_selection", {}).get("selected_provider"),
+        "provider_chain": state.get("extraction_provider_selection", {}).get("provider_chain", []),
+    }
+    extraction, provider_attempt = provider.extract(
+        state["sample"],
+        extraction_plan,
         ocr_executor=deps["ocr_executor"],
         ocr_artifacts=ocr_artifacts,
     )
@@ -42,6 +61,19 @@ def _extract_content_node(state: DocumentPipelineState, deps: DocumentPipelineDe
     if usage_rows:
         updates["model_usage"] = [*state.get("model_usage", []), *usage_rows]
     return updates
+
+
+def _provider_for_selection(selection: dict[str, Any], deps: DocumentPipelineDeps) -> Any:
+    selected = str(selection.get("selected_provider") or "").lower()
+    configured = deps["extraction_provider"]
+    configured_name = str(getattr(configured, "provider_name", "")).lower()
+    if not selected or selected == configured_name:
+        return configured
+    if selected == "docling":
+        return DoclingExtractionProvider()
+    if selected == "current":
+        return CurrentExtractionProvider()
+    return configured
 
 def _validate_text_extraction_node(state: DocumentPipelineState, deps: DocumentPipelineDeps) -> dict[str, Any]:
     original = state["extraction_result"]

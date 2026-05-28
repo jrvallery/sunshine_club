@@ -74,6 +74,8 @@ def _node_summary(name: str, updates: dict[str, Any]) -> str:
         return f"probed {updates['file_probe'].get('media_type')}"
     if name == "plan_extraction" and updates.get("extraction_plan"):
         return f"planned {updates['extraction_plan'].get('strategy')}"
+    if name == "select_extraction_provider" and updates.get("extraction_provider_selection"):
+        return f"selected {updates['extraction_provider_selection'].get('selected_provider')}"
     if name == "extract_content" and updates.get("extraction_result"):
         return f"extracted {updates['extraction_result'].extraction_status}"
     if name == "validate_text_extraction" and updates.get("extraction_result"):

@@ -36,6 +36,7 @@ class DocumentPipelineState(TypedDict, total=False):
     file_probe: dict[str, Any]
     content_class: dict[str, Any]
     extraction_plan: dict[str, Any]
+    extraction_provider_selection: dict[str, Any]
     extraction_result: ExtractionResult
     extraction_quality: dict[str, Any]
     provider_attempts: list[dict[str, Any]]
