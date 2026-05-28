@@ -444,6 +444,7 @@ function postgresRunReviewCount(summary: unknown) {
 
 function ProviderStatus({ title, status }: { title: string; status?: Record<string, unknown> }) {
   const available = Boolean(status?.available ?? status?.configured ?? status?.provisioned);
+  const modelCache = status?.model_cache && typeof status.model_cache === "object" && !Array.isArray(status.model_cache) ? (status.model_cache as Record<string, unknown>) : null;
   return (
     <div className="breakdown">
       <div className="sectionHeader">
@@ -454,6 +455,13 @@ function ProviderStatus({ title, status }: { title: string; status?: Record<stri
       <KeyValue label="Local only" value={String(status?.local_only ?? true)} />
       <KeyValue label="URL/path" value={String(status?.url ?? status?.path ?? status?.address ?? "-")} />
       <KeyValue label="Collection/model" value={String(status?.collection ?? status?.model ?? status?.task_queue ?? "-")} />
+      {modelCache ? (
+        <>
+          <KeyValue label="Model cache" value={modelCache.ready ? "ready" : "missing files"} />
+          <KeyValue label="Cache path" value={String(modelCache.path ?? "-")} />
+          <KeyValue label="Missing models" value={formatList(modelCache.missing_files)} />
+        </>
+      ) : null}
     </div>
   );
 }
