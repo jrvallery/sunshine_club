@@ -41,6 +41,8 @@ from sunshine_api.services.imports import (
     list_postgres_pipeline_runs,
     list_postgres_review_items,
     list_postgres_run_artifacts,
+    list_postgres_run_chunk_embeddings,
+    list_postgres_run_chunks,
     list_postgres_run_document_segments,
     list_postgres_run_events,
     list_postgres_run_model_usage,
@@ -156,6 +158,37 @@ def postgres_runtime_run_segments(run_key: str, limit: int = 500) -> dict[str, A
         raise HTTPException(status_code=400, detail=str(error)) from error
     review_required = sum(1 for segment in segments if segment.get("requires_segment_review") is True)
     return {"ok": True, "run_key": run_key, "count": len(segments), "review_required_count": review_required, "segments": segments}
+
+
+@router.get("/admin/system/postgres-runtime/runs/{run_key}/chunks")
+def postgres_runtime_run_chunks(run_key: str, limit: int = 500) -> dict[str, Any]:
+    try:
+        chunks = list_postgres_run_chunks(run_key=run_key, limit=limit)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"ok": True, "run_key": run_key, "count": len(chunks), "chunks": chunks}
+
+
+@router.get("/admin/system/postgres-runtime/runs/{run_key}/chunk-embeddings")
+def postgres_runtime_run_chunk_embeddings(run_key: str, limit: int = 500) -> dict[str, Any]:
+    try:
+        chunk_embeddings = list_postgres_run_chunk_embeddings(run_key=run_key, limit=limit)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    embedded_count = sum(1 for row in chunk_embeddings if row.get("embedding_status") == "embedded")
+    placeholder_count = sum(1 for row in chunk_embeddings if row.get("embedding_status") == "placeholder")
+    return {
+        "ok": True,
+        "run_key": run_key,
+        "count": len(chunk_embeddings),
+        "embedded_count": embedded_count,
+        "placeholder_count": placeholder_count,
+        "chunk_embeddings": chunk_embeddings,
+    }
 
 
 @router.post("/admin/system/postgres-runtime/runs/{run_key}/segments/{segment_id}/decision")

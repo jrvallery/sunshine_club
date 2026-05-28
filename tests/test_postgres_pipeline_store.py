@@ -1469,6 +1469,102 @@ def test_postgres_pipeline_store_lists_run_document_segments() -> None:
     assert connection.closed is True
 
 
+def test_postgres_pipeline_store_lists_run_chunks() -> None:
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.closed = False
+            self.executed: list[tuple[str, tuple[Any, ...]]] = []
+
+        def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
+            self.executed.append((query, params))
+            normalized = " ".join(query.lower().split())
+            if "from pipeline_runs r" in normalized:
+                return _Cursor(rows=[{"id": "run-id", "run_key": "run-report"}])
+            if "from pipeline_chunks pc" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "chunk-row-id",
+                            "run_id": "run-id",
+                            "run_key": "run-report",
+                            "source_path": "/source/scrapbook.pdf",
+                            "relative_path": "Scrapbooks/scrapbook.pdf",
+                            "sample_path": "/samples/001 - scrapbook.pdf",
+                            "chunk_id": "file-1:segment-001:chunk-001",
+                            "chunk_index": 1,
+                            "chunk_kind": "segment_text",
+                            "content_snippet": "Founders of Sunshine Club",
+                            "content_length": 512,
+                            "metadata": {"segment_id": "file-1:pages-00001-00002:segment-001"},
+                            "created_at": None,
+                        }
+                    ]
+                )
+            return _Cursor(rows=[])
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+    store = PostgresPipelineStore("postgresql://local/test", connect_factory=lambda _url: connection)
+
+    rows = store.list_run_chunks(run_key="run-report", limit=10)
+
+    assert rows[0]["chunk_id"] == "file-1:segment-001:chunk-001"
+    assert rows[0]["chunk_kind"] == "segment_text"
+    assert rows[0]["metadata"]["segment_id"] == "file-1:pages-00001-00002:segment-001"
+    assert any(params == ("run-report", 10) for _query, params in connection.executed)
+    assert connection.closed is True
+
+
+def test_postgres_pipeline_store_lists_run_chunk_embeddings() -> None:
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.closed = False
+            self.executed: list[tuple[str, tuple[Any, ...]]] = []
+
+        def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
+            self.executed.append((query, params))
+            normalized = " ".join(query.lower().split())
+            if "from pipeline_runs r" in normalized:
+                return _Cursor(rows=[{"id": "run-id", "run_key": "run-report"}])
+            if "from pipeline_chunk_embeddings pce" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "embedding-row-id",
+                            "run_id": "run-id",
+                            "run_key": "run-report",
+                            "chunk_id": "file-1:segment-001:chunk-001",
+                            "source_path": "/source/scrapbook.pdf",
+                            "relative_path": "Scrapbooks/scrapbook.pdf",
+                            "embedding_provider": "cortex",
+                            "embedding_model": "local-embedding",
+                            "embedding_dimensions": 1024,
+                            "embedding_status": "embedded",
+                            "semantic_quality": "ok",
+                            "metadata": {"vector_store_provider": "qdrant"},
+                            "created_at": None,
+                        }
+                    ]
+                )
+            return _Cursor(rows=[])
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+    store = PostgresPipelineStore("postgresql://local/test", connect_factory=lambda _url: connection)
+
+    rows = store.list_run_chunk_embeddings(run_key="run-report", limit=10)
+
+    assert rows[0]["chunk_id"] == "file-1:segment-001:chunk-001"
+    assert rows[0]["embedding_provider"] == "cortex"
+    assert rows[0]["semantic_quality"] == "ok"
+    assert any(params == ("run-report", 10) for _query, params in connection.executed)
+    assert connection.closed is True
+
+
 def test_postgres_pipeline_store_records_review_decision() -> None:
     class FakeConnection:
         def __init__(self) -> None:

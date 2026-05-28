@@ -265,6 +265,71 @@ def test_postgres_run_segments_endpoint_wraps_service(monkeypatch) -> None:
     assert captured == {"run_key": "run-1", "limit": 12}
 
 
+def test_postgres_run_chunks_endpoint_wraps_service(monkeypatch) -> None:
+    captured = {}
+
+    def fake_list_chunks(*, run_key: str, limit: int = 500) -> list[dict]:
+        captured["run_key"] = run_key
+        captured["limit"] = limit
+        return [
+            {
+                "chunk_id": "file-1:chunk-001",
+                "chunk_index": 1,
+                "chunk_kind": "segment_text",
+                "content_snippet": "Founders of Sunshine Club",
+                "content_length": 512,
+            }
+        ]
+
+    monkeypatch.setattr("sunshine_api.routers.health.list_postgres_run_chunks", fake_list_chunks)
+
+    response = TestClient(app).get("/admin/system/postgres-runtime/runs/run-1/chunks?limit=13")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run_key"] == "run-1"
+    assert payload["count"] == 1
+    assert payload["chunks"][0]["chunk_kind"] == "segment_text"
+    assert captured == {"run_key": "run-1", "limit": 13}
+
+
+def test_postgres_run_chunk_embeddings_endpoint_wraps_service(monkeypatch) -> None:
+    captured = {}
+
+    def fake_list_chunk_embeddings(*, run_key: str, limit: int = 500) -> list[dict]:
+        captured["run_key"] = run_key
+        captured["limit"] = limit
+        return [
+            {
+                "chunk_id": "file-1:chunk-001",
+                "embedding_provider": "cortex",
+                "embedding_model": "local-embedding",
+                "embedding_status": "embedded",
+                "semantic_quality": "ok",
+            },
+            {
+                "chunk_id": "file-1:chunk-002",
+                "embedding_provider": "placeholder",
+                "embedding_model": "placeholder",
+                "embedding_status": "placeholder",
+                "semantic_quality": "degraded",
+            },
+        ]
+
+    monkeypatch.setattr("sunshine_api.routers.health.list_postgres_run_chunk_embeddings", fake_list_chunk_embeddings)
+
+    response = TestClient(app).get("/admin/system/postgres-runtime/runs/run-1/chunk-embeddings?limit=14")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run_key"] == "run-1"
+    assert payload["count"] == 2
+    assert payload["embedded_count"] == 1
+    assert payload["placeholder_count"] == 1
+    assert payload["chunk_embeddings"][0]["embedding_provider"] == "cortex"
+    assert captured == {"run_key": "run-1", "limit": 14}
+
+
 def test_semantic_search_endpoint_wraps_local_qdrant_service(monkeypatch) -> None:
     captured = {}
 
