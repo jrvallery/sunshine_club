@@ -18,6 +18,7 @@ type LocalInfrastructure = {
   local_only: boolean;
   postgres: Record<string, unknown>;
   vector_store_policy: Record<string, unknown>;
+  runtime_policy: Record<string, unknown>;
   qdrant: Record<string, unknown>;
   qdrant_retrieval: Record<string, unknown>;
   docling: Record<string, unknown>;
@@ -150,6 +151,20 @@ export default function SettingsPage() {
           <KeyValue label="Reason" value={String(infrastructure.data?.vector_store_policy?.qdrant_required_reason ?? "-")} />
           <KeyValue label="Collection" value={String(infrastructure.data?.vector_store_policy?.qdrant_collection ?? "-")} />
           <KeyValue label="Embedding dimensions" value={String(infrastructure.data?.vector_store_policy?.embedding_dimensions ?? "-")} />
+        </div>
+      </section>
+      <section className="panel">
+        <div className="sectionHeader">
+          <h2>Runtime And Artifact Policy</h2>
+          <StatusBadge value="local-only" />
+        </div>
+        <div className="settingsGrid">
+          <KeyValue label="Single-file target" value={`${String(infrastructure.data?.runtime_policy?.single_file_latency_target_ms ?? "-")} ms`} />
+          <KeyValue label="Single-file hard limit" value={`${String(infrastructure.data?.runtime_policy?.single_file_latency_hard_limit_ms ?? "-")} ms`} />
+          <KeyValue label="Raw provider max" value={formatBytes(infrastructure.data?.runtime_policy?.raw_provider_artifact_max_bytes)} />
+          <KeyValue label="Inline preview max" value={formatBytes(infrastructure.data?.runtime_policy?.raw_provider_inline_preview_bytes)} />
+          <KeyValue label="Raw storage" value={String(infrastructure.data?.runtime_policy?.raw_provider_storage ?? "-")} />
+          <KeyValue label="Source files mutable" value={String(infrastructure.data?.runtime_policy?.source_files_mutable ?? false)} />
         </div>
       </section>
       <section className="panel">
@@ -312,6 +327,20 @@ export default function SettingsPage() {
 
 function formatList(value: unknown) {
   return Array.isArray(value) ? value.map(String).join(", ") : "-";
+}
+
+function formatBytes(value: unknown) {
+  const bytes = Number(value ?? 0);
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "-";
+  }
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  if (bytes >= 1024) {
+    return `${Math.round(bytes / 1024)} KB`;
+  }
+  return `${bytes} B`;
 }
 
 function ProviderStatus({ title, status }: { title: string; status?: Record<string, unknown> }) {

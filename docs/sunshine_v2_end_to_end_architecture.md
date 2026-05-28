@@ -1256,6 +1256,7 @@ Success criteria:
 Current implementation:
 
 - Graph single-file runs and batch runs write `artifact-manifest.json`.
+- Graph single-file runs write `graph-run-metadata.json` with total runtime, latency status, latency policy, and raw-provider artifact retention policy.
 - `domain/model_usage.py` defines the normalized model-usage row contract and local/external/placeholder cost-basis classification used by graph audit rows.
 - `domain/artifacts.py` defines artifact manifest and manifest-entry contracts used by manifest generation.
 - Manifest rows include artifact path, kind, existence, size, modified time, JSONL row count, and SHA-256 for non-manifest artifacts.
@@ -1748,6 +1749,8 @@ Recommended split:
 - Postgres stores runs, files, review decisions, model usage, provider attempts, artifact manifests, and relational reporting data.
 - Qdrant stores chunk embeddings and vector search metadata.
 - File artifacts store large normalized/raw provider outputs by run ID.
+- Raw provider outputs are stored as run-owned artifact files, capped at 25 MB per raw provider artifact by default, with inline preview data capped at 64 KB by default.
+- Single-file runs target 120 seconds by default and have a 300 second default hard limit; runs record `ok`, `slow`, or `over_hard_limit` in `graph-run-metadata.json`.
 
 Do not use SQLite as the production system database for V2. SQLite can remain only for tests, local throwaway demos, or legacy migration compatibility.
 
@@ -2034,8 +2037,6 @@ V2 is successful when:
 
 ## Remaining Open Questions
 
-- How much raw provider output should be stored per file?
-- What is the single-file latency target?
 - Which self-hosted dashboard/review framework, if any, should replace or augment the current custom dashboard?
 
 ## Immediate Next Slice After Approval

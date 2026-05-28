@@ -103,6 +103,9 @@ def test_local_infrastructure_status_is_local_only(monkeypatch) -> None:
     assert payload["qdrant"]["required_now"] is False
     assert payload["vector_store_policy"]["provider"] == "noop"
     assert payload["vector_store_policy"]["qdrant_required"] is False
+    assert payload["runtime_policy"]["single_file_latency_target_ms"] == 120000
+    assert payload["runtime_policy"]["raw_provider_storage"] == "artifact_file_by_run"
+    assert payload["runtime_policy"]["source_files_mutable"] is False
     assert payload["qdrant_retrieval"]["provider"] == "qdrant"
     assert payload["docling"]["provider"] == "docling"
     assert payload["docling"]["local_only"] is True

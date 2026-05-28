@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,7 @@ from sunshine_extraction.providers.observability import ObservabilityProvider
 from sunshine_extraction.providers.vectorstores import VectorStoreProvider
 from sunshine_extraction.services.extraction import OcrExecutor
 from sunshine_extraction.services.imports import RunResultsImporter
+from sunshine_extraction.services.runtime_policy import pipeline_runtime_policy_from_env, runtime_summary
 from sunshine_extraction.services.tagging import LLMTagInspector
 
 def run_document_graph(
@@ -53,6 +55,8 @@ def run_document_graph(
 ) -> dict[str, Any]:
     """Run the single-file LangGraph pipeline and persist graph artifacts."""
 
+    started = time.monotonic()
+    runtime_policy = pipeline_runtime_policy_from_env()
     output_dir_path = Path(output_dir)
     output_dir_path.mkdir(parents=True, exist_ok=True)
     active_thread_id = thread_id or str(uuid.uuid5(uuid.NAMESPACE_URL, str(Path(input_file).resolve())))
@@ -108,7 +112,13 @@ def run_document_graph(
     else:
         graph = build_document_graph(deps)
         result = graph.invoke(state)
+    graph_runtime = runtime_summary(started_monotonic=started, finished_monotonic=time.monotonic(), policy=runtime_policy)
+    result["graph_runtime"] = graph_runtime
     _write_jsonl(output_dir_path / "graph-audit-events.jsonl", result.get("audit_events", []))
+    (output_dir_path / "graph-run-metadata.json").write_text(
+        json.dumps(_json_safe({"run_id": result.get("run_id"), "source_path": result.get("source_path"), "relative_path": result.get("relative_path"), "graph_runtime": graph_runtime}), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     (output_dir_path / "graph-result.json").write_text(
         json.dumps(_json_safe(result), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",

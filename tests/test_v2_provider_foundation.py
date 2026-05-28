@@ -52,6 +52,7 @@ from sunshine_extraction.services.tagging.rules import assign_tag_candidates
 from sunshine_extraction.services.tagging.taxonomy import DEFAULT_TAXONOMY_PATH
 from sunshine_extraction.services.vectorization import embed_chunks, embed_chunks_with_fallback
 from sunshine_extraction.services.vector_policy import vector_store_policy_from_env
+from sunshine_extraction.services.runtime_policy import pipeline_runtime_policy_from_env, runtime_summary
 from sunshine_extraction.services.extraction import ExtractionResult
 from sunshine_extraction.services.structure import normalize_document_structure
 
@@ -883,6 +884,23 @@ def test_vector_store_policy_requires_qdrant_for_production(monkeypatch: pytest.
     monkeypatch.setenv("SUNSHINE_VECTOR_STORE", "noop")
     with pytest.raises(ValueError, match="Qdrant is required"):
         vector_store_policy_from_env()
+
+
+def test_pipeline_runtime_policy_sets_latency_and_raw_artifact_limits(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SUNSHINE_SINGLE_FILE_LATENCY_TARGET_MS", "1000")
+    monkeypatch.setenv("SUNSHINE_SINGLE_FILE_LATENCY_HARD_LIMIT_MS", "3000")
+    monkeypatch.setenv("SUNSHINE_RAW_PROVIDER_ARTIFACT_MAX_BYTES", "10000")
+    monkeypatch.setenv("SUNSHINE_RAW_PROVIDER_INLINE_PREVIEW_BYTES", "20000")
+
+    policy = pipeline_runtime_policy_from_env()
+    summary = runtime_summary(started_monotonic=1.0, finished_monotonic=3.5, policy=policy)
+
+    assert policy["single_file_latency_target_ms"] == 1000
+    assert policy["single_file_latency_hard_limit_ms"] == 3000
+    assert policy["raw_provider_inline_preview_bytes"] == 10000
+    assert policy["source_files_mutable"] is False
+    assert summary["runtime_ms"] == 2500
+    assert summary["latency_status"] == "slow"
 
 
 def test_sqlite_golden_vectorstore_and_observability_boundaries_are_local_only() -> None:

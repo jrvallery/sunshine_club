@@ -201,6 +201,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     calibration_rows = [json.loads(line) for line in (output_dir / "sample-confidence-calibrations.jsonl").read_text().splitlines()]
     import_rows = [json.loads(line) for line in (output_dir / "sample-import-results.jsonl").read_text().splitlines()]
     manifest = json.loads((output_dir / "artifact-manifest.json").read_text())
+    run_metadata = json.loads((output_dir / "graph-run-metadata.json").read_text())
     manifest_by_name = {artifact["name"]: artifact for artifact in manifest["artifacts"]}
 
     assert final_result["route_status"] == "route_candidate"
@@ -211,6 +212,9 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert final_result["confidence_calibration"]["status"] == "calibrated"
     assert "semantic_index_missing" in final_result["warnings"]
     assert graph_result["final_result"]["top_tag_candidate"] == "annual_spring_tea"
+    assert graph_result["graph_runtime"]["latency_status"] in {"ok", "slow", "over_hard_limit"}
+    assert run_metadata["graph_runtime"]["policy"]["raw_provider_storage"] == "artifact_file_by_run"
+    assert run_metadata["graph_runtime"]["policy"]["source_files_mutable"] is False
     assert pipeline_rows == [final_result]
     assert review_rows == []
     assert chunk_rows[0]["chunk_kind"] == "text"

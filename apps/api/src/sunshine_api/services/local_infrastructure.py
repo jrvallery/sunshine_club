@@ -17,6 +17,7 @@ from sunshine_extraction.providers.observability import observability_provider_f
 from sunshine_extraction.providers.retrieval import QdrantSemanticRetrievalProvider
 from sunshine_extraction.providers.vectorstores import QdrantVectorStoreProvider
 from sunshine_extraction.services.vector_policy import vector_store_policy_from_env
+from sunshine_extraction.services.runtime_policy import pipeline_runtime_policy_from_env
 
 
 def local_infrastructure_status() -> dict[str, Any]:
@@ -41,6 +42,7 @@ def local_infrastructure_status() -> dict[str, Any]:
             "v2_migrations": _migration_status(),
         },
         "vector_store_policy": vector_store_policy_from_env(),
+        "runtime_policy": pipeline_runtime_policy_from_env(),
         "qdrant": _qdrant_status(qdrant),
         "qdrant_retrieval": qdrant_retrieval.dependency_status(),
         "docling": parser_providers["docling"].dependency_status(),
