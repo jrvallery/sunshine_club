@@ -30,7 +30,9 @@ class CurrentSemanticRetrievalProvider:
         index_path: str | None,
         query_text: str,
         limit: int,
+        metadata_filter: dict[str, Any] | None = None,
     ) -> tuple[list[dict[str, Any]], SemanticRetrievalProviderAttempt]:
+        del metadata_filter
         if not index_path or not Path(index_path).exists():
             return [], SemanticRetrievalProviderAttempt(
                 provider=self.provider_name,

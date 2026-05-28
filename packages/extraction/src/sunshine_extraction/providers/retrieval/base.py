@@ -32,5 +32,6 @@ class SemanticRetrievalProvider(Protocol):
         index_path: str | None,
         query_text: str,
         limit: int,
+        metadata_filter: dict[str, Any] | None = None,
     ) -> tuple[list[dict[str, Any]], SemanticRetrievalProviderAttempt]:
         """Retrieve reviewed/golden examples for the current document."""

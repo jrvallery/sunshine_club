@@ -477,11 +477,12 @@ def test_qdrant_retrieval_provider_queries_local_collection(monkeypatch: pytest.
         def __init__(self, *, url: str) -> None:
             captured["url"] = url
 
-        def search(self, *, collection_name: str, query_vector: list[float], limit: int, with_payload: bool) -> list[FakePoint]:
+        def search(self, *, collection_name: str, query_vector: list[float], limit: int, with_payload: bool, query_filter: object) -> list[FakePoint]:
             captured["collection_name"] = collection_name
             captured["query_vector"] = query_vector
             captured["limit"] = limit
             captured["with_payload"] = with_payload
+            captured["query_filter"] = query_filter
             return [FakePoint()]
 
     fake_module = types.SimpleNamespace(QdrantClient=FakeClient)
@@ -492,14 +493,29 @@ def test_qdrant_retrieval_provider_queries_local_collection(monkeypatch: pytest.
         collection="sunshine-test",
     )
 
-    examples, attempt = provider.retrieve(index_path=None, query_text="meeting minutes", limit=2)
+    examples, attempt = provider.retrieve(
+        index_path=None,
+        query_text="meeting minutes",
+        limit=2,
+        metadata_filter={"correct_primary_tag": "meeting_records", "metadata.segment_type": "meeting_packet_section"},
+    )
 
     assert attempt.status == "retrieved"
     assert attempt.query_count == 1
     assert attempt.result_count == 1
     assert captured["collection_name"] == "sunshine-test"
     assert captured["limit"] == 2
+    assert captured["query_filter"] == {
+        "must": [
+            {"key": "correct_primary_tag", "match": {"value": "meeting_records"}},
+            {"key": "metadata.segment_type", "match": {"value": "meeting_packet_section"}},
+        ]
+    }
     assert len(captured["query_vector"]) == 3
+    assert attempt.metadata["metadata_filter"] == {
+        "correct_primary_tag": "meeting_records",
+        "metadata.segment_type": "meeting_packet_section",
+    }
     assert examples[0]["correct_primary_tag"] == "meeting_records"
     assert examples[0]["retrieval_provider"] == "qdrant"
     assert examples[0]["score"] == 0.87

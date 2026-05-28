@@ -38,8 +38,10 @@ class QdrantSemanticRetrievalProvider:
         index_path: str | None,
         query_text: str,
         limit: int,
+        metadata_filter: dict[str, Any] | None = None,
     ) -> tuple[list[dict[str, Any]], SemanticRetrievalProviderAttempt]:
         del index_path
+        metadata = _attempt_metadata(self.url, self.collection, limit, metadata_filter)
         if self.embedding_provider is None:
             return [], SemanticRetrievalProviderAttempt(
                 provider=self.provider_name,
@@ -48,7 +50,7 @@ class QdrantSemanticRetrievalProvider:
                 query_count=0,
                 result_count=0,
                 warnings=["qdrant_embedding_provider_missing"],
-                metadata={"local_only": True, "url": self.url, "collection": self.collection, "limit": limit},
+                metadata=metadata,
             )
         try:
             from qdrant_client import QdrantClient
@@ -60,12 +62,18 @@ class QdrantSemanticRetrievalProvider:
                 query_count=0,
                 result_count=0,
                 warnings=[f"qdrant_client_unavailable:{error.__class__.__name__}"],
-                metadata={"local_only": True, "url": self.url, "collection": self.collection, "limit": limit},
+                metadata=metadata,
             )
         try:
             query_vector = self.embedding_provider.embed([query_text])[0]
             client = QdrantClient(url=self.url)
-            points = _search_points(client, collection=self.collection, query_vector=query_vector, limit=limit)
+            points = _search_points(
+                client,
+                collection=self.collection,
+                query_vector=query_vector,
+                limit=limit,
+                metadata_filter=metadata_filter,
+            )
         except Exception as error:  # noqa: BLE001
             return [], SemanticRetrievalProviderAttempt(
                 provider=self.provider_name,
@@ -74,7 +82,7 @@ class QdrantSemanticRetrievalProvider:
                 query_count=1,
                 result_count=0,
                 warnings=[f"qdrant_semantic_retrieval_failed:{error.__class__.__name__}"],
-                metadata={"error": f"{error.__class__.__name__}: {error}", "local_only": True, "url": self.url, "collection": self.collection, "limit": limit},
+                metadata={**metadata, "error": f"{error.__class__.__name__}: {error}"},
             )
         examples = [_point_to_example(point) for point in points]
         return examples, SemanticRetrievalProviderAttempt(
@@ -84,15 +92,55 @@ class QdrantSemanticRetrievalProvider:
             query_count=1,
             result_count=len(examples),
             warnings=[],
-            metadata={"local_only": True, "url": self.url, "collection": self.collection, "limit": limit},
+            metadata=metadata,
         )
 
 
-def _search_points(client: Any, *, collection: str, query_vector: list[float], limit: int) -> list[Any]:
+def _attempt_metadata(url: str, collection: str, limit: int, metadata_filter: dict[str, Any] | None) -> dict[str, Any]:
+    return {
+        "local_only": True,
+        "url": url,
+        "collection": collection,
+        "limit": limit,
+        "metadata_filter": metadata_filter or {},
+    }
+
+
+def _search_points(
+    client: Any,
+    *,
+    collection: str,
+    query_vector: list[float],
+    limit: int,
+    metadata_filter: dict[str, Any] | None = None,
+) -> list[Any]:
+    query_filter = _qdrant_filter(metadata_filter)
     if hasattr(client, "search"):
-        return list(client.search(collection_name=collection, query_vector=query_vector, limit=limit, with_payload=True))
-    result = client.query_points(collection_name=collection, query=query_vector, limit=limit, with_payload=True)
+        return list(client.search(collection_name=collection, query_vector=query_vector, limit=limit, with_payload=True, query_filter=query_filter))
+    result = client.query_points(collection_name=collection, query=query_vector, limit=limit, with_payload=True, query_filter=query_filter)
     return list(getattr(result, "points", result))
+
+
+def _qdrant_filter(metadata_filter: dict[str, Any] | None) -> Any:
+    filtered_items = {str(key): value for key, value in (metadata_filter or {}).items() if value is not None}
+    if not filtered_items:
+        return None
+    try:
+        from qdrant_client.http import models
+
+        return models.Filter(
+            must=[
+                models.FieldCondition(key=key, match=models.MatchValue(value=value))
+                for key, value in sorted(filtered_items.items())
+            ]
+        )
+    except Exception:  # noqa: BLE001 - tests and lightweight installs may not expose model classes.
+        return {
+            "must": [
+                {"key": key, "match": {"value": value}}
+                for key, value in sorted(filtered_items.items())
+            ]
+        }
 
 
 def _point_to_example(point: Any) -> dict[str, Any]:

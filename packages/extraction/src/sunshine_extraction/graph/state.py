@@ -86,6 +86,7 @@ class DocumentPipelineDeps(TypedDict, total=False):
     chunk_embedding_provider: ChunkEmbeddingProvider
     vector_store: VectorStoreProvider
     semantic_retrieval_provider: SemanticRetrievalProvider
+    semantic_retrieval_filter: dict[str, Any] | None
     llm_tag_inspection_provider: LLMTagInspectionProvider
     embedding_provider: EmbeddingProvider
     embedding_failure_mode: str

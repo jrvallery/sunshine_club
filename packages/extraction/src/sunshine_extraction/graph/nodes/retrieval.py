@@ -20,6 +20,7 @@ def _retrieve_labeled_examples_node(state: DocumentPipelineState, deps: Document
         index_path=index_path,
         query_text=query_text,
         limit=5,
+        metadata_filter=deps.get("semantic_retrieval_filter"),
     )
     warnings = [*state.get("warnings", []), *retrieval_attempt.warnings]
     if retrieval_attempt.status == "skipped":
