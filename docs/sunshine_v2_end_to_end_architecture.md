@@ -1287,6 +1287,7 @@ Current implementation:
 - The default importer is no-op and writes `sample-import-results.jsonl` with `import_status=skipped`, so CLI/test runs remain side-effect free.
 - An opt-in SQLite review-store importer can be enabled through `SUNSHINE_GRAPH_IMPORT_RESULTS=sqlite` or injected graph deps.
 - Run reports expose import status rows, while the existing dashboard runner can continue importing completed subprocess output with its known dashboard run ID.
+- `apps/api/src/sunshine_api/services/imports.py` exposes the Postgres artifact import service facade so API routes can call a service boundary instead of the raw store class.
 - `config/defaults.py` owns shared default paths/provider constants and `config/__init__.py` preserves the existing `sunshine_extraction.config` import API.
 - `config/models.py` and `config/provider_registry.py` establish the target provider-config package shape for later richer validation.
 - `cli/langgraph_pipeline.py` and `cli/provider_benchmark.py` own target CLI entry points; top-level modules remain compatibility wrappers for existing `python -m` commands and imports.
