@@ -62,13 +62,16 @@ from sunshine_extraction.sample_pipeline import (
     write_pipeline_result,
 )
 
+SEMANTIC_INDEX_FROM_ENV = object()
+
+
 def _resolve_deps(
     *,
     embedding_provider: EmbeddingProvider | None = None,
     embedding_failure_mode: str | None = None,
     llm_tag_inspector: LLMTagInspector | None = None,
     ocr_executor: OcrExecutor | None = None,
-    semantic_index_path: str | Path | None = None,
+    semantic_index_path: str | Path | None | object = SEMANTIC_INDEX_FROM_ENV,
 ) -> DocumentPipelineDeps:
     if embedding_provider is None:
         try:
@@ -80,7 +83,7 @@ def _resolve_deps(
         "embedding_failure_mode": _embedding_failure_mode(embedding_failure_mode),
         "llm_tag_inspector": llm_tag_inspector or llm_tag_inspector_from_env(),
         "ocr_executor": ocr_executor or ocr_executor_from_env(),
-        "semantic_index_path": str(semantic_index_path) if semantic_index_path is not None else _semantic_index_path_from_env(),
+        "semantic_index_path": _resolve_semantic_index_path(semantic_index_path),
     }
 
 
@@ -92,7 +95,15 @@ def _embedding_failure_mode(configured: str | None) -> str:
 
 
 def _semantic_index_path_from_env() -> str | None:
-    configured = os.environ.get("SUNSHINE_SEMANTIC_INDEX_PATH", DEFAULT_INDEX_DB).strip()
+    configured = os.environ.get("SUNSHINE_SEMANTIC_INDEX_PATH", "").strip()
     if not configured:
         return None
     return configured
+
+
+def _resolve_semantic_index_path(semantic_index_path: str | Path | None | object) -> str | None:
+    if semantic_index_path is SEMANTIC_INDEX_FROM_ENV:
+        return _semantic_index_path_from_env()
+    if semantic_index_path is None:
+        return None
+    return str(semantic_index_path)

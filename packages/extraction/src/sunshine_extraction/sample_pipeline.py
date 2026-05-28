@@ -987,6 +987,37 @@ def validate_and_repair_extraction(
         "ocr_required": True,
         "original_strategy": plan.get("strategy"),
     }
+    if ocr_executor is None:
+        fallback_metadata = {
+            "ocr_required": True,
+            "document_subtype": fallback_plan.get("document_subtype"),
+            "text_validation": {
+                "status": "failed",
+                "reason": validation["reason"],
+                "repair_strategy": "ocr_page_level",
+            },
+            "original_extraction": {
+                "strategy": plan.get("strategy"),
+                "status": extraction.extraction_status,
+                "text_length": len(extraction.text),
+                "text_snippet": _shorten(extraction.text, 360),
+                "warnings": extraction.warnings,
+            },
+        }
+        return ExtractionResult(
+            sample=sample,
+            plan=fallback_plan,
+            extraction_status="deferred_extractor",
+            text="",
+            metadata=fallback_metadata,
+            page_count=extraction.page_count,
+            warnings=[
+                *extraction.warnings,
+                f"text_validation_failed:{validation['reason']}",
+                f"text_extraction_fallback_to_ocr:{plan.get('strategy')}",
+                "ocr_executor_not_provided",
+            ],
+        )
     fallback = _extract_ocr_page_level(
         sample,
         fallback_plan,

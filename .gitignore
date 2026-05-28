@@ -12,3 +12,6 @@ build/
 .env
 .env.local
 .local/
+.frontend-review/
+.frontend-review-*.log
+.frontend-review-*.pid

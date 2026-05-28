@@ -63,7 +63,7 @@ from sunshine_extraction.sample_pipeline import (
 )
 
 from sunshine_extraction.graph.build import build_document_graph
-from sunshine_extraction.graph.deps import _resolve_deps
+from sunshine_extraction.graph.deps import SEMANTIC_INDEX_FROM_ENV, _resolve_deps
 from sunshine_extraction.graph.utils import _json_safe, _write_jsonl
 
 def run_document_graph(
@@ -82,7 +82,7 @@ def run_document_graph(
     embedding_failure_mode: str | None = None,
     llm_tag_inspector: LLMTagInspector | None = None,
     ocr_executor: OcrExecutor | None = None,
-    semantic_index_path: str | Path | None = None,
+    semantic_index_path: str | Path | None | object = SEMANTIC_INDEX_FROM_ENV,
     progress: bool = False,
     checkpoint_path: str | Path | None = None,
     thread_id: str | None = None,

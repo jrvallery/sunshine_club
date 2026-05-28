@@ -348,8 +348,7 @@ def _retrieve_labeled_examples_node(state: DocumentPipelineState, deps: Document
     index_path = deps.get("semantic_index_path")
     if not index_path or not Path(index_path).exists():
         warnings = [*state.get("warnings", [])]
-        if index_path:
-            warnings.append("semantic_index_missing")
+        warnings.append("semantic_index_missing")
         provider_name = str(
             getattr(deps["embedding_provider"], "provider_name", "")
             or deps["embedding_provider"].__class__.__name__.replace("EmbeddingProvider", "").lower()
