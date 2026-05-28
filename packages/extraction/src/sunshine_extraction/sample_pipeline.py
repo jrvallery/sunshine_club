@@ -2168,13 +2168,13 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--llm-tag-provider",
-        choices=["auto", "cortex", "openai", "disabled"],
-        help="Override SUNSHINE_LLM_TAG_PROVIDER for this run.",
+        choices=["auto", "cortex", "disabled"],
+        help="Override SUNSHINE_LLM_TAG_PROVIDER for this run. Hosted providers are disabled by local-only policy.",
     )
     parser.add_argument(
         "--ocr-fallback-provider",
-        choices=["openai", "cortex", "disabled"],
-        help="OCR provider. cortex uses Cortex first and escalates poor, empty, failed, or suspicious OCR to OpenAI when configured.",
+        choices=["cortex", "disabled"],
+        help="OCR provider. Cortex is the only model fallback allowed by local-only policy.",
     )
     parser.add_argument(
         "--quiet",
