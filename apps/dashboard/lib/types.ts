@@ -364,6 +364,8 @@ export type PostgresRunReport = {
     local_model_call_count: number;
     nonlocal_model_call_count: number;
     provider_attempt_count: number;
+    run_event_count: number;
+    failed_run_event_count: number;
     document_segment_count: number;
     segment_review_count: number;
     route_status: Record<string, number>;
@@ -371,6 +373,7 @@ export type PostgresRunReport = {
     primary_tag: Record<string, number>;
     segment_type: Record<string, number>;
     provider_attempt_status: Record<string, number>;
+    run_event_status: Record<string, number>;
     model_provider: Record<string, number>;
   };
   results: Array<Record<string, unknown>>;
@@ -378,6 +381,7 @@ export type PostgresRunReport = {
   model_usage: Array<Record<string, unknown>>;
   provider_attempts: Array<Record<string, unknown>>;
   document_segments: Array<Record<string, unknown>>;
+  run_events: Array<Record<string, unknown>>;
 };
 
 export type GoldenLabel = {

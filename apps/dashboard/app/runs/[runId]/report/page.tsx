@@ -80,6 +80,7 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
   const modelSummary = data?.model_usage?.summary;
   const postgresData = postgresReport.data;
   const fileRows = useMemo(() => (postgresData?.results?.length ? postgresData.results : data?.files ?? []), [data?.files, postgresData?.results]);
+  const logRows = postgresData?.run_events?.length ? postgresData.run_events : events.data ?? [];
 
   if (report.isLoading) {
     return <RunReportLoading />;
@@ -171,6 +172,7 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
         <Metric label="Deferred" value={String(statusBuckets.deferred ?? 0)} />
         <Metric label="Model calls" value={String(modelSummary?.total_calls ?? 0)} />
         <Metric label="Segment reviews" value={String(postgresData?.summary.segment_review_count ?? 0)} />
+        <Metric label="Graph events" value={String(postgresData?.summary.run_event_count ?? events.data?.length ?? 0)} />
         <Metric label="External cost" value={formatCost(modelSummary?.estimated_external_cost_usd ?? 0)} />
       </section>
 
@@ -191,7 +193,7 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
       {activeTab === "tags" ? <BreakdownGrid values={data.tags} /> : null}
       {activeTab === "placement" ? <BreakdownGrid values={data.placement} /> : null}
       {activeTab === "models" ? <ModelUsageTab usage={data.model_usage} /> : null}
-      {activeTab === "logs" ? <LogsTab events={events.data ?? []} /> : null}
+      {activeTab === "logs" ? <LogsTab events={logRows} postgresBacked={Boolean(postgresData?.run_events?.length)} /> : null}
       {activeTab === "artifacts" ? <ArtifactsTab report={data} /> : null}
       {activeTab === "diff" ? <DiffTab report={data} /> : null}
     </main>
@@ -244,6 +246,8 @@ function PostgresRuntimeSummary({ postgresReport, postgresError }: { postgresRep
           <Metric label="PG review" value={String(postgresReport.summary.open_review_item_count)} />
           <Metric label="Segments" value={String(postgresReport.summary.document_segment_count)} />
           <Metric label="Segment review" value={String(postgresReport.summary.segment_review_count)} />
+          <Metric label="Graph events" value={String(postgresReport.summary.run_event_count ?? 0)} />
+          <Metric label="Failed nodes" value={String(postgresReport.summary.failed_run_event_count ?? 0)} />
           <Metric label="Local calls" value={String(postgresReport.summary.local_model_call_count)} />
           <Metric label="Nonlocal calls" value={String(postgresReport.summary.nonlocal_model_call_count)} />
         </div>
@@ -538,23 +542,73 @@ function formatRatio(value: unknown) {
   return `${Math.round(value * 1000) / 10}%`;
 }
 
-function LogsTab({ events }: { events: PipelineRunEvent[] }) {
+function LogsTab({ events, postgresBacked }: { events: Array<PipelineRunEvent | Record<string, unknown>>; postgresBacked: boolean }) {
   return (
     <section className="panel">
       <div className="sectionHeader">
-        <h2>Run Logs</h2>
-        <span>{events.length} events</span>
+        <div>
+          <h2>Run Logs</h2>
+          <span>{events.length} events{postgresBacked ? " from Postgres V2 graph audit rows" : ""}</span>
+        </div>
       </div>
-      <div className="eventList">
-        {events.map((event) => (
-          <div key={event.id} className={event.level === "error" ? "eventRow errorEvent" : "eventRow"}>
-            <span>{event.timestamp}</span>
-            <strong>{event.level}{event.payload?.current ? ` ${String(event.payload.current)}/${String(event.payload.total ?? "?")}` : ""}</strong>
-            <p>{event.message}</p>
-          </div>
-        ))}
-      </div>
+      {postgresBacked ? <PostgresEventTable events={events} /> : <LegacyEventList events={events as PipelineRunEvent[]} />}
     </section>
+  );
+}
+
+function LegacyEventList({ events }: { events: PipelineRunEvent[] }) {
+  if (!events.length) {
+    return <div className="empty">No run log rows recorded yet.</div>;
+  }
+  return (
+    <div className="eventList">
+      {events.map((event) => (
+        <div key={event.id} className={event.level === "error" ? "eventRow errorEvent" : "eventRow"}>
+          <span>{event.timestamp}</span>
+          <strong>{event.level}{event.payload?.current ? ` ${String(event.payload.current)}/${String(event.payload.total ?? "?")}` : ""}</strong>
+          <p>{event.message}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PostgresEventTable({ events }: { events: Array<Record<string, unknown>> }) {
+  if (!events.length) {
+    return <div className="empty">No graph audit events imported for this run.</div>;
+  }
+  return (
+    <div className="tableWrap" tabIndex={0} aria-label="Postgres graph audit events table">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Node</th>
+            <th>Status</th>
+            <th>Duration</th>
+            <th>File</th>
+            <th>Message</th>
+            <th>Warnings / Errors</th>
+          </tr>
+        </thead>
+        <tbody>
+          {events.map((event, index) => {
+            const payload = event.payload && typeof event.payload === "object" ? (event.payload as Record<string, unknown>) : {};
+            return (
+              <tr key={String(event.id ?? index)}>
+                <td>{String(event.created_at ?? "-")}</td>
+                <td>{String(event.node ?? "-")}</td>
+                <td>{String(event.status ?? "-")}</td>
+                <td>{formatMs(Number(payload.duration_ms ?? 0))}</td>
+                <td><PathCell title={String(event.relative_path ?? event.source_path ?? "-")} /></td>
+                <td className="snippetCell">{String(event.message ?? "-")}</td>
+                <td className="snippetCell">{formatEventProblems(payload)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -710,6 +764,13 @@ function formatEvidence(value: unknown) {
     return JSON.stringify(value);
   }
   return value == null ? "-" : String(value);
+}
+
+function formatEventProblems(payload: Record<string, unknown>) {
+  const warnings = Array.isArray(payload.warnings) ? payload.warnings : [];
+  const errors = Array.isArray(payload.errors) ? payload.errors : [];
+  const parts = [...warnings.map((item) => `warning:${String(item)}`), ...errors.map((item) => `error:${String(item)}`)];
+  return parts.length ? parts.join("; ") : "-";
 }
 
 function formatMs(value: number) {
