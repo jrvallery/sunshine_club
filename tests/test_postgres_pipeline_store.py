@@ -2251,6 +2251,10 @@ def test_rebuild_qdrant_from_postgres_replays_semantic_embeddings() -> None:
                         "chunk_kind": "text",
                         "content": "Meeting minutes",
                         "chunk_metadata": {"segment_id": "segment-1"},
+                        "content_class": "document",
+                        "primary_tag": "meeting_records",
+                        "route_status": "route_candidate",
+                        "review_status": "accepted",
                         "embedding_provider": "cortex",
                         "embedding_model": "local-embed",
                         "embedding_dimensions": 3,
@@ -2305,6 +2309,12 @@ def test_rebuild_qdrant_from_postgres_replays_semantic_embeddings() -> None:
     assert result["vector_store"]["indexed_count"] == 1
     assert vector_store.chunks[0]["text"] == "Meeting minutes"
     assert vector_store.chunks[0]["metadata"]["segment_id"] == "segment-1"
+    assert vector_store.chunks[0]["metadata"]["content_class"] == "document"
+    assert vector_store.chunks[0]["metadata"]["primary_tag"] == "meeting_records"
+    assert vector_store.chunks[0]["metadata"]["review_status"] == "accepted"
+    assert vector_store.chunks[0]["content_class"] == "document"
+    assert vector_store.chunks[0]["primary_tag"] == "meeting_records"
+    assert vector_store.chunks[0]["review_status"] == "accepted"
     assert vector_store.embeddings[0]["embedding"] == [0.1, 0.2, 0.3]
     assert connection.executed[0][1] == ("run-1", 10)
     assert connection.closed is True

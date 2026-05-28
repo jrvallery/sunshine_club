@@ -76,6 +76,10 @@ def _fetch_index_rows(connection: PostgresConnection, *, run_key: str | None, li
             c.chunk_kind,
             c.content,
             c.metadata as chunk_metadata,
+            pr.final_class as content_class,
+            pr.top_tag_candidate as primary_tag,
+            pr.route_status,
+            ri.status as review_status,
             e.embedding_provider,
             e.embedding_model,
             e.embedding_dimensions,
@@ -85,6 +89,8 @@ def _fetch_index_rows(connection: PostgresConnection, *, run_key: str | None, li
         from pipeline_chunk_embeddings e
         join pipeline_chunks c on c.run_id = e.run_id and c.chunk_id = e.chunk_id
         join pipeline_runs r on r.id = e.run_id
+        left join pipeline_results pr on pr.run_id = c.run_id and pr.source_path = c.source_path
+        left join review_items_v2 ri on ri.run_id = c.run_id and ri.source_path = c.source_path
         where {" and ".join(where)}
         order by r.created_at desc, c.chunk_index asc
         {limit_sql}
@@ -96,6 +102,15 @@ def _fetch_index_rows(connection: PostgresConnection, *, run_key: str | None, li
 
 
 def _chunk_row(row: dict[str, Any]) -> dict[str, Any]:
+    metadata = _json_value(row.get("chunk_metadata"))
+    if row.get("content_class"):
+        metadata["content_class"] = row.get("content_class")
+    if row.get("primary_tag"):
+        metadata["primary_tag"] = row.get("primary_tag")
+    if row.get("route_status"):
+        metadata["route_status"] = row.get("route_status")
+    if row.get("review_status"):
+        metadata["review_status"] = row.get("review_status")
     return {
         "source_path": row.get("source_path"),
         "relative_path": row.get("relative_path"),
@@ -104,8 +119,12 @@ def _chunk_row(row: dict[str, Any]) -> dict[str, Any]:
         "chunk_index": row.get("chunk_index"),
         "chunk_kind": row.get("chunk_kind"),
         "text": row.get("content") or "",
-        "metadata": _json_value(row.get("chunk_metadata")),
+        "metadata": metadata,
         "run_key": row.get("run_key"),
+        "content_class": row.get("content_class"),
+        "primary_tag": row.get("primary_tag"),
+        "route_status": row.get("route_status"),
+        "review_status": row.get("review_status"),
     }
 
 
