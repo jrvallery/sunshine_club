@@ -9,7 +9,7 @@ import { ProviderConfigBadge } from "../../../components/dashboard/ProviderConfi
 import { RunContextBadge } from "../../../components/dashboard/RunContextBadge";
 import { EmbeddedPreview } from "../../../components/file-preview/EmbeddedPreview";
 import { KeyValue } from "../../../components/ui/KeyValue";
-import { fetchJson, postJson } from "../../../lib/api";
+import { fetchJson, postJson, queryString } from "../../../lib/api";
 import type { FileInspection, PipelineRun, ReviewItem } from "../../../lib/types";
 
 export default function FileViewerPage() {
@@ -38,7 +38,8 @@ function FileViewerPageContent() {
   const params = useParams<{ fileId: string }>();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
-  const fileId = Number(params.fileId);
+  const fileId = params.fileId;
+  const source = searchParams.get("source") === "postgres" ? "postgres" : "sqlite";
   const backHref = useMemo(() => {
     const filters = new URLSearchParams(searchParams);
     return `/files${filters.toString() ? `?${filters.toString()}` : ""}`;
@@ -48,15 +49,15 @@ function FileViewerPageContent() {
   const [ocrProvider, setOcrProvider] = useState("cortex");
 
   const inspection = useQuery({
-    queryKey: ["file-inspection", fileId],
-    enabled: Number.isFinite(fileId),
-    queryFn: () => fetchJson<FileInspection>(`/api/admin/files/${fileId}/inspection`)
+    queryKey: ["file-inspection", fileId, source],
+    enabled: Boolean(fileId),
+    queryFn: () => fetchJson<FileInspection>(`/api/admin/files/${fileId}/inspection${queryString({ source })}`)
   });
   const addReview = useMutation({
-    mutationFn: () => postJson<ReviewItem>(`/api/admin/files/${fileId}/review`, { review_reason: "manual_file_review" }),
+    mutationFn: () => postJson<ReviewItem>(`/api/admin/files/${fileId}/review${queryString({ source })}`, { review_reason: "manual_file_review" }),
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["file-inspection", fileId] }),
+        queryClient.invalidateQueries({ queryKey: ["file-inspection", fileId, source] }),
         queryClient.invalidateQueries({ queryKey: ["review-items"] })
       ]);
     }
@@ -73,7 +74,7 @@ function FileViewerPageContent() {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["runs"] }),
-        queryClient.invalidateQueries({ queryKey: ["file-inspection", fileId] })
+        queryClient.invalidateQueries({ queryKey: ["file-inspection", fileId, source] })
       ]);
     }
   });
@@ -110,7 +111,7 @@ function FileViewerPageContent() {
         </div>
         <div className="buttonRow">
           <Link className="secondaryButton" href={backHref}>Back to Files</Link>
-          <a className="secondaryButton" href={`/api/admin/files/${file.id}/download`} download>Download File</a>
+          <a className="secondaryButton" href={`/api/admin/files/${file.id}/download${queryString({ source })}`} download>Download File</a>
           {data.actions.latest_run_report_url ? <Link className="secondaryButton" href={data.actions.latest_run_report_url}>Run Report</Link> : null}
         </div>
       </header>
@@ -129,7 +130,7 @@ function FileViewerPageContent() {
 
       <section className="fileViewerPreview">
         <EmbeddedPreview
-          previewUrl={`/api/admin/files/${file.id}/preview`}
+          previewUrl={`/api/admin/files/${file.id}/preview${queryString({ source })}`}
           filename={file.filename}
           mimeType={file.mime_type ?? undefined}
           extension={file.extension ?? undefined}
@@ -148,7 +149,9 @@ function FileViewerPageContent() {
           <div className="buttonRow">
             <button className="secondaryButton" onClick={() => copyText(file.source_path)}>Copy Path</button>
             <button className="secondaryButton" disabled={addReview.isPending} onClick={() => addReview.mutate()}>Add To Review</button>
-            <button className="secondaryButton" disabled={runFile.isPending} onClick={() => runFile.mutate()}>Run File</button>
+            <button className="secondaryButton" disabled={source === "postgres" || runFile.isPending} onClick={() => runFile.mutate()}>
+              {source === "postgres" ? "Run File: legacy only" : "Run File"}
+            </button>
           </div>
         </section>
 

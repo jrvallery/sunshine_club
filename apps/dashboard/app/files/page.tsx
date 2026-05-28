@@ -17,6 +17,7 @@ import { useDebouncedValue } from "../../lib/hooks";
 import type { FileFacets, FileSearchItem, FileSearchResponse } from "../../lib/types";
 
 type FileFilters = {
+  source: "sqlite" | "postgres";
   q: string;
   extension: string;
   source_collection: string;
@@ -33,6 +34,7 @@ type FileFilters = {
 };
 
 const filterKeys = [
+  "source",
   "q",
   "extension",
   "source_collection",
@@ -58,6 +60,7 @@ const savedSearches: Array<{ label: string; filters: Partial<FileFilters> }> = [
 ];
 
 const defaultFilters: FileFilters = {
+  source: "sqlite",
   q: "",
   extension: "",
   source_collection: "",
@@ -100,7 +103,7 @@ function FilesPageContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const filters = useMemo(() => filtersFromParams(searchParams), [searchParams]);
-  const selectedId = numberParam(searchParams.get("file_id"));
+  const selectedId = searchParams.get("file_id");
   const [queryText, setQueryText] = useState(filters.q);
   const [customSavedSearches, setCustomSavedSearches] = useState<Array<{ label: string; filters: Partial<FileFilters> }>>([]);
   const debouncedQuery = useDebouncedValue(queryText, 300);
@@ -156,7 +159,7 @@ function FilesPageContent() {
     router.replace(`${pathname}${params.toString() ? `?${params.toString()}` : ""}`, { scroll: false });
   }
 
-  function fileDetailHref(fileId: number) {
+  function fileDetailHref(fileId: number | string) {
     const params = new URLSearchParams();
     for (const key of filterKeys) {
       const value = filters[key];
@@ -224,6 +227,10 @@ function FilesPageContent() {
           <option value="filename">Filename</option>
           <option value="primary_tag">Primary tag</option>
           <option value="quality">Quality</option>
+        </select>
+        <select aria-label="File data source" value={filters.source} onChange={(event) => updateFilters({ source: event.target.value as FileFilters["source"] })}>
+          <option value="sqlite">Legacy SQLite</option>
+          <option value="postgres">V2 Postgres</option>
         </select>
         <span className="muted">{search.data?.total_estimate ?? 0} results</span>
       </DashboardSearchToolbar>
@@ -301,10 +308,11 @@ function RunSummary({ file }: { file: FileSearchItem }) {
   if (!file.latest_run_id) {
     return <span className="fileMetaLine">Run: Manual / legacy</span>;
   }
+  const runHrefId = file.latest_run_key || file.latest_run_id;
   return (
     <span className="fileMetaLine">
       Run:{" "}
-      <Link className="viewLink" href={`/runs/${file.latest_run_id}/report`}>
+      <Link className="viewLink" href={`/runs/${runHrefId}/report`}>
         {file.latest_run_key || `#${file.latest_run_id}`}
       </Link>
       {file.latest_run_preset_key ? <span className="muted"> / {file.latest_run_preset_key}</span> : null}
@@ -325,24 +333,18 @@ function formatValue(value?: string | null) {
 }
 
 function filtersFromParams(params: URLSearchParams): FileFilters {
+  const source = params.get("source") === "postgres" ? "postgres" : "sqlite";
   return {
     ...defaultFilters,
-    ...Object.fromEntries(filterKeys.map((key) => [key, params.get(key) ?? defaultFilters[key]]))
+    ...Object.fromEntries(filterKeys.map((key) => [key, params.get(key) ?? defaultFilters[key]])),
+    source
   };
 }
 
 function apiParams(filters: FileFilters, extra: Record<string, string | number> = {}) {
   return {
     ...filters,
-    run_id: filters.run_id ? Number(filters.run_id) : undefined,
+    run_id: filters.run_id && filters.source === "sqlite" ? Number(filters.run_id) : filters.run_id || undefined,
     ...extra
   };
-}
-
-function numberParam(value: string | null) {
-  if (!value) {
-    return null;
-  }
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
 }

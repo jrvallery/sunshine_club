@@ -109,7 +109,8 @@ export type SemanticExample = {
 };
 
 export type FileRecord = {
-  id: number;
+  id: number | string;
+  source?: "sqlite" | "postgres";
   source_path: string;
   relative_path: string;
   sample_path?: string | null;
@@ -120,7 +121,7 @@ export type FileRecord = {
   source_collection?: string | null;
   source_mtime?: string | null;
   content_class?: string | null;
-  latest_run_id?: number | null;
+  latest_run_id?: number | string | null;
   latest_run_key?: string | null;
   latest_run_preset_key?: string | null;
   latest_embedding_provider?: string | null;
@@ -133,7 +134,8 @@ export type FileRecord = {
 };
 
 export type FileSearchItem = {
-  id: number;
+  id: number | string;
+  source?: "sqlite" | "postgres";
   filename: string;
   compact_path: string;
   source_path: string;
@@ -148,7 +150,7 @@ export type FileSearchItem = {
   review_status?: string | null;
   placement_status?: string | null;
   text_snippet?: string | null;
-  latest_run_id?: number | null;
+  latest_run_id?: number | string | null;
   latest_run_key?: string | null;
   latest_run_preset_key?: string | null;
   latest_embedding_provider?: string | null;
@@ -169,7 +171,8 @@ export type FileFacets = Record<string, Record<string, number>>;
 
 export type FileInspection = {
   file: {
-    id: number;
+    id: number | string;
+    source?: "sqlite" | "postgres";
     filename: string;
     source_path: string;
     relative_path: string;
@@ -180,7 +183,7 @@ export type FileInspection = {
     source_collection?: string | null;
     source_mtime?: string | null;
     content_class?: string | null;
-    latest_run_id?: number | null;
+    latest_run_id?: number | string | null;
     latest_run_key?: string | null;
     latest_run_preset_key?: string | null;
     latest_embedding_provider?: string | null;
