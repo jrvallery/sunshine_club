@@ -590,6 +590,53 @@ def test_postgres_pipeline_store_records_review_decision() -> None:
     assert connection.closed is True
 
 
+def test_postgres_pipeline_store_gets_review_item() -> None:
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.closed = False
+            self.executed: list[tuple[str, tuple[Any, ...]]] = []
+
+        def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
+            self.executed.append((query, params))
+            return _Cursor(
+                {
+                    "id": "review-id",
+                    "run_id": "run-id",
+                    "run_key": "run-1",
+                    "preset_key": "qa",
+                    "source_path": "/source/a.pdf",
+                    "relative_path": "Sunshine/a.pdf",
+                    "segment_id": "segment-1",
+                    "status": "open",
+                    "review_reason": "needs_segment_review",
+                    "proposed_class": "scanned_document",
+                    "proposed_tag": "scrapbooks",
+                    "proposed_secondary_tags": ["history_archive"],
+                    "corrected_class": None,
+                    "corrected_tag": None,
+                    "corrected_secondary_tags": [],
+                    "notes": None,
+                    "created_at": None,
+                    "updated_at": None,
+                }
+            )
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+    store = PostgresPipelineStore("postgresql://local/test", connect_factory=lambda _url: connection)
+
+    item = store.get_review_item("review-id")
+
+    assert item["id"] == "review-id"
+    assert item["run_key"] == "run-1"
+    assert item["segment_id"] == "segment-1"
+    assert item["proposed_tag"] == "scrapbooks"
+    assert connection.executed[0][1] == ("review-id",)
+    assert connection.closed is True
+
+
 def test_rebuild_qdrant_from_postgres_replays_semantic_embeddings() -> None:
     class FakeConnection:
         def __init__(self) -> None:

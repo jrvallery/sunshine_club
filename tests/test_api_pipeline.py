@@ -406,6 +406,44 @@ def test_review_decision_can_write_postgres_v2_source(monkeypatch) -> None:
     }
 
 
+def test_review_detail_can_read_postgres_v2_source(monkeypatch) -> None:
+    captured = {}
+
+    def fake_get_review_item(item_id: str) -> dict:
+        captured["item_id"] = item_id
+        return {
+            "id": item_id,
+            "run_id": "run-db-id",
+            "run_key": "qa_samples_full-1",
+            "preset_key": "qa_samples_full",
+            "source_path": "/mnt/sunshine/history.pdf",
+            "relative_path": "History/history.pdf",
+            "segment_id": "seg-1",
+            "status": "open",
+            "review_reason": "needs_segment_review",
+            "proposed_class": "scanned_document",
+            "proposed_tag": "scrapbooks",
+            "proposed_secondary_tags": ["history_archive"],
+            "corrected_class": None,
+            "corrected_tag": None,
+            "corrected_secondary_tags": [],
+            "notes": None,
+        }
+
+    monkeypatch.setattr("sunshine_api.routers.review.get_postgres_review_item", fake_get_review_item)
+
+    response = TestClient(app).get("/admin/review/items/review-1", params={"source": "postgres"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "postgres"
+    assert payload["id"] == "review-1"
+    assert payload["run_key"] == "qa_samples_full-1"
+    assert payload["segment_id"] == "seg-1"
+    assert payload["result"]["top_tag_candidate"] == "scrapbooks"
+    assert captured == {"item_id": "review-1"}
+
+
 def test_review_decision_rejects_string_id_for_sqlite_source() -> None:
     response = TestClient(app).post(
         "/admin/review/items/review-1/decision",

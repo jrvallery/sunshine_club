@@ -191,6 +191,42 @@ class PostgresPipelineStore:
         finally:
             connection.close()
 
+    def get_review_item(self, item_id: str) -> dict[str, Any]:
+        connection = self._connect_factory(self.database_url)
+        try:
+            row = connection.execute(
+                """
+                select
+                    ri.id,
+                    ri.run_id,
+                    r.run_key,
+                    r.preset_key,
+                    ri.source_path,
+                    ri.relative_path,
+                    ri.segment_id,
+                    ri.status,
+                    ri.review_reason,
+                    ri.proposed_class,
+                    ri.proposed_tag,
+                    ri.proposed_secondary_tags,
+                    ri.corrected_class,
+                    ri.corrected_tag,
+                    ri.corrected_secondary_tags,
+                    ri.notes,
+                    ri.created_at,
+                    ri.updated_at
+                from review_items_v2 ri
+                left join pipeline_runs r on r.id = ri.run_id
+                where ri.id = %s
+                """,
+                (item_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Postgres review item not found: {item_id}")
+            return _json_safe_row(_row_to_dict(row))
+        finally:
+            connection.close()
+
     def record_review_decision(
         self,
         item_id: str,

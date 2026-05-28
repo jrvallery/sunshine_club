@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 
 from sunshine_api.dependencies import review_store
-from sunshine_api.services.imports import list_postgres_review_items, record_postgres_review_decision
+from sunshine_api.services.imports import get_postgres_review_item, list_postgres_review_items, record_postgres_review_decision
 from sunshine_api.schemas import (
     DocumentPipelineRunRequest,
     DocumentPipelineRunResponse,
@@ -385,9 +385,22 @@ def review_facets(
 
 
 @router.get("/admin/review/items/{item_id}")
-def review_item_detail(item_id: int) -> dict[str, Any]:
+def review_item_detail(item_id: str, source: str = "sqlite") -> dict[str, Any]:
+    if source == "postgres":
+        try:
+            return _postgres_review_row(get_postgres_review_item(item_id))
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+    if source != "sqlite":
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
     try:
-        return review_store().get_review_item(item_id)
+        sqlite_item_id = int(item_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="sqlite review item id must be an integer") from error
+    try:
+        return review_store().get_review_item(sqlite_item_id)
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
