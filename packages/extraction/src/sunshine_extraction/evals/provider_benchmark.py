@@ -32,11 +32,14 @@ def benchmark_extraction_providers(
     if output_path is not None:
         output_path.mkdir(parents=True, exist_ok=True)
     rows: list[dict[str, Any]] = []
+    parser_rows: list[dict[str, Any]] = []
     for index, sample_spec in enumerate(samples, start=1):
         sample = _sample(Path(sample_spec["path"]), index, sample_spec=sample_spec)
         plan = _default_plan(sample)
         for provider in providers:
-            rows.append(_benchmark_one(sample, plan, provider, sample_spec=sample_spec))
+            row, parser_row = _benchmark_one(sample, plan, provider, sample_spec=sample_spec)
+            rows.append(row)
+            parser_rows.append(parser_row)
     summary = _summary(rows)
     summary["sample_count"] = len(samples)
     summary["sample_manifest"] = str(sample_manifest) if sample_manifest else None
@@ -45,17 +48,18 @@ def benchmark_extraction_providers(
     summary["recommendations"] = recommendations
     if output_path is not None:
         _write_jsonl(output_path / "provider-benchmark-results.jsonl", rows)
+        _write_jsonl(output_path / "sample-parser-results.jsonl", parser_rows)
         _write_jsonl(output_path / "provider-benchmark-recommendations.jsonl", recommendations)
         (output_path / "provider-benchmark-summary.json").write_text(_json_dumps(summary), encoding="utf-8")
-    return {"summary": summary, "results": rows, "recommendations": recommendations}
+    return {"summary": summary, "results": rows, "parser_results": parser_rows, "recommendations": recommendations}
 
 
-def _benchmark_one(sample: SampleFile, plan: dict[str, Any], provider: ExtractionProvider, *, sample_spec: dict[str, Any]) -> dict[str, Any]:
+def _benchmark_one(sample: SampleFile, plan: dict[str, Any], provider: ExtractionProvider, *, sample_spec: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     status = provider.dependency_status()
     ocr_artifacts = OcrArtifacts(pages=[], documents=[])
     extraction, attempt = provider.extract(sample, plan, ocr_executor=ocr_executor_from_env(), ocr_artifacts=ocr_artifacts)
     quality = extraction_quality_gate(extraction)
-    return {
+    benchmark_row = {
         "source_path": sample.source_path,
         "relative_path": sample.relative_path,
         "sample_path": str(sample.sample_path),
@@ -76,6 +80,84 @@ def _benchmark_one(sample: SampleFile, plan: dict[str, Any], provider: Extractio
         "dependency_status": status,
         "metadata": attempt.metadata,
     }
+    parser_row = _parser_result_row(
+        sample=sample,
+        plan=plan,
+        sample_spec=sample_spec,
+        provider_status=status,
+        extraction_status=extraction.extraction_status,
+        extraction_text=extraction.text or "",
+        extraction_metadata=extraction.metadata,
+        extraction_page_count=extraction.page_count,
+        attempt=attempt.as_row(),
+        quality=quality,
+        warnings=benchmark_row["warnings"],
+    )
+    return benchmark_row, parser_row
+
+
+def _parser_result_row(
+    *,
+    sample: SampleFile,
+    plan: dict[str, Any],
+    sample_spec: dict[str, Any],
+    provider_status: dict[str, Any],
+    extraction_status: str,
+    extraction_text: str,
+    extraction_metadata: dict[str, Any],
+    extraction_page_count: int | None,
+    attempt: dict[str, Any],
+    quality: dict[str, Any],
+    warnings: list[str],
+) -> dict[str, Any]:
+    provider = str(attempt.get("provider") or "unknown")
+    return {
+        "source_path": sample.source_path,
+        "relative_path": sample.relative_path,
+        "sample_path": str(sample.sample_path),
+        "sample_group": sample.sample_group,
+        "sample_number": sample.sample_number,
+        "sample_category": sample_spec.get("category") or "uncategorized",
+        "sample_label": sample_spec.get("label") or sample.sample_path.name,
+        "provider": provider,
+        "parser_provider": provider,
+        "strategy": plan.get("strategy"),
+        "document_subtype": plan.get("document_subtype"),
+        "status": extraction_status,
+        "quality": quality.get("quality"),
+        "can_chunk": quality.get("can_chunk"),
+        "requires_review": quality.get("requires_review"),
+        "review_reason": _parser_review_reason(quality, warnings),
+        "text_length": len(extraction_text),
+        "text_snippet": _snippet(extraction_text),
+        "page_count": extraction_page_count,
+        "seconds": attempt.get("seconds"),
+        "local_only": bool(provider_status.get("local_only", True)),
+        "provider_available": bool(provider_status.get("available", True)),
+        "warnings": warnings,
+        "dependency_status": provider_status,
+        "provider_attempt": attempt,
+        "metadata": {
+            "benchmark": True,
+            "sample_metadata": sample_spec.get("metadata") or {},
+            "extraction_metadata": extraction_metadata,
+        },
+    }
+
+
+def _parser_review_reason(quality: dict[str, Any], warnings: list[str]) -> str | None:
+    if quality.get("requires_review"):
+        return str(quality.get("reason") or quality.get("quality") or "parser_quality_requires_review")
+    if warnings:
+        return "parser_warnings_present"
+    return None
+
+
+def _snippet(text: str, limit: int = 500) -> str:
+    normalized = " ".join(text.split())
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[: limit - 3].rstrip() + "..."
 
 
 def _benchmark_samples(

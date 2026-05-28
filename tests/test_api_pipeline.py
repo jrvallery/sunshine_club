@@ -281,6 +281,8 @@ def test_provider_benchmark_api_runs_current_provider(tmp_path: Path) -> None:
     assert latest.json()["recommendations"][0]["provider"] == "current"
     assert latest.json()["recommendations"][0]["local_only"] is True
     assert latest.json()["results"][0]["provider"] == "current"
+    assert latest.json()["parser_results"][0]["parser_provider"] == "current"
+    assert latest.json()["parser_results"][0]["text_snippet"] == "Meeting minutes and Sunshine Club notes."
 
 
 def test_provider_benchmark_api_accepts_optional_local_providers(tmp_path: Path) -> None:

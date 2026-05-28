@@ -20,6 +20,7 @@ type ProviderBenchmarkLatest = {
   summary?: Record<string, unknown>;
   recommendations?: Array<Record<string, unknown>>;
   results?: Array<Record<string, unknown>>;
+  parser_results?: Array<Record<string, unknown>>;
 };
 
 const EXTRACTION_PROVIDERS: ExtractionProviderName[] = ["current", "docling", "mineru", "ragflow_deepdoc", "unstructured"];
@@ -242,6 +243,10 @@ export default function PipelineEvalPage() {
             <section className="wideSection">
               <h3>Result Rows</h3>
               <ProviderBenchmarkRows rows={providerBenchmark.data.results ?? []} />
+            </section>
+            <section className="wideSection">
+              <h3>Parser Artifacts</h3>
+              <ProviderParserRows rows={providerBenchmark.data.parser_results ?? []} />
             </section>
           </div>
         ) : (
@@ -597,6 +602,45 @@ function EvalRows({ rows }: { rows: Array<Record<string, unknown>> }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function ProviderParserRows({ rows }: { rows: Array<Record<string, unknown>> }) {
+  return (
+    <div className="tableWrap" tabIndex={0} aria-label="Provider parser artifacts table">
+      <table>
+        <thead>
+          <tr>
+            <th>File</th>
+            <th>Parser</th>
+            <th>Status</th>
+            <th>Quality</th>
+            <th>Pages</th>
+            <th>Snippet</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.slice(0, 100).map((row, index) => (
+            <tr key={`${String(row.source_path ?? row.path ?? index)}-${String(row.parser_provider ?? row.provider ?? index)}`}>
+              <td className="pathText">
+                <div className="cellStack">
+                  <strong>{String(row.relative_path ?? row.path ?? row.source_path ?? "-")}</strong>
+                  <span>{String(row.sample_category ?? "-")}</span>
+                </div>
+              </td>
+              <td>{String(row.parser_provider ?? row.provider ?? "-")}</td>
+              <td>
+                <StatusBadge value={String(row.status ?? "-")} tone={String(row.status ?? "").includes("fail") ? "danger" : "default"} />
+              </td>
+              <td>{String(row.quality ?? "-")}</td>
+              <td>{String(row.page_count ?? "-")}</td>
+              <td className="snippetCell">{String(row.text_snippet ?? "-")}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!rows.length ? <p className="muted">No normalized parser rows written yet.</p> : null}
     </div>
   );
 }

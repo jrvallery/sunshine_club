@@ -25,9 +25,14 @@ def test_provider_benchmark_runs_current_provider_and_writes_artifacts(tmp_path:
     assert result["results"][0]["status"] == "extracted"
     assert result["results"][0]["quality"] == "ok"
     rows = [json.loads(line) for line in (output_dir / "provider-benchmark-results.jsonl").read_text(encoding="utf-8").splitlines()]
+    parser_rows = [json.loads(line) for line in (output_dir / "sample-parser-results.jsonl").read_text(encoding="utf-8").splitlines()]
     recommendations = [json.loads(line) for line in (output_dir / "provider-benchmark-recommendations.jsonl").read_text(encoding="utf-8").splitlines()]
     summary = json.loads((output_dir / "provider-benchmark-summary.json").read_text(encoding="utf-8"))
     assert rows[0]["provider"] == "current"
+    assert parser_rows[0]["parser_provider"] == "current"
+    assert parser_rows[0]["status"] == "extracted"
+    assert parser_rows[0]["quality"] == "ok"
+    assert parser_rows[0]["text_snippet"] == "Meeting minutes and Sunshine Club notes."
     assert recommendations[0]["promotion_status"] == "candidate"
     assert summary["result_count"] == 1
 
@@ -80,3 +85,5 @@ def test_provider_benchmark_loads_canonical_sample_manifest(tmp_path: Path) -> N
     assert result["summary"]["sample_categories"] == {"born_digital_text": 1}
     assert result["results"][0]["sample_category"] == "born_digital_text"
     assert result["results"][0]["sample_label"] == "meeting minutes text fixture"
+    assert result["parser_results"][0]["sample_category"] == "born_digital_text"
+    assert result["parser_results"][0]["metadata"]["sample_metadata"] == {"risk": "low"}
