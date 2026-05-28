@@ -1413,6 +1413,16 @@ td:first-child {
   margin-top: 10px;
 }
 
+.compactButtons {
+  gap: 6px;
+  margin-top: 0;
+}
+
+.compactButtons .secondaryButton {
+  min-height: 30px;
+  padding: 5px 8px;
+}
+
 .keyValue {
   display: grid;
   gap: 3px;

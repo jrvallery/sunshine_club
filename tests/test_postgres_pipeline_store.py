@@ -980,6 +980,91 @@ def test_postgres_pipeline_store_records_review_decision() -> None:
     assert connection.closed is True
 
 
+def test_postgres_pipeline_store_records_segment_review_decision() -> None:
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.closed = False
+            self.committed = False
+            self.executed: list[tuple[str, tuple[Any, ...]]] = []
+
+        def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
+            self.executed.append((query, params))
+            normalized = " ".join(query.lower().split())
+            if "from document_segments ds join pipeline_runs r" in normalized and "where r.run_key = %s and ds.segment_id = %s" in normalized:
+                return _Cursor(
+                    {
+                        "id": "segment-row-id",
+                        "run_id": "run-id",
+                        "run_key": "run-1",
+                        "source_path": "/source/scrapbook.pdf",
+                        "relative_path": "History/scrapbook.pdf",
+                        "segment_id": "segment-001",
+                        "segment_type": "scrapbook_page_group",
+                        "segment_title": "Scrapbook pages 1-4",
+                        "page_start": 1,
+                        "page_end": 4,
+                        "metadata": {"policy": "review_only"},
+                    }
+                )
+            if "select id, notes from review_items_v2" in normalized:
+                return _Cursor({"id": "review-id", "notes": "existing"})
+            if "from document_segments ds join pipeline_runs r" in normalized and "where ds.id = %s" in normalized:
+                return _Cursor(
+                    {
+                        "id": "segment-row-id",
+                        "run_id": "run-id",
+                        "run_key": "run-1",
+                        "source_path": "/source/scrapbook.pdf",
+                        "relative_path": "History/scrapbook.pdf",
+                        "segment_id": "segment-001",
+                        "parent_file_id": "file-id",
+                        "page_start": 1,
+                        "page_end": 4,
+                        "segment_index": 1,
+                        "segment_type": "scrapbook_page_group",
+                        "segment_title": "Scrapbook pages 1-4",
+                        "segment_confidence": 0.62,
+                        "requires_segment_review": False,
+                        "boundary_evidence": ["matched:scrapbook"],
+                        "metadata": {"segment_review": {"decision": "accept", "status": "accepted"}},
+                        "created_at": None,
+                    }
+                )
+            return _Cursor()
+
+        def commit(self) -> None:
+            self.committed = True
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+    store = PostgresPipelineStore("postgresql://local/test", connect_factory=lambda _url: connection)
+
+    result = store.record_segment_review_decision(
+        run_key="run-1",
+        segment_id="segment-001",
+        decision="accept",
+        notes="range is correct",
+        reviewer="james",
+    )
+
+    assert result["review_status"] == "accepted"
+    assert result["review_item_id"] == "review-id"
+    assert result["segment"]["requires_segment_review"] is False
+    update_segment_params = next(params for query, params in connection.executed if "update document_segments" in query)
+    assert json.loads(update_segment_params[0])["segment_review"] == {
+        "decision": "accept",
+        "notes": "range is correct",
+        "reviewer": "james",
+        "status": "accepted",
+    }
+    review_update_params = next(params for query, params in connection.executed if "update review_items_v2" in query)
+    assert review_update_params[:3] == ("accepted", "segment_boundary_accept", "existing\nrange is correct")
+    assert connection.committed is True
+    assert connection.closed is True
+
+
 def test_postgres_pipeline_store_gets_review_item() -> None:
     class FakeConnection:
         def __init__(self) -> None:

@@ -510,6 +510,26 @@ def record_postgres_review_decision(
     )
 
 
+def record_postgres_segment_review_decision(
+    *,
+    run_key: str,
+    segment_id: str,
+    decision: str,
+    notes: str | None = None,
+    reviewer: str | None = None,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> dict[str, Any]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.record_segment_review_decision(
+        run_key=run_key,
+        segment_id=segment_id,
+        decision=decision,
+        notes=notes,
+        reviewer=reviewer,
+    )
+
+
 __all__ = [
     "add_postgres_file_result_to_review",
     "import_langgraph_output_to_postgres",
@@ -541,6 +561,7 @@ __all__ = [
     "postgres_review_summary",
     "record_postgres_pipeline_run_state_if_configured",
     "record_postgres_review_decision",
+    "record_postgres_segment_review_decision",
     "search_postgres_files",
     "update_postgres_golden_label",
 ]

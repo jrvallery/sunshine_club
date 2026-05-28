@@ -26,6 +26,7 @@ from sunshine_api.schemas import (
     RunStartRequest,
     SemanticEvalRequest,
     SemanticIndexBuildRequest,
+    SegmentReviewDecisionRequest,
 )
 
 router = APIRouter()
@@ -42,6 +43,7 @@ from sunshine_api.services.imports import (
     list_postgres_run_events,
     postgres_runtime_summary,
     record_postgres_review_decision,
+    record_postgres_segment_review_decision,
 )
 from sunshine_api.services.local_infrastructure import local_infrastructure_status
 
@@ -116,6 +118,23 @@ def postgres_runtime_run_report(run_key: str, limit: int = 500) -> dict[str, Any
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     return {"ok": True, **report}
+
+
+@router.post("/admin/system/postgres-runtime/runs/{run_key}/segments/{segment_id}/decision")
+def postgres_runtime_segment_review_decision(run_key: str, segment_id: str, request: SegmentReviewDecisionRequest) -> dict[str, Any]:
+    try:
+        result = record_postgres_segment_review_decision(
+            run_key=run_key,
+            segment_id=segment_id,
+            decision=request.decision,
+            notes=request.notes,
+            reviewer=request.reviewer,
+        )
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"ok": True, **result}
 
 
 @router.get("/admin/system/postgres-runtime/runs/{run_key}/events")

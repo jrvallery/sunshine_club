@@ -364,6 +364,18 @@ function ReviewQueueTab({ report, postgresReport }: { report: RunReport; postgre
 }
 
 function SegmentsTab({ postgresReport, postgresError }: { postgresReport?: PostgresRunReport; postgresError?: Error | null }) {
+  const queryClient = useQueryClient();
+  const runKey = String(postgresReport?.run?.run_key ?? "");
+  const segmentDecision = useMutation({
+    mutationFn: ({ segmentId, decision, notes }: { segmentId: string; decision: "accept" | "reject" | "split"; notes?: string }) =>
+      postJson<Record<string, unknown>>(
+        `/api/admin/system/postgres-runtime/runs/${encodeURIComponent(runKey)}/segments/${encodeURIComponent(segmentId)}/decision`,
+        { decision, notes }
+      ),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["postgres-run-report", runKey] });
+    }
+  });
   if (!postgresReport) {
     return (
       <section className="panel">
@@ -392,12 +404,24 @@ function SegmentsTab({ postgresReport, postgresError }: { postgresReport?: Postg
         <Breakdown title="Segment Type" values={postgresReport.summary.segment_type} />
         <Breakdown title="Routes" values={postgresReport.summary.route_status} />
       </div>
-      <SegmentRows rows={postgresReport.document_segments} />
+      <SegmentRows
+        rows={postgresReport.document_segments}
+        disabled={!runKey || segmentDecision.isPending}
+        onDecision={(segmentId, decision) => segmentDecision.mutate({ segmentId, decision, notes: segmentDecisionNote(decision) })}
+      />
     </section>
   );
 }
 
-function SegmentRows({ rows }: { rows: Array<Record<string, unknown>> }) {
+function SegmentRows({
+  rows,
+  disabled,
+  onDecision
+}: {
+  rows: Array<Record<string, unknown>>;
+  disabled: boolean;
+  onDecision: (segmentId: string, decision: "accept" | "reject" | "split") => void;
+}) {
   if (!rows.length) {
     return <div className="empty">No document segment rows imported for this run.</div>;
   }
@@ -412,19 +436,36 @@ function SegmentRows({ rows }: { rows: Array<Record<string, unknown>> }) {
             <th>Confidence</th>
             <th>Review</th>
             <th>Evidence</th>
+            <th>Decision</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, index) => (
-            <tr key={String(row.segment_id ?? index)}>
-              <td><PathCell title={String(row.relative_path ?? row.source_path ?? "-")} /></td>
-              <td>{formatPages(row.page_start, row.page_end)}</td>
-              <td>{String(row.segment_type ?? "-")}</td>
-              <td>{row.segment_confidence == null ? "-" : String(row.segment_confidence)}</td>
-              <td>{row.requires_segment_review ? "required" : "not required"}</td>
-              <td className="snippetCell">{formatEvidence(row.boundary_evidence)}</td>
-            </tr>
-          ))}
+          {rows.map((row, index) => {
+            const segmentId = String(row.segment_id ?? "");
+            const review = segmentReview(row);
+            return (
+              <tr key={String(row.segment_id ?? index)}>
+                <td><PathCell title={String(row.relative_path ?? row.source_path ?? "-")} /></td>
+                <td>{formatPages(row.page_start, row.page_end)}</td>
+                <td>{String(row.segment_type ?? "-")}</td>
+                <td>{row.segment_confidence == null ? "-" : String(row.segment_confidence)}</td>
+                <td>
+                  <div className="cellStack">
+                    <span>{row.requires_segment_review ? "required" : "not required"}</span>
+                    <span>{review}</span>
+                  </div>
+                </td>
+                <td className="snippetCell">{formatEvidence(row.boundary_evidence)}</td>
+                <td>
+                  <div className="buttonRow compactButtons">
+                    <button className="secondaryButton" disabled={disabled || !segmentId} onClick={() => onDecision(segmentId, "accept")}>Accept</button>
+                    <button className="secondaryButton" disabled={disabled || !segmentId} onClick={() => onDecision(segmentId, "split")}>Needs split</button>
+                    <button className="secondaryButton dangerText" disabled={disabled || !segmentId} onClick={() => onDecision(segmentId, "reject")}>Reject</button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -764,6 +805,27 @@ function formatEvidence(value: unknown) {
     return JSON.stringify(value);
   }
   return value == null ? "-" : String(value);
+}
+
+function segmentReview(row: Record<string, unknown>) {
+  const metadata = row.metadata;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return "-";
+  }
+  const review = (metadata as Record<string, unknown>).segment_review;
+  if (!review || typeof review !== "object" || Array.isArray(review)) {
+    return "-";
+  }
+  const reviewRow = review as Record<string, unknown>;
+  return [reviewRow.status, reviewRow.decision].map((value) => String(value ?? "")).filter(Boolean).join(" / ") || "-";
+}
+
+function segmentDecisionNote(decision: "accept" | "reject" | "split") {
+  return {
+    accept: "Segment page range accepted from run report.",
+    reject: "Segment page range rejected from run report.",
+    split: "Segment page range needs further splitting from run report.",
+  }[decision];
 }
 
 function formatEventProblems(payload: Record<string, unknown>) {

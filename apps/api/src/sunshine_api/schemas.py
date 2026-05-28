@@ -58,6 +58,12 @@ class ReviewDecisionRequest(BaseModel):
     save_as_golden: bool = True
 
 
+class SegmentReviewDecisionRequest(BaseModel):
+    decision: Literal["accept", "reject", "split", "merge", "defer", "change"]
+    notes: str | None = None
+    reviewer: str | None = None
+
+
 class FileReviewRequest(BaseModel):
     review_reason: str = "manual_file_review"
 

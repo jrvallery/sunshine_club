@@ -171,6 +171,45 @@ def test_postgres_run_report_endpoint_wraps_service(monkeypatch) -> None:
     assert captured == {"run_key": "run-1", "limit": 7}
 
 
+def test_postgres_segment_review_decision_endpoint_wraps_service(monkeypatch) -> None:
+    captured = {}
+
+    def fake_record_segment_decision(*, run_key: str, segment_id: str, decision: str, notes: str | None = None, reviewer: str | None = None) -> dict:
+        captured.update(
+            {
+                "run_key": run_key,
+                "segment_id": segment_id,
+                "decision": decision,
+                "notes": notes,
+                "reviewer": reviewer,
+            }
+        )
+        return {
+            "run_key": run_key,
+            "segment_id": segment_id,
+            "decision": decision,
+            "review_status": "changed",
+            "segment": {"segment_id": segment_id, "metadata": {"segment_review": {"decision": decision}}},
+        }
+
+    monkeypatch.setattr("sunshine_api.routers.health.record_postgres_segment_review_decision", fake_record_segment_decision)
+
+    response = TestClient(app).post(
+        "/admin/system/postgres-runtime/runs/run-1/segments/segment-001/decision",
+        json={"decision": "split", "notes": "article boundary is too broad", "reviewer": "james"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["review_status"] == "changed"
+    assert captured == {
+        "run_key": "run-1",
+        "segment_id": "segment-001",
+        "decision": "split",
+        "notes": "article boundary is too broad",
+        "reviewer": "james",
+    }
+
+
 def test_postgres_run_events_endpoint_wraps_service(monkeypatch) -> None:
     captured = {}
 

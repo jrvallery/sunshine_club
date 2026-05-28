@@ -1295,6 +1295,169 @@ class PostgresPipelineStore:
         finally:
             connection.close()
 
+    def record_segment_review_decision(
+        self,
+        *,
+        run_key: str,
+        segment_id: str,
+        decision: str,
+        notes: str | None = None,
+        reviewer: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_decision = decision.strip().lower()
+        if normalized_decision not in {"accept", "reject", "split", "merge", "defer", "change"}:
+            raise ValueError("segment decision must be accept, reject, split, merge, defer, or change")
+        review_status = _segment_review_status(normalized_decision)
+        connection = self._connect_factory(self.database_url)
+        try:
+            row = connection.execute(
+                """
+                select
+                    ds.id,
+                    ds.run_id,
+                    r.run_key,
+                    ds.source_path,
+                    ds.relative_path,
+                    ds.segment_id,
+                    ds.segment_type,
+                    ds.segment_title,
+                    ds.page_start,
+                    ds.page_end,
+                    ds.metadata
+                from document_segments ds
+                join pipeline_runs r on r.id = ds.run_id
+                where r.run_key = %s
+                  and ds.segment_id = %s
+                """,
+                (run_key, segment_id),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Postgres document segment not found: {run_key}/{segment_id}")
+            segment = _json_safe_row(_row_to_dict(row))
+            metadata = segment.get("metadata") if isinstance(segment.get("metadata"), dict) else {}
+            metadata = {
+                **metadata,
+                "segment_review": {
+                    "decision": normalized_decision,
+                    "status": review_status,
+                    "reviewer": reviewer,
+                    "notes": notes,
+                },
+            }
+            connection.execute(
+                """
+                update document_segments
+                set metadata = %s::jsonb,
+                    requires_segment_review = case when %s in ('accepted', 'rejected') then false else requires_segment_review end
+                where id = %s
+                """,
+                (json.dumps(metadata, sort_keys=True), review_status, segment["id"]),
+            )
+            review_item_id = self._upsert_segment_review_item(
+                connection,
+                segment=segment,
+                status=review_status,
+                review_reason=f"segment_boundary_{normalized_decision}",
+                notes=notes,
+            )
+            connection.commit()
+            updated = connection.execute(
+                """
+                select
+                    ds.id,
+                    ds.run_id,
+                    r.run_key,
+                    ds.source_path,
+                    ds.relative_path,
+                    ds.segment_id,
+                    ds.parent_file_id,
+                    ds.page_start,
+                    ds.page_end,
+                    ds.segment_index,
+                    ds.segment_type,
+                    ds.segment_title,
+                    ds.segment_confidence,
+                    ds.requires_segment_review,
+                    ds.boundary_evidence,
+                    ds.metadata,
+                    ds.created_at
+                from document_segments ds
+                join pipeline_runs r on r.id = ds.run_id
+                where ds.id = %s
+                """,
+                (segment["id"],),
+            ).fetchone()
+            return {
+                "run_key": run_key,
+                "segment_id": segment_id,
+                "decision": normalized_decision,
+                "review_status": review_status,
+                "review_item_id": review_item_id,
+                "segment": _json_safe_row(_row_to_dict(updated)) if updated is not None else {**segment, "metadata": metadata},
+            }
+        finally:
+            connection.close()
+
+    def _upsert_segment_review_item(
+        self,
+        connection: PostgresConnection,
+        *,
+        segment: dict[str, Any],
+        status: str,
+        review_reason: str,
+        notes: str | None,
+    ) -> str | None:
+        existing = connection.execute(
+            """
+            select id, notes
+            from review_items_v2
+            where run_id = %s
+              and source_path = %s
+              and segment_id = %s
+            order by updated_at desc, created_at desc
+            limit 1
+            """,
+            (segment.get("run_id"), segment.get("source_path"), segment.get("segment_id")),
+        ).fetchone()
+        if existing is not None:
+            existing_row = _row_to_dict(existing)
+            connection.execute(
+                """
+                update review_items_v2
+                set status = %s,
+                    review_reason = %s,
+                    notes = %s,
+                    updated_at = now()
+                where id = %s
+                """,
+                (
+                    status,
+                    review_reason,
+                    _append_note(existing_row.get("notes"), notes),
+                    existing_row.get("id"),
+                ),
+            )
+            return str(existing_row.get("id"))
+        inserted = connection.execute(
+            """
+            insert into review_items_v2 (
+                run_id, source_path, relative_path, segment_id, status, review_reason,
+                proposed_class, proposed_tag, proposed_secondary_tags, notes
+            ) values (%s, %s, %s, %s, %s, %s, null, null, '[]'::jsonb, %s)
+            returning id
+            """,
+            (
+                segment.get("run_id"),
+                segment.get("source_path"),
+                segment.get("relative_path"),
+                segment.get("segment_id"),
+                status,
+                review_reason,
+                notes,
+            ),
+        ).fetchone()
+        return str(_row_to_dict(inserted).get("id")) if inserted is not None else None
+
     def _upsert_golden_label(
         self,
         connection: PostgresConnection,
@@ -2609,6 +2772,19 @@ def _review_status_from_decision(decision: str) -> str:
         "reject": "rejected",
         "rejected": "rejected",
     }.get(normalized, "open")
+
+
+def _segment_review_status(decision: str) -> str:
+    normalized = (decision or "").strip().lower()
+    if normalized == "accept":
+        return "accepted"
+    if normalized == "reject":
+        return "rejected"
+    if normalized == "defer":
+        return "deferred"
+    if normalized in {"split", "merge", "change"}:
+        return "changed"
+    return "open"
 
 
 def _append_note(existing: Any, note: str | None) -> str | None:
