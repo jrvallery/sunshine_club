@@ -62,6 +62,23 @@ def test_import_langgraph_output_postgres_endpoint_wraps_service(tmp_path: Path,
     assert captured == {"output_dir": str(tmp_path), "run_key": "run-1", "preset_key": "qa"}
 
 
+def test_postgres_review_items_endpoint_wraps_service(monkeypatch) -> None:
+    captured = {}
+
+    def fake_list_review_items(*, run_key: str | None = None, limit: int = 100) -> list[dict]:
+        captured["run_key"] = run_key
+        captured["limit"] = limit
+        return [{"id": "review-1", "run_key": run_key, "status": "open"}]
+
+    monkeypatch.setattr("sunshine_api.routers.health.list_postgres_review_items", fake_list_review_items)
+
+    response = TestClient(app).get("/admin/system/postgres-runtime/review-items?run_key=run-1&limit=5")
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["id"] == "review-1"
+    assert captured == {"run_key": "run-1", "limit": 5}
+
+
 def test_local_infrastructure_status_is_local_only(monkeypatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://sunshine:local@localhost:5432/sunshine_club")
     monkeypatch.setenv("SUNSHINE_QDRANT_URL", "http://127.0.0.1:6333")

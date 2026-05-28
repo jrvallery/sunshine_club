@@ -83,6 +83,49 @@ class PostgresPipelineStore:
         finally:
             connection.close()
 
+    def list_review_items(self, *, run_key: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        connection = self._connect_factory(self.database_url)
+        try:
+            params: tuple[Any, ...]
+            where_sql = ""
+            if run_key:
+                where_sql = "where r.run_key = %s"
+                params = (run_key, max(1, min(int(limit), 500)))
+            else:
+                params = (max(1, min(int(limit), 500)),)
+            rows = connection.execute(
+                f"""
+                select
+                    ri.id,
+                    ri.run_id,
+                    r.run_key,
+                    r.preset_key,
+                    ri.source_path,
+                    ri.relative_path,
+                    ri.segment_id,
+                    ri.status,
+                    ri.review_reason,
+                    ri.proposed_class,
+                    ri.proposed_tag,
+                    ri.proposed_secondary_tags,
+                    ri.corrected_class,
+                    ri.corrected_tag,
+                    ri.corrected_secondary_tags,
+                    ri.notes,
+                    ri.created_at,
+                    ri.updated_at
+                from review_items_v2 ri
+                left join pipeline_runs r on r.id = ri.run_id
+                {where_sql}
+                order by ri.created_at desc
+                limit %s
+                """,
+                params,
+            ).fetchall()
+            return [_json_safe_row(_row_to_dict(row)) for row in rows]
+        finally:
+            connection.close()
+
     def _list_pipeline_runs(self, connection: PostgresConnection, *, limit: int) -> list[dict[str, Any]]:
         rows = connection.execute(
             """

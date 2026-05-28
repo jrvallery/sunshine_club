@@ -1266,6 +1266,7 @@ Current implementation:
 - `PostgresPipelineStore` imports run-owned chunks and chunk embeddings from graph artifacts into the Postgres V2 runtime schema.
 - `PostgresPipelineStore` imports review-required queue rows into `review_items_v2`, preserving run ownership, source path, proposed class/tag, proposed secondary tags, and review reason.
 - `PostgresPipelineStore` exposes read-only runtime summary and recent-run listing methods so dashboard/API migration can inspect V2 Postgres state without using SQLite.
+- `PostgresPipelineStore` exposes a read-only review-item listing by run key; `GET /admin/system/postgres-runtime/review-items` and the Settings dashboard can inspect imported V2 review queues directly from Postgres.
 
 ### 24. `import_run_results`
 
@@ -1558,7 +1559,7 @@ Important missing V2 dependencies:
 - Docling is declared as an optional Python extra and has a local provider boundary; the actual local dependency install/runtime benchmark still needs to be performed.
 - MinerU, RAGFlow DeepDoc, and Unstructured have local provider boundaries for benchmarking, but are not declared as installed dependencies yet.
 - Qdrant client, Compose service, readiness metadata, and a Settings-page provider health/provisioning surface exist for inspecting local infrastructure and triggering Qdrant rebuilds.
-- Postgres client and Compose service exist; V2 migrations now include run/results/model/provider/segment/review/chunk/embedding tables, and the API exposes a read-only Postgres runtime summary/listing surface. Dashboard runtime still needs to move from SQLite to Postgres as the authoritative store.
+- Postgres client and Compose service exist; V2 migrations now include run/results/model/provider/segment/review/chunk/embedding tables, and the API exposes read-only Postgres runtime, run listing, and review-item listing surfaces. Dashboard runtime still needs to move from SQLite to Postgres as the authoritative store.
 - Local embedding/vector indexing stack is wired through providers, optional Qdrant indexing, and a Postgres-to-Qdrant rebuild service; production still needs a reviewed canonical collection policy.
 - Provider benchmark tooling exists for extraction providers and emits promotion recommendations; real Docling/MinerU/RAGFlow dependency benchmarking still needs to be finished.
 - The provider benchmark API returns summary, result rows, and promotion recommendations from benchmark artifacts, and the Pipeline Quality Eval dashboard now has a Provider Benchmarks panel for running and reviewing those artifacts.

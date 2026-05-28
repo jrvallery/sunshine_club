@@ -174,6 +174,53 @@ def test_postgres_pipeline_store_reports_runtime_summary() -> None:
     assert connection.closed is True
 
 
+def test_postgres_pipeline_store_lists_review_items() -> None:
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.closed = False
+            self.executed: list[tuple[str, tuple[Any, ...]]] = []
+
+        def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
+            self.executed.append((query, params))
+            return _Cursor(
+                rows=[
+                    {
+                        "id": "review-id",
+                        "run_id": "run-id",
+                        "run_key": "run-1",
+                        "preset_key": "qa",
+                        "source_path": "/source/a.pdf",
+                        "relative_path": "Sunshine/a.pdf",
+                        "segment_id": None,
+                        "status": "open",
+                        "review_reason": "tag_confidence_below_threshold",
+                        "proposed_class": "document",
+                        "proposed_tag": "meeting_records",
+                        "proposed_secondary_tags": ["meeting_minutes"],
+                        "corrected_class": None,
+                        "corrected_tag": None,
+                        "corrected_secondary_tags": [],
+                        "notes": None,
+                        "created_at": None,
+                        "updated_at": None,
+                    }
+                ]
+            )
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+    store = PostgresPipelineStore("postgresql://local/test", connect_factory=lambda _url: connection)
+
+    rows = store.list_review_items(run_key="run-1", limit=10)
+
+    assert rows[0]["run_key"] == "run-1"
+    assert rows[0]["proposed_tag"] == "meeting_records"
+    assert connection.executed[0][1] == ("run-1", 10)
+    assert connection.closed is True
+
+
 def test_rebuild_qdrant_from_postgres_replays_semantic_embeddings() -> None:
     class FakeConnection:
         def __init__(self) -> None:

@@ -61,6 +61,12 @@ type PostgresRuntime = {
   runs: Array<Record<string, unknown>>;
 };
 
+type PostgresReviewItems = {
+  ok: boolean;
+  count: number;
+  items: Array<Record<string, unknown>>;
+};
+
 export default function SettingsPage() {
   const queryClient = useQueryClient();
   const [rebuildRunKey, setRebuildRunKey] = useState("");
@@ -75,6 +81,11 @@ export default function SettingsPage() {
   const postgresRuntime = useQuery({
     queryKey: ["postgres-runtime"],
     queryFn: () => fetchJson<PostgresRuntime>("/api/admin/system/postgres-runtime?limit=10"),
+    retry: false
+  });
+  const postgresReviewItems = useQuery({
+    queryKey: ["postgres-review-items"],
+    queryFn: () => fetchJson<PostgresReviewItems>("/api/admin/system/postgres-runtime/review-items?limit=10"),
     retry: false
   });
   const rebuildQdrant = useMutation({
@@ -184,6 +195,37 @@ export default function SettingsPage() {
                     <td>{String(run.review_required_count ?? 0)}</td>
                     <td>{String(run.model_usage_count ?? 0)}</td>
                     <td>{String(run.updated_at ?? run.created_at ?? "-")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+        {postgresReviewItems.data?.items.length ? (
+          <div className="tableWrap reportTable">
+            <table>
+              <thead>
+                <tr>
+                  <th>Review Item</th>
+                  <th>Run</th>
+                  <th>Status</th>
+                  <th>Reason</th>
+                  <th>Proposed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {postgresReviewItems.data.items.map((item) => (
+                  <tr key={String(item.id)}>
+                    <td>
+                      <div className="cellStack">
+                        <strong>{String(item.relative_path ?? item.source_path ?? "-")}</strong>
+                        <span>{String(item.source_path ?? "-")}</span>
+                      </div>
+                    </td>
+                    <td>{String(item.run_key ?? "-")}</td>
+                    <td>{String(item.status ?? "-")}</td>
+                    <td>{String(item.review_reason ?? "-")}</td>
+                    <td>{[item.proposed_class, item.proposed_tag].filter(Boolean).join(" / ") || "-"}</td>
                   </tr>
                 ))}
               </tbody>
