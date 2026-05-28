@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -12,6 +13,7 @@ from typing import Any
 
 
 DEFAULT_TAXONOMY_SEED_PATH = "docs/Sunshine_Taxonomy_Seed_v0.1_2026-05-25.json"
+SUNSHINE_PLACEMENT_RULES_PATH_ENV = "SUNSHINE_PLACEMENT_RULES_PATH"
 REVIEW_FOLDER = "90_Intake_Needs_Review"
 
 
@@ -43,8 +45,9 @@ class TaxonomyPlacementRules:
     primary_tags: dict[str, PrimaryTagRule]
 
 
-def load_placement_rules(seed_path: str | Path = DEFAULT_TAXONOMY_SEED_PATH) -> TaxonomyPlacementRules:
-    payload = json.loads(Path(seed_path).read_text(encoding="utf-8"))
+def load_placement_rules(seed_path: str | Path | None = None) -> TaxonomyPlacementRules:
+    active_seed_path = placement_rules_path(seed_path)
+    payload = json.loads(Path(active_seed_path).read_text(encoding="utf-8"))
     folders = {
         row["folder_key"]: FolderRule(
             folder_key=row["folder_key"],
@@ -80,17 +83,18 @@ def resolve_tag_placement(
     filename: str = "",
     text: str = "",
     metadata: dict[str, Any] | None = None,
-    seed_path: str | Path = DEFAULT_TAXONOMY_SEED_PATH,
+    seed_path: str | Path | None = None,
 ) -> dict[str, Any]:
-    rules = load_placement_rules(seed_path)
+    active_seed_path = placement_rules_path(seed_path)
+    rules = load_placement_rules(active_seed_path)
     if not primary_tag:
-        return _review_placement("missing_primary_tag", primary_tag)
+        return _review_placement("missing_primary_tag", primary_tag, rule_source=active_seed_path)
     tag_rule = rules.primary_tags.get(primary_tag)
     if tag_rule is None:
-        return _review_placement("unknown_primary_tag", primary_tag)
+        return _review_placement("unknown_primary_tag", primary_tag, rule_source=active_seed_path)
     folder = rules.folders.get(tag_rule.folder_key)
     if folder is None:
-        return _review_placement("missing_folder_mapping", primary_tag, tag_rule=tag_rule)
+        return _review_placement("missing_folder_mapping", primary_tag, tag_rule=tag_rule, rule_source=active_seed_path)
 
     placement: dict[str, Any] = {
         "primary_tag": primary_tag,
@@ -102,6 +106,8 @@ def resolve_tag_placement(
         "default_privacy": tag_rule.default_privacy or folder.default_privacy,
         "reviewer_role": tag_rule.reviewer_role,
         "auto_route_policy": tag_rule.auto_route,
+        "placement_rule_source": active_seed_path,
+        "placement_rule_id": f"{primary_tag}:{tag_rule.placement_rule}",
         "placement_status": "resolved",
         "review_reason": None,
         "date_evidence": [],
@@ -155,7 +161,14 @@ def resolve_tag_placement(
         placement["destination_path"] = f"{folder.drive_folder}/{inferred['year']}/{int(inferred['month']):02d}"
         return placement
 
-    return _review_placement("unsupported_placement_rule", primary_tag, tag_rule=tag_rule)
+    return _review_placement("unsupported_placement_rule", primary_tag, tag_rule=tag_rule, rule_source=active_seed_path)
+
+
+def placement_rules_path(seed_path: str | Path | None = None) -> str:
+    if seed_path is not None:
+        return str(seed_path)
+    configured = os.environ.get(SUNSHINE_PLACEMENT_RULES_PATH_ENV, "").strip()
+    return configured or DEFAULT_TAXONOMY_SEED_PATH
 
 
 def infer_placement_date(
@@ -237,7 +250,7 @@ def infer_placement_date(
     return {"year": None, "month": None, "year_label": None, "confidence": "missing", "evidence": []}
 
 
-def _review_placement(reason: str, primary_tag: str | None, *, tag_rule: PrimaryTagRule | None = None) -> dict[str, Any]:
+def _review_placement(reason: str, primary_tag: str | None, *, tag_rule: PrimaryTagRule | None = None, rule_source: str | None = None) -> dict[str, Any]:
     return {
         "primary_tag": primary_tag,
         "folder_key": tag_rule.folder_key if tag_rule else "90_intake_needs_review",
@@ -248,6 +261,8 @@ def _review_placement(reason: str, primary_tag: str | None, *, tag_rule: Primary
         "default_privacy": "restricted",
         "reviewer_role": tag_rule.reviewer_role if tag_rule else "verdify_admin",
         "auto_route_policy": tag_rule.auto_route if tag_rule else None,
+        "placement_rule_source": rule_source or placement_rules_path(),
+        "placement_rule_id": f"{primary_tag}:{tag_rule.placement_rule}" if primary_tag and tag_rule else None,
         "destination_path": REVIEW_FOLDER,
         "placement_status": "needs_review",
         "review_reason": reason,

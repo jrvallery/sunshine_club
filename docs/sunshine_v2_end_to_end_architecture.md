@@ -1183,6 +1183,7 @@ Current implementation:
 - The node writes `sample-placement-proposals.jsonl` with primary tag, raw placement proposal, date evidence, destination path, privacy, and placement status.
 - Final persistence still blocks/quarantines resolved placement when the route is not accepted, preserving the proposal while preventing unsafe auto-filing.
 - Placement proposal/quarantine rules now live in `services/placement/rules.py`, with `services/placement/__init__.py` preserving the service import API.
+- Placement rule data is loaded from the taxonomy seed by default and can be overridden with `SUNSHINE_PLACEMENT_RULES_PATH` for controlled experiments. Placement proposals include `placement_rule_source` and `placement_rule_id`, so review reports can explain which table-driven rule produced the destination.
 - Run reports summarize placement proposal counts/status separately from final routed placement status.
 
 ### 22. `route_or_review`
