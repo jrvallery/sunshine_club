@@ -15,6 +15,7 @@ from sunshine_extraction.providers.llm import CurrentLLMTagInspectionProvider
 from sunshine_extraction.providers.retrieval import CurrentSemanticRetrievalProvider
 from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider
 from sunshine_extraction.sample_pipeline import SampleFile, llm_tag_inspector_from_env, ocr_executor_from_env
+from sunshine_extraction.services.artifacts.writers import extraction_result_row, sample_input_row, write_pipeline_result
 from sunshine_extraction.services.provider_policy import assert_local_provider
 from sunshine_extraction.services.confidence import calibrate_confidence, confidence_calibration_row
 from sunshine_extraction.services.quality import extraction_quality_gate, quality_gate_row, validate_extracted_text, validation_row, with_text_validation
@@ -284,6 +285,41 @@ def test_quality_services_write_validation_and_gate_rows(tmp_path: Path) -> None
     assert quality_artifact["quality"] == "ok"
     assert quality_artifact["provider"] == "current"
     assert "validation:ok" in quality_artifact["quality_evidence"]
+
+
+def test_artifact_writers_package_preserves_pipeline_rows(tmp_path: Path) -> None:
+    source = tmp_path / "1992 minutes.txt"
+    source.write_text("1992 Sunshine Club meeting minutes.", encoding="utf-8")
+    sample = _sample(source, relative_path="Minutes/1992 minutes.txt")
+    extraction = ExtractionResult(
+        sample=sample,
+        plan={"strategy": "text_extraction", "document_subtype": "text_document"},
+        extraction_status="extracted",
+        text="1992 Sunshine Club meeting minutes.",
+        metadata={},
+        page_count=None,
+        warnings=[],
+    )
+
+    input_row = sample_input_row(sample, {"final_class": "document", "final_status": "accepted"}, extraction.plan)
+    result_row = extraction_result_row(extraction, {"quality": "ok"})
+    pipeline_row = write_pipeline_result(
+        sample,
+        {"final_class": "document"},
+        extraction.plan,
+        extraction,
+        {"quality": "ok"},
+        chunks=[],
+        embeddings=[],
+        tag_candidates=[{"tag": "meeting_records", "confidence": 0.61, "evidence": ["minutes"], "secondary_tags": []}],
+        route={"route_status": "review_low_confidence_tag", "review_reason": "tag_confidence_below_threshold"},
+        llm_inspection={"llm_status": "skipped"},
+    )
+
+    assert input_row["final_class"] == "document"
+    assert result_row["text"] == "1992 Sunshine Club meeting minutes."
+    assert pipeline_row["placement_status"] == "needs_review"
+    assert pipeline_row["placement"]["blocked_destination_path"] == "01_Governance_Admin/1992"
 
 
 def test_docling_provider_is_optional_and_local_only() -> None:
