@@ -164,6 +164,8 @@ def provider_benchmark_run(request: ProviderBenchmarkRequest) -> dict[str, Any]:
             output_dir=request.output_dir,
             sample_manifest=request.sample_manifest,
             sample_root=request.sample_root,
+            sample_categories=request.sample_categories,
+            sample_limit=request.sample_limit,
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error

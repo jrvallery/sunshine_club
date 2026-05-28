@@ -90,6 +90,45 @@ def test_provider_benchmark_loads_canonical_sample_manifest(tmp_path: Path) -> N
     assert result["parser_results"][0]["metadata"]["sample_metadata"] == {"risk": "low"}
 
 
+def test_provider_benchmark_filters_manifest_samples_and_writes_incremental_rows(tmp_path: Path) -> None:
+    source_a = tmp_path / "minutes-a.txt"
+    source_b = tmp_path / "minutes-b.txt"
+    source_c = tmp_path / "scan.txt"
+    for source in [source_a, source_b, source_c]:
+        source.write_text(f"Sunshine content for {source.name}", encoding="utf-8")
+    manifest = tmp_path / "provider-benchmark-samples.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "samples": [
+                    {"path": source_a.name, "category": "born_digital_text"},
+                    {"path": source_b.name, "category": "born_digital_text"},
+                    {"path": source_c.name, "category": "scanned_pdf"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "benchmark"
+
+    result = benchmark_extraction_providers(
+        [],
+        provider_names=["current"],
+        output_dir=output_dir,
+        sample_manifest=manifest,
+        sample_categories=["born_digital_text"],
+        sample_limit=1,
+    )
+
+    rows = (output_dir / "provider-benchmark-results.jsonl").read_text(encoding="utf-8").splitlines()
+    parser_rows = (output_dir / "sample-parser-results.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(rows) == 1
+    assert len(parser_rows) == 1
+    assert result["summary"]["sample_count"] == 1
+    assert result["summary"]["sample_filter"] == {"categories": ["born_digital_text"], "limit": 1}
+    assert json.loads(rows[0])["sample_path"] == str(source_a)
+
+
 def test_generate_provider_benchmark_manifest_from_qa_indexes(tmp_path: Path) -> None:
     qa_root = tmp_path / "qa samples"
     document_group = qa_root / "changed-scanned_document-to-document-pdf_extractable_text_detected"

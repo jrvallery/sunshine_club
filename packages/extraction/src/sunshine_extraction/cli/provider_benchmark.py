@@ -21,6 +21,8 @@ def main() -> None:
     parser.add_argument("--output-dir", help="Optional output directory for benchmark artifacts.")
     parser.add_argument("--sample-manifest", help="JSON manifest containing canonical benchmark sample paths.")
     parser.add_argument("--sample-root", help="Optional root for resolving relative sample manifest paths.")
+    parser.add_argument("--sample-categories", help="Optional comma-separated sample categories to run from the manifest.")
+    parser.add_argument("--sample-limit", type=int, help="Optional maximum number of manifest samples to run after category filtering.")
     parser.add_argument("--generate-manifest-from-qa-root", help="QA samples root containing grouped index.jsonl files.")
     parser.add_argument("--manifest-output", default=".local/provider-benchmark-canonical-samples.json")
     parser.add_argument("--manifest-per-category", type=int, default=2)
@@ -40,6 +42,8 @@ def main() -> None:
         output_dir=args.output_dir,
         sample_manifest=args.sample_manifest,
         sample_root=args.sample_root,
+        sample_categories=[category.strip() for category in (args.sample_categories or "").split(",") if category.strip()],
+        sample_limit=args.sample_limit,
     )
     print(json.dumps(result["summary"], indent=2, sort_keys=True))
 

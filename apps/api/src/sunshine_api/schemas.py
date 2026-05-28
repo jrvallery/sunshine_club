@@ -151,3 +151,5 @@ class ProviderBenchmarkRequest(BaseModel):
     output_dir: str | None = None
     sample_manifest: str | None = None
     sample_root: str | None = None
+    sample_categories: list[str] | None = None
+    sample_limit: int | None = None

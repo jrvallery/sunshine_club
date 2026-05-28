@@ -25,12 +25,19 @@ def benchmark_extraction_providers(
     output_dir: str | Path | None = None,
     sample_manifest: str | Path | None = None,
     sample_root: str | Path | None = None,
+    sample_categories: list[str] | None = None,
+    sample_limit: int | None = None,
 ) -> dict[str, Any]:
-    samples = _benchmark_samples(input_paths or [], sample_manifest=sample_manifest, sample_root=sample_root)
+    samples = _filter_samples(
+        _benchmark_samples(input_paths or [], sample_manifest=sample_manifest, sample_root=sample_root),
+        sample_categories=sample_categories,
+        sample_limit=sample_limit,
+    )
     providers = _providers(provider_names)
     output_path = Path(output_dir) if output_dir is not None else None
     if output_path is not None:
         output_path.mkdir(parents=True, exist_ok=True)
+        _reset_incremental_artifacts(output_path)
     rows: list[dict[str, Any]] = []
     parser_rows: list[dict[str, Any]] = []
     for index, sample_spec in enumerate(samples, start=1):
@@ -40,15 +47,20 @@ def benchmark_extraction_providers(
             row, parser_row = _benchmark_one(sample, plan, provider, sample_spec=sample_spec)
             rows.append(row)
             parser_rows.append(parser_row)
+            if output_path is not None:
+                _append_jsonl(output_path / "provider-benchmark-results.jsonl", row)
+                _append_jsonl(output_path / "sample-parser-results.jsonl", parser_row)
     summary = _summary(rows)
     summary["sample_count"] = len(samples)
     summary["sample_manifest"] = str(sample_manifest) if sample_manifest else None
     summary["sample_categories"] = _count(rows, "sample_category")
+    summary["sample_filter"] = {
+        "categories": sorted({category.strip() for category in sample_categories or [] if category.strip()}),
+        "limit": sample_limit,
+    }
     recommendations = _provider_recommendations(rows)
     summary["recommendations"] = recommendations
     if output_path is not None:
-        _write_jsonl(output_path / "provider-benchmark-results.jsonl", rows)
-        _write_jsonl(output_path / "sample-parser-results.jsonl", parser_rows)
         _write_jsonl(output_path / "provider-benchmark-recommendations.jsonl", recommendations)
         (output_path / "provider-benchmark-summary.json").write_text(_json_dumps(summary), encoding="utf-8")
     return {"summary": summary, "results": rows, "parser_results": parser_rows, "recommendations": recommendations}
@@ -171,6 +183,21 @@ def _benchmark_samples(
     if not input_paths:
         raise ValueError("Provider benchmark requires explicit paths or sample_manifest")
     return [{"path": Path(path), "category": _category_from_path(Path(path)), "label": Path(path).name, "metadata": {}} for path in input_paths]
+
+
+def _filter_samples(
+    samples: list[dict[str, Any]],
+    *,
+    sample_categories: list[str] | None,
+    sample_limit: int | None,
+) -> list[dict[str, Any]]:
+    filtered = samples
+    categories = {category.strip() for category in sample_categories or [] if category.strip()}
+    if categories:
+        filtered = [sample for sample in filtered if str(sample.get("category") or "uncategorized") in categories]
+    if sample_limit is not None:
+        filtered = filtered[: max(0, int(sample_limit))]
+    return filtered
 
 
 def _providers(provider_names: list[str] | None) -> list[ExtractionProvider]:
@@ -362,6 +389,18 @@ def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     import json
 
     path.write_text("\n".join(json.dumps(row, sort_keys=True) for row in rows) + ("\n" if rows else ""), encoding="utf-8")
+
+
+def _append_jsonl(path: Path, row: dict[str, Any]) -> None:
+    import json
+
+    with path.open("a", encoding="utf-8") as output_file:
+        output_file.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def _reset_incremental_artifacts(output_path: Path) -> None:
+    for name in ("provider-benchmark-results.jsonl", "sample-parser-results.jsonl"):
+        (output_path / name).write_text("", encoding="utf-8")
 
 
 def _json_dumps(value: Any) -> str:
