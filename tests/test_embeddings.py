@@ -67,18 +67,14 @@ def test_provider_from_env_selects_cortex(monkeypatch: pytest.MonkeyPatch) -> No
     assert provider.dimensions == 3
 
 
-def test_provider_from_env_selects_openai(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_provider_from_env_rejects_hosted_openai(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SUNSHINE_EMBEDDING_PROVIDER", "openai")
     monkeypatch.setenv("OPENAI_API", "test-openai-key")
     monkeypatch.setenv("SUNSHINE_EMBEDDING_MODEL", "text-embedding-3-large")
     monkeypatch.setenv("SUNSHINE_EMBEDDING_DIMENSIONS", "3")
 
-    provider = provider_from_env()
-
-    assert isinstance(provider, OpenAICompatibleEmbeddingProvider)
-    assert provider.model == "text-embedding-3-large"
-    assert provider.base_url == "https://api.openai.com/v1"
-    assert provider.dimensions == 3
+    with pytest.raises(EmbeddingConfigurationError, match="Hosted OpenAI embeddings are not allowed"):
+        provider_from_env()
 
 
 def test_cortex_provider_calls_openai_compatible_embeddings(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -124,4 +120,3 @@ def test_smoke_test_returns_summary(monkeypatch: pytest.MonkeyPatch) -> None:
         "embedding_status": {"placeholder": 2},
         "text_count": 2,
     }
-

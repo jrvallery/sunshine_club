@@ -9,15 +9,15 @@ from sunshine_extraction.graph.state import DocumentPipelineDeps, DocumentPipeli
 from sunshine_extraction.services.extraction import (
     OcrArtifacts,
     chunk_content,
-    extract_content,
     extraction_quality_gate,
     validate_and_repair_extraction,
 )
+from sunshine_extraction.services.segmentation.page_grouping import attach_segment_ids_to_chunks, propose_document_segments
 
 
 def _extract_content_node(state: DocumentPipelineState, deps: DocumentPipelineDeps) -> dict[str, Any]:
     ocr_artifacts = OcrArtifacts(pages=[], documents=[])
-    extraction = extract_content(
+    extraction, provider_attempt = deps["extraction_provider"].extract(
         state["sample"],
         state["extraction_plan"],
         ocr_executor=deps["ocr_executor"],
@@ -25,6 +25,7 @@ def _extract_content_node(state: DocumentPipelineState, deps: DocumentPipelineDe
     )
     updates: dict[str, Any] = {
         "extraction_result": extraction,
+        "provider_attempts": [*state.get("provider_attempts", []), provider_attempt.as_row()],
         "ocr_pages": ocr_artifacts.pages,
         "warnings": [*state.get("warnings", []), *extraction.warnings],
     }
@@ -63,8 +64,21 @@ def _validate_text_extraction_node(state: DocumentPipelineState, deps: DocumentP
 def _quality_gate(state: DocumentPipelineState) -> dict[str, Any]:
     return {"extraction_quality": extraction_quality_gate(state["extraction_result"])}
 
+def _propose_document_segments_node(state: DocumentPipelineState) -> dict[str, Any]:
+    segments = propose_document_segments(
+        state["extraction_result"],
+        file_id=state.get("file_id"),
+        content_class=state.get("content_class"),
+        ocr_pages=state.get("ocr_pages", []),
+    )
+    warnings = list(state.get("warnings", []))
+    if any(segment.get("requires_segment_review") for segment in segments):
+        warnings.append("document_segmentation_review_recommended")
+    return {"document_segments": segments, "warnings": warnings}
+
 def _chunk_content_node(state: DocumentPipelineState) -> dict[str, Any]:
-    return {"chunks": chunk_content(state["extraction_result"], state["extraction_quality"])}
+    chunks = chunk_content(state["extraction_result"], state["extraction_quality"])
+    return {"chunks": attach_segment_ids_to_chunks(chunks, state.get("document_segments", []))}
 
 def _after_quality_gate(state: DocumentPipelineState) -> str:
     return "chunk" if state.get("extraction_quality", {}).get("can_chunk") else "route"

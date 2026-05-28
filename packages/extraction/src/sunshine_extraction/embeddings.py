@@ -163,13 +163,7 @@ def provider_from_env(provider_name_override: str | None = None) -> EmbeddingPro
             dimensions=_env_int("SUNSHINE_EMBEDDING_DIMENSIONS", DEFAULT_CORTEX_EMBEDDING_DIMENSIONS),
         )
     if provider_name == "openai":
-        return OpenAICompatibleEmbeddingProvider(
-            api_key=os.environ.get("OPENAI_API_KEY") or os.environ.get("OPENAI_API", ""),
-            model=os.environ.get("SUNSHINE_EMBEDDING_MODEL", DEFAULT_OPENAI_EMBEDDING_MODEL),
-            base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
-            provider_name="openai",
-            dimensions=_env_int("SUNSHINE_EMBEDDING_DIMENSIONS", DEFAULT_OPENAI_EMBEDDING_DIMENSIONS),
-        )
+        raise EmbeddingConfigurationError("Hosted OpenAI embeddings are not allowed; use SUNSHINE_EMBEDDING_PROVIDER=cortex or placeholder")
     raise EmbeddingConfigurationError(f"Unsupported SUNSHINE_EMBEDDING_PROVIDER={provider_name!r}")
 
 

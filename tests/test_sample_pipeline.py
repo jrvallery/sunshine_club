@@ -870,16 +870,14 @@ def test_ocr_executor_factory_uses_cortex_native_ocr(monkeypatch) -> None:
     assert executor.base_url == "https://cortex.vallery.net"
 
 
-def test_ocr_executor_factory_uses_cortex_primary_with_openai_escalation(monkeypatch) -> None:
+def test_ocr_executor_factory_does_not_escalate_to_hosted_openai(monkeypatch) -> None:
     monkeypatch.setenv("SUNSHINE_OCR_FALLBACK_PROVIDER", "cortex")
     monkeypatch.setenv("CORTEX_API_KEY", "test-cortex-key")
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
 
     executor = ocr_executor_from_env()
 
-    assert isinstance(executor, EscalatingOcrExecutor)
-    assert isinstance(executor.primary, CortexNativeOcrExecutor)
-    assert executor.fallback.engine_name == "openai:gpt-4.1-mini"
+    assert isinstance(executor, CortexNativeOcrExecutor)
 
 
 def test_cortex_native_ocr_uploads_file_and_maps_pages(tmp_path: Path, monkeypatch) -> None:
@@ -919,7 +917,7 @@ def test_cortex_native_ocr_uploads_file_and_maps_pages(tmp_path: Path, monkeypat
     assert "ocr_model_used:cortex:paddleocr-ppocr-cpu" in pages[0].warnings
 
 
-def test_load_pipeline_env_normalizes_openai_api_alias(tmp_path: Path, monkeypatch) -> None:
+def test_load_pipeline_env_does_not_normalize_openai_api_alias(tmp_path: Path, monkeypatch) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text("OPENAI_API=test-secret\n", encoding="utf-8")
     monkeypatch.delenv("OPENAI_API", raising=False)
@@ -927,7 +925,7 @@ def test_load_pipeline_env_normalizes_openai_api_alias(tmp_path: Path, monkeypat
 
     load_pipeline_env(env_file)
 
-    assert "OPENAI_API_KEY" in __import__("os").environ
+    assert "OPENAI_API_KEY" not in __import__("os").environ
 
 
 def test_embedding_rows_are_joined_to_chunks() -> None:

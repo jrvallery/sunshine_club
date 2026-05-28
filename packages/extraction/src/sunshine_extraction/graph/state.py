@@ -7,6 +7,7 @@ fields so audit output, persistence, and review routing can be traced.
 from typing import Any, TypedDict
 
 from sunshine_extraction.embeddings import EmbeddingProvider
+from sunshine_extraction.providers.extraction import ExtractionProvider
 from sunshine_extraction.services.content import SampleFile
 from sunshine_extraction.services.extraction import ExtractionResult, OcrExecutor
 from sunshine_extraction.services.tagging import LLMTagInspector
@@ -34,8 +35,10 @@ class DocumentPipelineState(TypedDict, total=False):
     extraction_plan: dict[str, Any]
     extraction_result: ExtractionResult
     extraction_quality: dict[str, Any]
+    provider_attempts: list[dict[str, Any]]
     ocr_pages: list[dict[str, Any]]
     ocr_document: dict[str, Any]
+    document_segments: list[dict[str, Any]]
     chunks: list[dict[str, Any]]
     embeddings: list[dict[str, Any]]
     semantic_examples: list[dict[str, Any]]
@@ -53,6 +56,7 @@ class DocumentPipelineState(TypedDict, total=False):
 
 
 class DocumentPipelineDeps(TypedDict, total=False):
+    extraction_provider: ExtractionProvider
     embedding_provider: EmbeddingProvider
     embedding_failure_mode: str
     llm_tag_inspector: LLMTagInspector

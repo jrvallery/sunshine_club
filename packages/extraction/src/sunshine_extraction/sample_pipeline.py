@@ -48,8 +48,8 @@ DEFAULT_TAXONOMY_PATH = Path("docs/Sunshine_Taxonomy_Seed_v0.1_2026-05-25.json")
 DEFAULT_CORTEX_BASE_URL = "https://cortex.vallery.net"
 DEFAULT_CORTEX_MODEL = "gemma4-26b"
 DEFAULT_CORTEX_OCR_MODEL = "paddleocr-ppocr-cpu"
-DEFAULT_OPENAI_TAG_MODEL = "gpt-4.1-mini"
-DEFAULT_OPENAI_OCR_MODEL = "gpt-4.1-mini"
+DEFAULT_OPENAI_TAG_MODEL = "disabled-hosted-openai"
+DEFAULT_OPENAI_OCR_MODEL = "disabled-hosted-openai"
 OCR_OK_CONFIDENCE_THRESHOLD = 75.0
 OCR_MIN_TEXT_LENGTH = 100
 OCR_MAX_FAILED_PAGE_RATE = 0.2
@@ -1038,9 +1038,6 @@ def load_pipeline_env(env_path: str | Path | None = ".env") -> None:
     except Exception:  # noqa: BLE001 - .env support is best-effort for CLI convenience.
         pass
 
-    openai_api = os.environ.get("OPENAI_API")
-    if openai_api and not os.environ.get("OPENAI_API_KEY"):
-        os.environ["OPENAI_API_KEY"] = openai_api
     cortex_api = os.environ.get("CORTEX_API_KEY")
     if cortex_api and not os.environ.get("CORTEX_OPENAI_API_KEY"):
         os.environ["CORTEX_OPENAI_API_KEY"] = cortex_api
@@ -1059,8 +1056,6 @@ def llm_tag_inspector_from_env(*, enabled: bool = True, provider_override: str |
     if provider_name == "auto":
         if os.environ.get("CORTEX_API_KEY") or os.environ.get("CORTEX_OPENAI_API_KEY") or os.environ.get("CORTEX_MODEL"):
             provider_name = "cortex"
-        elif os.environ.get("OPENAI_API_KEY") or os.environ.get("OPENAI_API"):
-            provider_name = "openai"
         else:
             return LLMTagInspector()
     if provider_name in {"cortex", "openai-compatible"}:
@@ -1075,15 +1070,7 @@ def llm_tag_inspector_from_env(*, enabled: bool = True, provider_override: str |
         except ValueError:
             return LLMTagInspector()
     if provider_name == "openai":
-        try:
-            return OpenAICompatibleLLMTagInspector(
-                api_key=os.environ.get("OPENAI_API_KEY") or os.environ.get("OPENAI_API", ""),
-                model=os.environ.get("OPENAI_TAG_MODEL", DEFAULT_OPENAI_TAG_MODEL),
-                provider_name="openai",
-                timeout_seconds=float(os.environ.get("SUNSHINE_LLM_TAG_TIMEOUT_SECONDS", "120")),
-            )
-        except ValueError:
-            return LLMTagInspector()
+        return LLMTagInspector()
     return LLMTagInspector()
 
 
@@ -1094,16 +1081,7 @@ def ocr_executor_from_env(*, fallback_provider_override: str | None = None) -> O
     timeout_seconds = float(os.environ.get("SUNSHINE_OCR_FALLBACK_TIMEOUT_SECONDS", "120"))
     max_pages = int(os.environ.get("SUNSHINE_OCR_FALLBACK_MAX_PAGES", str(OCR_FALLBACK_DEFAULT_MAX_PAGES)))
     if provider_name == "openai":
-        try:
-            return OpenAICompatibleVisionOcrExecutor(
-                api_key=os.environ.get("OPENAI_API_KEY") or os.environ.get("OPENAI_API", ""),
-                model=os.environ.get("OPENAI_OCR_MODEL", DEFAULT_OPENAI_OCR_MODEL),
-                provider_name="openai",
-                timeout_seconds=timeout_seconds,
-                max_pages=max_pages,
-            )
-        except ValueError:
-            return LocalTesseractOcrExecutor()
+        return LocalTesseractOcrExecutor()
     if provider_name in {"cortex", "openai-compatible"}:
         try:
             primary = CortexNativeOcrExecutor(
@@ -1114,17 +1092,7 @@ def ocr_executor_from_env(*, fallback_provider_override: str | None = None) -> O
             )
         except ValueError:
             return LocalTesseractOcrExecutor()
-        try:
-            fallback = OpenAICompatibleVisionOcrExecutor(
-                api_key=os.environ.get("OPENAI_API_KEY") or os.environ.get("OPENAI_API", ""),
-                model=os.environ.get("OPENAI_OCR_MODEL", DEFAULT_OPENAI_OCR_MODEL),
-                provider_name="openai",
-                timeout_seconds=timeout_seconds,
-                max_pages=max_pages,
-            )
-        except ValueError:
-            return primary
-        return EscalatingOcrExecutor(primary, fallback)
+        return primary
     return LocalTesseractOcrExecutor()
 
 

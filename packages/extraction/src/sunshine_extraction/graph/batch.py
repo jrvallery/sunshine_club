@@ -104,8 +104,10 @@ def run_document_batch(
     artifact_rows: dict[str, list[dict[str, Any]]] = {
         "sample-inputs.jsonl": [],
         "sample-extraction-results.jsonl": [],
+        "sample-provider-attempts.jsonl": [],
         "sample-ocr-pages.jsonl": [],
         "sample-ocr-documents.jsonl": [],
+        "sample-document-segments.jsonl": [],
         "sample-chunks.jsonl": [],
         "sample-embeddings.jsonl": [],
         "sample-semantic-examples.jsonl": [],
@@ -301,9 +303,11 @@ def _append_batch_rows(artifact_rows: dict[str, list[dict[str, Any]]], result: d
         artifact_rows["sample-inputs.jsonl"].append(sample_input_row(sample, content_class, extraction_plan))
     if extraction_result and extraction_quality:
         artifact_rows["sample-extraction-results.jsonl"].append(extraction_result_row(extraction_result, extraction_quality))
+    artifact_rows["sample-provider-attempts.jsonl"].extend(result.get("provider_attempts", []))
     artifact_rows["sample-ocr-pages.jsonl"].extend(result.get("ocr_pages", []))
     if result.get("ocr_document"):
         artifact_rows["sample-ocr-documents.jsonl"].append(result["ocr_document"])
+    artifact_rows["sample-document-segments.jsonl"].extend(result.get("document_segments", []))
     artifact_rows["sample-chunks.jsonl"].extend(result.get("chunks", []))
     artifact_rows["sample-embeddings.jsonl"].extend(result.get("embeddings", []))
     artifact_rows["sample-semantic-examples.jsonl"].extend(result.get("semantic_examples", []))

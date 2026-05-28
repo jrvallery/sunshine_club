@@ -9,7 +9,14 @@ from langgraph.graph import END, START, StateGraph
 from sunshine_extraction.graph.node_runtime import _run_node
 from sunshine_extraction.graph.nodes.classification import _classify_content_type, _plan_extraction
 from sunshine_extraction.graph.nodes.embeddings import _embed_chunks_node, _retrieve_labeled_examples_node
-from sunshine_extraction.graph.nodes.extraction import _after_quality_gate, _chunk_content_node, _extract_content_node, _quality_gate, _validate_text_extraction_node
+from sunshine_extraction.graph.nodes.extraction import (
+    _after_quality_gate,
+    _chunk_content_node,
+    _extract_content_node,
+    _propose_document_segments_node,
+    _quality_gate,
+    _validate_text_extraction_node,
+)
 from sunshine_extraction.graph.nodes.loading import _after_load_file_context, _load_file_context
 from sunshine_extraction.graph.nodes.persistence import _persist_outputs
 from sunshine_extraction.graph.nodes.routing import _resolve_route_or_review_node
@@ -26,6 +33,7 @@ def build_document_graph(deps: DocumentPipelineDeps | None = None, *, checkpoint
     builder.add_node("extract_content", lambda state: _run_node("extract_content", state, lambda active: _extract_content_node(active, active_deps)))
     builder.add_node("validate_text_extraction", lambda state: _run_node("validate_text_extraction", state, lambda active: _validate_text_extraction_node(active, active_deps)))
     builder.add_node("quality_gate", lambda state: _run_node("quality_gate", state, _quality_gate))
+    builder.add_node("propose_document_segments", lambda state: _run_node("propose_document_segments", state, _propose_document_segments_node))
     builder.add_node("chunk_content", lambda state: _run_node("chunk_content", state, _chunk_content_node))
     builder.add_node("embed_chunks", lambda state: _run_node("embed_chunks", state, lambda active: _embed_chunks_node(active, active_deps)))
     builder.add_node("retrieve_labeled_examples", lambda state: _run_node("retrieve_labeled_examples", state, lambda active: _retrieve_labeled_examples_node(active, active_deps)))
@@ -49,8 +57,9 @@ def build_document_graph(deps: DocumentPipelineDeps | None = None, *, checkpoint
     builder.add_conditional_edges(
         "quality_gate",
         _after_quality_gate,
-        {"chunk": "chunk_content", "route": "assign_deterministic_tags"},
+        {"chunk": "propose_document_segments", "route": "assign_deterministic_tags"},
     )
+    builder.add_edge("propose_document_segments", "chunk_content")
     builder.add_edge("chunk_content", "embed_chunks")
     builder.add_edge("embed_chunks", "retrieve_labeled_examples")
     builder.add_edge("retrieve_labeled_examples", "assign_deterministic_tags")

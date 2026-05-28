@@ -162,6 +162,8 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     semantic_rows = [json.loads(line) for line in (output_dir / "sample-semantic-examples.jsonl").read_text().splitlines()]
     llm_rows = [json.loads(line) for line in (output_dir / "sample-llm-tag-inspections.jsonl").read_text().splitlines()]
     model_usage_rows = [json.loads(line) for line in (output_dir / "sample-model-usage.jsonl").read_text().splitlines()]
+    segment_rows = [json.loads(line) for line in (output_dir / "sample-document-segments.jsonl").read_text().splitlines()]
+    provider_attempt_rows = [json.loads(line) for line in (output_dir / "sample-provider-attempts.jsonl").read_text().splitlines()]
 
     assert final_result["route_status"] == "route_candidate"
     assert final_result["top_tag_candidate"] == "annual_spring_tea"
@@ -175,6 +177,9 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert embedding_rows[0]["embedding_status"] == "placeholder"
     assert semantic_rows == []
     assert llm_rows[0]["primary_tag"] == "annual_spring_tea"
+    assert segment_rows[0]["segment_type"] == "single_document"
+    assert segment_rows[0]["requires_segment_review"] is False
+    assert provider_attempt_rows[0]["provider"] == "current"
     assert {row["purpose"] for row in model_usage_rows} == {"chunk_embedding", "semantic_retrieval_embedding", "tag_inspection"}
     assert [event["node"] for event in audit_events] == [
         "load_file_context",
@@ -183,6 +188,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
         "extract_content",
         "validate_text_extraction",
         "quality_gate",
+        "propose_document_segments",
         "chunk_content",
         "embed_chunks",
         "retrieve_labeled_examples",
