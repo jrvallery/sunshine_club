@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import sqlite3
 from typing import Any, Callable, Protocol
 
 
@@ -281,6 +282,81 @@ class PostgresPipelineStore:
             }
         finally:
             connection.close()
+
+    def export_golden_labels_sqlite(self, output_db: str | Path, *, limit: int | None = None) -> dict[str, Any]:
+        labels = self.list_golden_labels(limit=limit or 10000)
+        output_path = Path(output_db)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(output_path) as connection:
+            connection.execute(
+                """
+                create table if not exists golden_labels (
+                    id text primary key,
+                    review_item_id text,
+                    source_path text not null unique,
+                    relative_path text not null,
+                    sample_path text,
+                    extracted_text_snippet text,
+                    content_class text,
+                    correct_primary_tag text not null,
+                    correct_secondary_tags_json text not null default '[]',
+                    ocr_quality_label text,
+                    expected_review_required integer,
+                    sensitive_record integer not null default 0,
+                    correct_destination_path text,
+                    correct_placement_year text,
+                    correct_privacy text,
+                    reviewer text,
+                    reviewed_at text,
+                    notes text,
+                    proposed_tag text,
+                    proposed_secondary_tags_json text not null default '[]',
+                    proposed_confidence real,
+                    created_at text,
+                    updated_at text
+                )
+                """
+            )
+            connection.execute("delete from golden_labels")
+            for row in labels:
+                connection.execute(
+                    """
+                    insert into golden_labels (
+                        id, review_item_id, source_path, relative_path, sample_path, extracted_text_snippet,
+                        content_class, correct_primary_tag, correct_secondary_tags_json, ocr_quality_label,
+                        expected_review_required, sensitive_record, correct_destination_path, correct_placement_year,
+                        correct_privacy, reviewer, reviewed_at, notes, proposed_tag, proposed_secondary_tags_json,
+                        proposed_confidence, created_at, updated_at
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        str(row.get("id")),
+                        str(row.get("review_item_id")) if row.get("review_item_id") else None,
+                        row.get("source_path"),
+                        row.get("relative_path") or row.get("source_path"),
+                        row.get("sample_path"),
+                        row.get("extracted_text_snippet"),
+                        row.get("content_class"),
+                        row.get("correct_primary_tag"),
+                        json.dumps(row.get("correct_secondary_tags") or []),
+                        row.get("ocr_quality_label"),
+                        _optional_bool_int(row.get("expected_review_required")),
+                        1 if row.get("sensitive_record") else 0,
+                        row.get("correct_destination_path"),
+                        row.get("correct_placement_year"),
+                        row.get("correct_privacy"),
+                        row.get("reviewer"),
+                        row.get("reviewed_at"),
+                        row.get("notes"),
+                        row.get("proposed_tag"),
+                        json.dumps(row.get("proposed_secondary_tags") or []),
+                        row.get("proposed_confidence"),
+                        row.get("created_at"),
+                        row.get("updated_at"),
+                    ),
+                )
+            connection.commit()
+        return {"status": "exported", "source": "postgres", "output_db": str(output_path), "label_count": len(labels)}
 
     def get_review_item(self, item_id: str) -> dict[str, Any]:
         connection = self._connect_factory(self.database_url)
@@ -1162,6 +1238,12 @@ def _int_value(value: Any, *, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _optional_bool_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    return 1 if bool(value) else 0
 
 
 def _call_count(row: dict[str, Any]) -> int:

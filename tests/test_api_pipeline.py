@@ -409,6 +409,45 @@ def test_golden_labels_can_read_postgres_v2_source(monkeypatch) -> None:
     assert summary.json()["total_golden_labels"] == 1
 
 
+def test_semantic_index_build_can_use_postgres_golden_labels(tmp_path: Path, monkeypatch) -> None:
+    captured = {}
+
+    def fake_export(output_db: str, **kwargs) -> dict:
+        captured["export_output_db"] = output_db
+        captured["export_kwargs"] = kwargs
+        Path(output_db).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_db).write_text("sqlite placeholder", encoding="utf-8")
+        return {"status": "exported", "label_count": 1, "output_db": output_db}
+
+    def fake_build(labels_db: str, output_db: str, *, limit: int | None = None) -> dict:
+        captured["build_labels_db"] = labels_db
+        captured["build_output_db"] = output_db
+        captured["build_limit"] = limit
+        return {"indexed": 1, "labels_db": labels_db, "output_db": output_db}
+
+    monkeypatch.setattr("sunshine_api.routers.semantic.export_postgres_golden_labels_sqlite", fake_export)
+    monkeypatch.setattr("sunshine_api.routers.semantic.build_semantic_index", fake_build)
+
+    response = TestClient(app).post(
+        "/admin/semantic-index/build",
+        json={
+            "labels_source": "postgres",
+            "labels_db": str(tmp_path / "v2-labels.sqlite"),
+            "output_db": str(tmp_path / "semantic.sqlite"),
+            "limit": 5,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["indexed"] == 1
+    assert captured["export_output_db"] == str(tmp_path / "v2-labels.sqlite")
+    assert captured["export_kwargs"]["limit"] == 5
+    assert captured["build_labels_db"] == str(tmp_path / "v2-labels.sqlite")
+    assert captured["build_output_db"] == str(tmp_path / "semantic.sqlite")
+    assert captured["build_limit"] == 5
+
+
 def test_review_decision_can_write_postgres_v2_source(monkeypatch) -> None:
     captured = {}
 

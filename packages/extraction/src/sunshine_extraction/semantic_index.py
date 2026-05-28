@@ -20,7 +20,7 @@ DEFAULT_INDEX_DB = ".local/sunshine-semantic-index.sqlite"
 
 @dataclass(frozen=True)
 class GoldenLabel:
-    id: int
+    id: int | str
     source_path: str
     relative_path: str
     sample_path: str | None
@@ -49,7 +49,7 @@ def build_semantic_index(
             """
             create table if not exists semantic_index (
                 source_path text primary key,
-                golden_label_id integer not null,
+                golden_label_id text not null,
                 relative_path text not null,
                 sample_path text,
                 correct_primary_tag text not null,

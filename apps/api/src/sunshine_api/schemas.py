@@ -115,6 +115,7 @@ class RunStartRequest(BaseModel):
 
 class SemanticIndexBuildRequest(BaseModel):
     labels_db: str | None = None
+    labels_source: Literal["sqlite", "postgres"] = "sqlite"
     output_db: str | None = None
     limit: int | None = Field(default=None, ge=1)
 
@@ -126,11 +127,13 @@ class QdrantRebuildRequest(BaseModel):
 
 class SemanticEvalRequest(BaseModel):
     labels_db: str | None = None
+    labels_source: Literal["sqlite", "postgres"] = "sqlite"
     output_dir: str | None = None
 
 
 class PipelineEvalRequest(BaseModel):
     labels_db: str | None = None
+    labels_source: Literal["sqlite", "postgres"] = "sqlite"
     output_dir: str | None = None
     limit: int | None = Field(default=None, ge=1)
     semantic_index_path: str | None = None

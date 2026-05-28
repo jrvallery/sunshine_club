@@ -144,6 +144,17 @@ def postgres_golden_label_summary(
     return store.golden_label_summary()
 
 
+def export_postgres_golden_labels_sqlite(
+    output_db: str | Path,
+    *,
+    limit: int | None = None,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> dict[str, Any]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.export_golden_labels_sqlite(output_db, limit=limit)
+
+
 def get_postgres_review_item(
     item_id: str,
     *,
@@ -196,6 +207,7 @@ __all__ = [
     "import_langgraph_output_to_postgres",
     "import_langgraph_output_to_postgres_if_configured",
     "delete_postgres_pipeline_run_if_configured",
+    "export_postgres_golden_labels_sqlite",
     "get_postgres_pipeline_run",
     "get_postgres_review_item",
     "get_postgres_run_report",

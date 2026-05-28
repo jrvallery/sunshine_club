@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 
 from sunshine_api.dependencies import review_store
+from sunshine_api.services.imports import export_postgres_golden_labels_sqlite
 from sunshine_api.schemas import (
     DocumentPipelineRunRequest,
     DocumentPipelineRunResponse,
@@ -54,7 +55,7 @@ def semantic_index_status(index_db: str | None = None) -> dict[str, Any]:
 @router.post("/admin/semantic-index/build")
 def semantic_index_build(request: SemanticIndexBuildRequest) -> dict[str, Any]:
     load_pipeline_env()
-    labels_db = request.labels_db or str(review_store().db_path)
+    labels_db = _labels_db_for_request(request.labels_source, request.labels_db, default_name="semantic-index-golden-labels.sqlite", limit=request.limit)
     output_db = request.output_db or DEFAULT_INDEX_DB
     summary = build_semantic_index(labels_db, output_db, limit=request.limit)
     return {"ok": True, "status": _semantic_index_status(output_db), **summary}
@@ -83,7 +84,7 @@ def semantic_eval_latest(output_dir: str | None = None) -> dict[str, Any]:
 
 @router.post("/admin/semantic-eval/run")
 def semantic_eval_run(request: SemanticEvalRequest) -> dict[str, Any]:
-    labels_db = request.labels_db or str(review_store().db_path)
+    labels_db = _labels_db_for_request(request.labels_source, request.labels_db, default_name="semantic-eval-golden-labels.sqlite")
     output_dir = request.output_dir or ".local/semantic-eval"
     report = evaluate_review_db(labels_db, output_dir=output_dir)
     return {"ok": True, "output_dir": output_dir, "report": report}
@@ -299,7 +300,7 @@ def _pipeline_eval_comparison(
 @router.post("/admin/pipeline-eval/run")
 def pipeline_eval_run(request: PipelineEvalRequest) -> dict[str, Any]:
     load_pipeline_env()
-    labels_db = request.labels_db or str(review_store().db_path)
+    labels_db = _labels_db_for_request(request.labels_source, request.labels_db, default_name="pipeline-eval-golden-labels.sqlite", limit=request.limit)
     output_dir = request.output_dir or DEFAULT_EVAL_OUTPUT_DIR
     report = run_golden_pipeline_evaluation(
         labels_db,
@@ -313,6 +314,19 @@ def pipeline_eval_run(request: PipelineEvalRequest) -> dict[str, Any]:
     )
     eval_run = review_store().record_pipeline_eval(report)
     return {"ok": True, "output_dir": output_dir, "eval_run": eval_run, "report": report}
+
+
+def _labels_db_for_request(labels_source: str, labels_db: str | None, *, default_name: str, limit: int | None = None) -> str:
+    if labels_source == "sqlite":
+        return labels_db or str(review_store().db_path)
+    if labels_source != "postgres":
+        raise HTTPException(status_code=400, detail="labels_source must be sqlite or postgres")
+    output_db = labels_db or str(Path(".local") / default_name)
+    try:
+        export_postgres_golden_labels_sqlite(output_db, limit=limit)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return output_db
 
 
 @router.post("/admin/pipeline-eval/import")

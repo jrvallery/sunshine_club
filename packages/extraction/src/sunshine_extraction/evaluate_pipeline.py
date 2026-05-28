@@ -73,7 +73,7 @@ HIGH_RISK_PRIMARY_TAGS = {
 
 @dataclass(frozen=True)
 class GoldenEvalLabel:
-    id: int
+    id: int | str
     source_path: str
     relative_path: str
     sample_path: str | None
@@ -250,7 +250,7 @@ def load_golden_eval_labels(labels_db: str | Path, *, limit: int | None = None) 
     for row in rows:
         labels.append(
             GoldenEvalLabel(
-                id=int(row["id"]),
+                id=row["id"],
                 source_path=str(row["source_path"]),
                 relative_path=str(row["relative_path"]),
                 sample_path=str(row["sample_path"]) if row["sample_path"] else None,

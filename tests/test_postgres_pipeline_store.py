@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import sqlite3
 from typing import Any
 
 from sunshine_api.postgres_pipeline_store import PostgresPipelineStore
@@ -754,6 +755,64 @@ def test_postgres_pipeline_store_lists_golden_labels_and_summary() -> None:
     assert summary["golden_by_primary_tag"] == {"history_archive_general": 1}
     assert summary["golden_by_secondary_tag"] == {"history_archive": 1}
     assert connection.closed is True
+
+
+def test_postgres_pipeline_store_exports_golden_labels_to_sqlite(tmp_path: Path) -> None:
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
+            return _Cursor(
+                rows=[
+                    {
+                        "id": "golden-id",
+                        "review_item_id": "review-id",
+                        "run_id": "run-id",
+                        "run_key": "run-1",
+                        "preset_key": "qa",
+                        "source_path": "/source/a.pdf",
+                        "relative_path": "Sunshine/a.pdf",
+                        "sample_path": "/sample/a.pdf",
+                        "segment_id": "",
+                        "extracted_text_snippet": "Reviewed text",
+                        "content_class": "document",
+                        "correct_primary_tag": "history_archive_general",
+                        "correct_secondary_tags": ["history_archive"],
+                        "ocr_quality_label": "ok",
+                        "expected_review_required": True,
+                        "sensitive_record": False,
+                        "reviewer": "james",
+                        "notes": "accepted",
+                        "proposed_tag": "meeting_records",
+                        "proposed_secondary_tags": ["meeting_minutes"],
+                        "proposed_confidence": 0.75,
+                        "reviewed_at": "2026-05-28T00:00:00",
+                        "created_at": "2026-05-28T00:00:00",
+                        "updated_at": "2026-05-28T00:00:00",
+                    }
+                ]
+            )
+
+        def close(self) -> None:
+            self.closed = True
+
+    output_db = tmp_path / "golden.sqlite"
+    store = PostgresPipelineStore("postgresql://local/test", connect_factory=lambda _url: FakeConnection())
+
+    result = store.export_golden_labels_sqlite(output_db)
+
+    with sqlite3.connect(output_db) as connection:
+        connection.row_factory = sqlite3.Row
+        row = connection.execute("select * from golden_labels").fetchone()
+
+    assert result["status"] == "exported"
+    assert result["label_count"] == 1
+    assert row["id"] == "golden-id"
+    assert row["source_path"] == "/source/a.pdf"
+    assert row["correct_primary_tag"] == "history_archive_general"
+    assert row["correct_secondary_tags_json"] == '["history_archive"]'
+    assert row["expected_review_required"] == 1
 
 
 def test_rebuild_qdrant_from_postgres_replays_semantic_embeddings() -> None:
