@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
-import mimetypes
-import zipfile
 from pathlib import Path
 from typing import Any
 
-from PIL import ExifTags, Image
+from PIL import Image
 from pypdf import PdfReader
 
 from sunshine_extraction.domain.extraction import ExtractionResult, OcrArtifacts, OcrExecutor
 from sunshine_extraction.providers.chunking.legacy import chunk_content
+from sunshine_extraction.providers.extraction.native_text import extract_text
+from sunshine_extraction.providers.extraction.photo_metadata import extract_photo_metadata
+from sunshine_extraction.providers.extraction.spreadsheet import extract_spreadsheet_metadata
 from sunshine_extraction.providers.ocr import CortexNativeOcrExecutor, LocalTesseractOcrExecutor
-from sunshine_extraction.services.content import IMAGE_EXTENSIONS, SPREADSHEET_EXTENSIONS, TEXT_EXTENSIONS, SampleFile
+from sunshine_extraction.services.content import IMAGE_EXTENSIONS, SampleFile
 from sunshine_extraction.services.quality.gates import extraction_quality_gate
 from sunshine_extraction.services.quality.text_validation import validate_extracted_text, with_text_validation
 
@@ -40,11 +41,11 @@ def extract_content(
             [f"deferred_technical:{plan.get('defer_reason') or 'unknown'}"],
         )
     if strategy == "photo_metadata":
-        return _extract_photo_metadata(sample, plan)
+        return extract_photo_metadata(sample, plan)
     if strategy == "text_extraction":
-        return _extract_text(sample, plan)
+        return extract_text(sample, plan)
     if strategy == "spreadsheet_table_extraction":
-        return _extract_spreadsheet_metadata(sample, plan)
+        return extract_spreadsheet_metadata(sample, plan)
     if strategy == "ocr_page_level":
         return _extract_ocr_page_level(sample, plan, ocr_executor=ocr_executor, ocr_artifacts=ocr_artifacts)
     return ExtractionResult(sample, plan, "failed", "", {}, None, [f"unsupported_strategy:{strategy}"])
@@ -160,75 +161,6 @@ def ocr_executor_from_env(*, fallback_provider_override: str | None = None) -> O
         except ValueError:
             return LocalTesseractOcrExecutor()
     return LocalTesseractOcrExecutor()
-
-
-def _extract_text(sample: SampleFile, plan: dict[str, Any]) -> ExtractionResult:
-    suffix = sample.sample_path.suffix.lower()
-    try:
-        if suffix == ".pdf":
-            reader = PdfReader(str(sample.sample_path))
-            text = "\n".join(page.extract_text() or "" for page in reader.pages)
-            return ExtractionResult(
-                sample,
-                plan,
-                "extracted",
-                text,
-                {"mime_type": "application/pdf"},
-                len(reader.pages),
-                [] if text.strip() else ["pdf_text_empty"],
-            )
-        if suffix in TEXT_EXTENSIONS:
-            return ExtractionResult(
-                sample,
-                plan,
-                "extracted",
-                sample.sample_path.read_text(encoding="utf-8", errors="replace"),
-                {"mime_type": mimetypes.guess_type(sample.sample_path.name)[0]},
-                None,
-                [],
-            )
-    except Exception as error:  # noqa: BLE001 - artifact must capture failures per file.
-        return ExtractionResult(sample, plan, "failed", "", {"error": str(error)}, None, ["text_extraction_failed"])
-
-    return ExtractionResult(sample, plan, "deferred_extractor", "", {"suffix": suffix}, None, ["document_executor_not_installed"])
-
-
-def _extract_photo_metadata(sample: SampleFile, plan: dict[str, Any]) -> ExtractionResult:
-    try:
-        with Image.open(sample.sample_path) as image:
-            exif = image.getexif()
-            captured_at = None
-            if exif:
-                exif_by_name = {ExifTags.TAGS.get(key, str(key)): value for key, value in exif.items()}
-                captured_at = exif_by_name.get("DateTimeOriginal") or exif_by_name.get("DateTime")
-            metadata = {
-                "image_format": image.format,
-                "width": image.width,
-                "height": image.height,
-                "mode": image.mode,
-                "frame_count": getattr(image, "n_frames", 1),
-                "captured_at": captured_at,
-            }
-        return ExtractionResult(sample, plan, "metadata_extracted", "", metadata, None, [])
-    except Exception as error:  # noqa: BLE001
-        return ExtractionResult(sample, plan, "failed", "", {"error": str(error)}, None, ["photo_metadata_failed"])
-
-
-def _extract_spreadsheet_metadata(sample: SampleFile, plan: dict[str, Any]) -> ExtractionResult:
-    metadata: dict[str, Any] = {"suffix": sample.sample_path.suffix.lower(), "size_bytes": sample.sample_path.stat().st_size}
-    warnings: list[str] = []
-    if sample.sample_path.suffix.lower() in SPREADSHEET_EXTENSIONS:
-        try:
-            with zipfile.ZipFile(sample.sample_path) as workbook:
-                names = workbook.namelist()
-                metadata["zip_entry_count"] = len(names)
-                metadata["sheet_entry_count"] = len([name for name in names if name.startswith("xl/worksheets/")])
-                metadata["has_macros"] = "xl/vbaProject.bin" in names
-        except zipfile.BadZipFile:
-            warnings.append("spreadsheet_zip_metadata_failed")
-    else:
-        warnings.append("spreadsheet_parser_not_installed")
-    return ExtractionResult(sample, plan, "metadata_extracted", "", metadata, None, warnings)
 
 
 def _extract_ocr_page_level(
