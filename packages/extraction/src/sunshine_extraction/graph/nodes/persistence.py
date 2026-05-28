@@ -24,6 +24,7 @@ def _persist_outputs(state: DocumentPipelineState) -> dict[str, Any]:
     final_result = state.get("final_result")
     if not final_result:
         final_result = _final_result_from_state(state)
+    final_result = _with_run_context_row(final_result, state)
 
     artifacts: dict[str, list[dict[str, Any]]] = {
         "graph-audit-events.jsonl": state.get("audit_events", []),
@@ -74,7 +75,7 @@ def _persist_outputs(state: DocumentPipelineState) -> dict[str, Any]:
     artifacts["sample-model-usage.jsonl"] = state.get("model_usage", [])
 
     for filename, rows in artifacts.items():
-        _write_jsonl(output_dir / filename, rows)
+        _write_jsonl(output_dir / filename, _with_run_context_rows(rows, state))
 
     graph_result = _json_safe({**state, "final_result": final_result})
     (output_dir / "graph-result.json").write_text(json.dumps(graph_result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -89,9 +90,25 @@ def _persist_outputs(state: DocumentPipelineState) -> dict[str, Any]:
 def _import_run_results_node(state: DocumentPipelineState, deps: DocumentPipelineDeps) -> dict[str, Any]:
     output_dir = Path(state["output_dir"])
     import_result = deps["run_results_importer"].import_output(output_dir, run_id=state.get("dashboard_run_id"))
-    _write_jsonl(output_dir / "sample-import-results.jsonl", [import_result])
+    _write_jsonl(output_dir / "sample-import-results.jsonl", [_with_run_context_row(import_result, state)])
     write_artifact_manifest(output_dir, run_id=state.get("dashboard_run_id") or state.get("run_id"))
     return {"import_result": import_result}
+
+
+def _with_run_context_rows(rows: list[dict[str, Any]], state: DocumentPipelineState) -> list[dict[str, Any]]:
+    return [_with_run_context_row(row, state) for row in rows if isinstance(row, dict)]
+
+
+def _with_run_context_row(row: dict[str, Any], state: DocumentPipelineState) -> dict[str, Any]:
+    run_id = state.get("dashboard_run_id") or state.get("run_id")
+    context = {
+        "run_id": run_id,
+        "graph_run_id": state.get("run_id"),
+        "thread_id": state.get("thread_id"),
+    }
+    if state.get("dashboard_run_id") is not None:
+        context["dashboard_run_id"] = state.get("dashboard_run_id")
+    return {**row, **context}
 
 def _final_result_from_state(state: DocumentPipelineState) -> dict[str, Any]:
     if state.get("extraction_result") and state.get("extraction_quality"):

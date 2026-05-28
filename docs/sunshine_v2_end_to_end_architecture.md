@@ -1320,6 +1320,7 @@ Success criteria:
 Current implementation:
 
 - Graph single-file runs and batch runs write `artifact-manifest.json`.
+- Graph persistence stamps JSONL artifact rows with run context (`run_id`, `graph_run_id`, and `thread_id`, plus `dashboard_run_id` when available) at the write boundary, so normalized artifacts can be attached to a durable run without pushing run identity into every provider implementation.
 - Graph single-file runs write `graph-run-metadata.json` with total runtime, latency status, latency policy, and raw-provider artifact retention policy.
 - The final runtime write refreshes `artifact-manifest.json` after `graph-run-metadata.json` and the final `graph-result.json` are written, so runtime metadata is included in the auditable artifact index.
 - `domain/model_usage.py` defines the normalized model-usage row contract, explicit provider host evidence, and local/external/placeholder cost-basis classification used by graph audit rows.

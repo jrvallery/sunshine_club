@@ -123,7 +123,7 @@ def run_document_graph(
         result = graph.invoke(state)
     graph_runtime = runtime_summary(started_monotonic=started, finished_monotonic=time.monotonic(), policy=runtime_policy)
     result["graph_runtime"] = graph_runtime
-    _write_jsonl(output_dir_path / "graph-audit-events.jsonl", result.get("audit_events", []))
+    _write_jsonl(output_dir_path / "graph-audit-events.jsonl", _with_runtime_context_rows(result.get("audit_events", []), result))
     (output_dir_path / "graph-run-metadata.json").write_text(
         json.dumps(_json_safe({"run_id": result.get("run_id"), "source_path": result.get("source_path"), "relative_path": result.get("relative_path"), "graph_runtime": graph_runtime}), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -134,3 +134,14 @@ def run_document_graph(
     )
     write_artifact_manifest(output_dir_path, run_id=result.get("dashboard_run_id") or result.get("run_id"))
     return result
+
+
+def _with_runtime_context_rows(rows: list[dict[str, Any]], result: dict[str, Any]) -> list[dict[str, Any]]:
+    context = {
+        "run_id": result.get("dashboard_run_id") or result.get("run_id"),
+        "graph_run_id": result.get("run_id"),
+        "thread_id": result.get("thread_id"),
+    }
+    if result.get("dashboard_run_id") is not None:
+        context["dashboard_run_id"] = result.get("dashboard_run_id")
+    return [{**row, **context} for row in rows if isinstance(row, dict)]

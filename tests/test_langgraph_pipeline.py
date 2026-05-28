@@ -282,6 +282,8 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     manifest_by_name = {artifact["name"]: artifact for artifact in manifest["artifacts"]}
 
     assert final_result["route_status"] == "route_candidate"
+    assert final_result["run_id"] == result["run_id"]
+    assert final_result["graph_run_id"] == result["run_id"]
     assert final_result["top_tag_candidate"] == "annual_spring_tea"
     assert final_result["tag_assignment_source"] == "deterministic+llm"
     assert final_result["file_id"] == result["file_id"]
@@ -403,6 +405,12 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     ]
     assert [event[0] for event in observability.events] == ["graph.node"] * len(audit_events)
     assert [event[1]["node"] for event in observability.events] == [event["node"] for event in audit_events]
+    for artifact in manifest["artifacts"]:
+        if artifact["kind"] != "jsonl" or artifact["row_count"] == 0:
+            continue
+        rows = [json.loads(line) for line in Path(artifact["path"]).read_text(encoding="utf-8").splitlines()]
+        assert all(row.get("run_id") is not None for row in rows), artifact["name"]
+        assert all(row.get("graph_run_id") == result["run_id"] for row in rows), artifact["name"]
 
 
 def test_graph_nodes_package_exports_full_v2_node_surface() -> None:
