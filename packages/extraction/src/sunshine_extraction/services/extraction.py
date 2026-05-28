@@ -1,8 +1,8 @@
 """Extraction, OCR, validation, quality, and chunking service boundary."""
 
 from sunshine_extraction.domain.extraction import ExtractionResult, OcrArtifacts, OcrExecutor
+from sunshine_extraction.providers.chunking.legacy import chunk_content
 from sunshine_extraction.sample_pipeline import (
-    chunk_content,
     extract_content,
     ocr_executor_from_env,
     validate_and_repair_extraction,
