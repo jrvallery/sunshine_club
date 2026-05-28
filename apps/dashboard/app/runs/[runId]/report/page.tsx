@@ -431,7 +431,7 @@ function SegmentRows({ rows }: { rows: Array<Record<string, unknown>> }) {
   );
 }
 
-function ReviewItemRows({ runId, rows }: { runId: number; rows: Array<Record<string, unknown>> }) {
+function ReviewItemRows({ runId, rows }: { runId: number | string; rows: Array<Record<string, unknown>> }) {
   return (
     <div className="jsonTableBlock">
       <div className="sectionHeader">
@@ -480,7 +480,7 @@ function ReviewItemRows({ runId, rows }: { runId: number; rows: Array<Record<str
   );
 }
 
-function reviewItemHref(row: Record<string, unknown>, runId: number, relativePath: string) {
+function reviewItemHref(row: Record<string, unknown>, runId: number | string, relativePath: string) {
   const id = Number(row.id);
   const params = `run_id=${runId}&status=all`;
   if (Number.isFinite(id) && id > 0) {

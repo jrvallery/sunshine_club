@@ -13,41 +13,42 @@ import type { PipelineRun, PipelineRunComparison, PipelineRunEvent, PipelineRunP
 
 export default function RunsPage() {
   const queryClient = useQueryClient();
+  const [source, setSource] = useState<"sqlite" | "postgres">("sqlite");
   const [selectedRun, setSelectedRun] = useState<PipelineRun | null>(null);
   const [selectedPreset, setSelectedPreset] = useState<RunPreset | null>(null);
   const presets = useQuery({ queryKey: ["run-presets"], queryFn: () => fetchJson<RunPreset[]>("/api/admin/runs/presets") });
   const runs = useQuery({
-    queryKey: ["runs"],
-    queryFn: () => fetchJson<PipelineRun[]>("/api/admin/runs?limit=100"),
+    queryKey: ["runs", source],
+    queryFn: () => fetchJson<PipelineRun[]>(`/api/admin/runs?limit=100&source=${source}`),
     refetchInterval: (query) => ((query.state.data ?? []).some((run) => run.status === "running" || run.status === "queued") ? 1500 : 5000)
   });
   const selectedRunDetail = useQuery({
-    queryKey: ["run-detail", selectedRun?.id],
-    enabled: Boolean(selectedRun),
+    queryKey: ["run-detail", selectedRun?.id, source],
+    enabled: Boolean(selectedRun) && source === "sqlite",
     queryFn: () => fetchJson<PipelineRun>(`/api/admin/runs/${selectedRun?.id}`),
     refetchInterval: (query) => (query.state.data?.status === "running" || query.state.data?.status === "queued" ? 1500 : false)
   });
   const activeRun = selectedRunDetail.data ?? selectedRun;
   const progress = useQuery({
-    queryKey: ["run-progress", selectedRun?.id],
-    enabled: Boolean(selectedRun),
+    queryKey: ["run-progress", selectedRun?.id, source],
+    enabled: Boolean(selectedRun) && source === "sqlite",
     queryFn: () => fetchJson<PipelineRunProgress>(`/api/admin/runs/${selectedRun?.id}/progress`),
     refetchInterval: activeRun?.status === "running" || activeRun?.status === "queued" ? 1500 : false
   });
   const events = useQuery({
-    queryKey: ["run-events", selectedRun?.id],
-    enabled: Boolean(selectedRun),
+    queryKey: ["run-events", selectedRun?.id, source],
+    enabled: Boolean(selectedRun) && source === "sqlite",
     queryFn: () => fetchJson<PipelineRunEvent[]>(`/api/admin/runs/${selectedRun?.id}/events`),
     refetchInterval: activeRun?.status === "running" || activeRun?.status === "queued" ? 1500 : false
   });
   const results = useQuery({
-    queryKey: ["run-results", selectedRun?.id],
-    enabled: Boolean(selectedRun),
+    queryKey: ["run-results", selectedRun?.id, source],
+    enabled: Boolean(selectedRun) && source === "sqlite",
     queryFn: () => fetchJson<PipelineRunResults>(`/api/admin/runs/${selectedRun?.id}/results`)
   });
   const comparison = useQuery({
-    queryKey: ["run-comparison", selectedRun?.id],
-    enabled: Boolean(selectedRun),
+    queryKey: ["run-comparison", selectedRun?.id, source],
+    enabled: Boolean(selectedRun) && source === "sqlite",
     queryFn: () => fetchJson<PipelineRunComparison>(`/api/admin/runs/${selectedRun?.id}/compare-previous`)
   });
   const startRun = useMutation({
@@ -60,6 +61,7 @@ export default function RunsPage() {
     onSuccess: async (run) => {
       setSelectedPreset(null);
       setSelectedRun(run);
+      setSource("sqlite");
       await queryClient.invalidateQueries({ queryKey: ["runs"] });
     }
   });
@@ -116,8 +118,25 @@ export default function RunsPage() {
       </section>
       <section className="panel">
         <div className="sectionHeader">
-          <h2>Run History</h2>
-          <span>{runs.data?.length ?? 0} shown</span>
+          <div>
+            <h2>Run History</h2>
+            <p className="muted">{source === "postgres" ? "V2 Postgres runtime runs" : "Legacy SQLite dashboard runs"}</p>
+          </div>
+          <div className="buttonRow">
+            <SelectInput
+              label="Run source"
+              value={source}
+              onChange={(event) => {
+                const nextSource = event.target.value === "postgres" ? "postgres" : "sqlite";
+                setSource(nextSource);
+                setSelectedRun(null);
+              }}
+            >
+              <option value="sqlite">SQLite dashboard</option>
+              <option value="postgres">Postgres V2</option>
+            </SelectInput>
+            <span>{runs.data?.length ?? 0} shown</span>
+          </div>
         </div>
         <div className="tableWrap" tabIndex={0} aria-label="Run history table">
           <table>
@@ -137,9 +156,15 @@ export default function RunsPage() {
               {(runs.data ?? []).map((run) => (
                 <tr key={run.id}>
                   <td>
-                    <Link className="linkButton" href={`/runs/${run.id}/report`}>
-                      {run.run_key}
-                    </Link>
+                    {source === "postgres" ? (
+                      <a className="linkButton" href={`/api/admin/system/postgres-runtime/runs/${encodeURIComponent(run.run_key)}/report`} target="_blank">
+                        {run.run_key}
+                      </a>
+                    ) : (
+                      <Link className="linkButton" href={`/runs/${run.id}/report`}>
+                        {run.run_key}
+                      </Link>
+                    )}
                   </td>
                   <td>
                     <StatusBadge value={run.run_role ?? "test"} />
@@ -153,25 +178,25 @@ export default function RunsPage() {
                   <td className="pathText">{run.output_dir}</td>
                   <td>
                     <div className="buttonRow">
-                      <button className="secondaryButton" disabled={run.status === "running"} onClick={() => importResults.mutate(run.id)}>
+                      <button className="secondaryButton" disabled={source === "postgres" || run.status === "running"} onClick={() => importResults.mutate(Number(run.id))}>
                         Import
                       </button>
                       <button
                         className="secondaryButton"
-                        disabled={run.status !== "queued" && run.status !== "running"}
-                        onClick={() => cancelRun.mutate(run.id)}
+                        disabled={source === "postgres" || (run.status !== "queued" && run.status !== "running")}
+                        onClick={() => cancelRun.mutate(Number(run.id))}
                       >
                         Cancel
                       </button>
-                      <button className="secondaryButton" disabled={run.status !== "failed"} onClick={() => rerunFailed.mutate(run.id)}>
+                      <button className="secondaryButton" disabled={source === "postgres" || run.status !== "failed"} onClick={() => rerunFailed.mutate(Number(run.id))}>
                         Rerun Failed
                       </button>
                       <button
                         className="secondaryButton dangerText"
-                        disabled={run.status === "running" || deleteRun.isPending}
+                        disabled={source === "postgres" || run.status === "running" || deleteRun.isPending}
                         onClick={() => {
                           if (window.confirm(`Delete run ${run.run_key}? This removes dashboard DB rows and generated run artifacts, but not source corpus files.`)) {
-                            deleteRun.mutate(run.id);
+                            deleteRun.mutate(Number(run.id));
                           }
                         }}
                       >

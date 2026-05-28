@@ -35,6 +35,7 @@ from sunshine_api.services.model_usage import _count_list_values, _count_values,
 from sunshine_api.services.imports import (
     delete_postgres_pipeline_run_if_configured,
     import_langgraph_output_to_postgres_if_configured,
+    list_postgres_pipeline_runs,
     record_postgres_pipeline_run_state_if_configured,
 )
 from sunshine_api.services.run_commands import _batch_command, _batch_input_sample_count
@@ -116,8 +117,55 @@ def start_run(request: RunStartRequest) -> dict[str, Any]:
 
 
 @router.get("/admin/runs")
-def runs(limit: int = 100) -> list[dict[str, Any]]:
+def runs(limit: int = 100, source: str = "sqlite") -> list[dict[str, Any]]:
+    if source == "postgres":
+        try:
+            return [_postgres_run_for_dashboard(row) for row in list_postgres_pipeline_runs(limit=limit)]
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+    if source != "sqlite":
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
     return review_store().list_pipeline_runs(limit=limit)
+
+
+def _postgres_run_for_dashboard(row: dict[str, Any]) -> dict[str, Any]:
+    summary = row.get("summary") if isinstance(row.get("summary"), dict) else {}
+    run_metadata = {
+        "source": "postgres",
+        "result_count": row.get("result_count"),
+        "review_required_count": row.get("review_required_count"),
+        "model_usage_count": row.get("model_usage_count"),
+        "provider_attempt_count": row.get("provider_attempt_count"),
+        "document_segment_count": row.get("document_segment_count"),
+    }
+    return {
+        "id": row.get("run_key") or row.get("id"),
+        "postgres_id": row.get("id"),
+        "source": "postgres",
+        "run_key": row.get("run_key"),
+        "preset_key": row.get("preset_key"),
+        "run_role": summary.get("run_role") or summary.get("graph_runtime", {}).get("run_role") or "v2",
+        "status": row.get("status"),
+        "input_root": row.get("input_root"),
+        "output_dir": row.get("output_dir"),
+        "command": [],
+        "embedding_provider": row.get("embedding_provider"),
+        "enable_llm_tags": bool(row.get("llm_provider")),
+        "llm_tag_provider": row.get("llm_provider"),
+        "ocr_fallback_provider": row.get("extraction_provider"),
+        "semantic_index_path": None,
+        "run_metadata": run_metadata,
+        "started_at": row.get("started_at"),
+        "completed_at": row.get("finished_at"),
+        "processed_count": summary.get("processed_count") or summary.get("total_results") or row.get("result_count"),
+        "route_candidate_count": summary.get("route_candidate_count"),
+        "review_required_count": row.get("review_required_count"),
+        "failed_count": summary.get("failed_count") or summary.get("error_count"),
+        "summary": summary,
+        "error": summary.get("error"),
+        "created_at": row.get("created_at"),
+        "updated_at": row.get("updated_at"),
+    }
 
 
 @router.get("/admin/runs/{run_id}")

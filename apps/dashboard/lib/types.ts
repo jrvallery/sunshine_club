@@ -216,7 +216,9 @@ export type RunPreset = {
 };
 
 export type PipelineRun = {
-  id: number;
+  id: number | string;
+  source?: "sqlite" | "postgres";
+  postgres_id?: string | null;
   run_key: string;
   preset_key: string;
   run_role?: string | null;

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import threading
 import json
+import time
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -314,6 +315,47 @@ def test_run_creation_records_queued_state_to_postgres_when_configured(tmp_path:
     assert captured["output_dir"] == str(tmp_path / "output")
 
 
+def test_runs_endpoint_can_read_postgres_v2_source(monkeypatch) -> None:
+    def fake_list(*, limit: int = 100) -> list[dict[str, Any]]:
+        assert limit == 7
+        return [
+            {
+                "id": "postgres-id",
+                "run_key": "qa_samples_fast-1",
+                "preset_key": "qa_samples_fast",
+                "input_root": "/mnt/sunshine/qa samples",
+                "output_dir": "/mnt/sunshine/dashboard-runs/qa_samples_fast-1",
+                "status": "running",
+                "embedding_provider": "cortex",
+                "llm_provider": "cortex",
+                "extraction_provider": "docling",
+                "started_at": "2026-05-28T00:00:00",
+                "finished_at": None,
+                "created_at": "2026-05-28T00:00:00",
+                "updated_at": "2026-05-28T00:01:00",
+                "summary": {"processed_count": 4, "run_role": "evaluation"},
+                "result_count": 3,
+                "review_required_count": 1,
+                "model_usage_count": 2,
+                "provider_attempt_count": 3,
+                "document_segment_count": 4,
+            }
+        ]
+
+    monkeypatch.setattr("sunshine_api.routers.runs.list_postgres_pipeline_runs", fake_list)
+
+    response = TestClient(app).get("/admin/runs", params={"source": "postgres", "limit": 7})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload[0]["source"] == "postgres"
+    assert payload[0]["id"] == "qa_samples_fast-1"
+    assert payload[0]["postgres_id"] == "postgres-id"
+    assert payload[0]["run_role"] == "evaluation"
+    assert payload[0]["processed_count"] == 4
+    assert payload[0]["review_required_count"] == 1
+
+
 def test_live_run_progress_records_running_state_to_postgres(monkeypatch) -> None:
     from sunshine_api.services import run_execution
 
@@ -407,7 +449,12 @@ def test_provider_benchmark_api_can_start_background_run(tmp_path: Path, monkeyp
     assert response.json()["background"] is True
     assert called.wait(timeout=2)
     assert imported.wait(timeout=2)
-    import_status = json.loads((output_dir / "provider-benchmark-postgres-import.json").read_text(encoding="utf-8"))
+    import_status_path = output_dir / "provider-benchmark-postgres-import.json"
+    for _attempt in range(20):
+        if import_status_path.exists():
+            break
+        time.sleep(0.05)
+    import_status = json.loads(import_status_path.read_text(encoding="utf-8"))
     assert import_status["import_status"] == "imported"
 
 
