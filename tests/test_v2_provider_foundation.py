@@ -13,7 +13,7 @@ from sunshine_extraction.domain.model_usage import ModelUsageRow, cost_basis
 from sunshine_extraction.domain.tags import tag_candidate_row
 from sunshine_extraction.domain.taxonomy import TaxonomyOptions
 from sunshine_extraction.providers.probe import NativeFileProbeProvider
-from sunshine_extraction.providers.chunking import CurrentChunkingProvider
+from sunshine_extraction.providers.chunking import CurrentChunkingProvider, LlamaIndexChunkingProvider, StructureAwareChunkingProvider
 from sunshine_extraction.providers.chunking.legacy import chunk_content as legacy_chunk_content
 from sunshine_extraction.providers.embeddings import CortexEmbeddingProvider, CurrentChunkEmbeddingProvider, HostedOpenAIEmbeddingProvider, embedding_cache_key
 from sunshine_extraction.providers.extraction import CurrentExtractionProvider, DoclingExtractionProvider, extraction_provider_from_env
@@ -135,6 +135,31 @@ def test_current_chunking_provider_wraps_existing_behavior(tmp_path: Path) -> No
     assert attempt.provider == "current"
     assert attempt.status == "chunked"
     assert attempt.metadata["local_only"] is True
+
+
+def test_chunking_provider_boundaries_are_local_only(tmp_path: Path) -> None:
+    source = tmp_path / "minutes.txt"
+    source.write_text("Meeting minutes text", encoding="utf-8")
+    extraction = ExtractionResult(
+        sample=_sample(source),
+        plan={"strategy": "text_extraction"},
+        extraction_status="extracted",
+        text="Meeting minutes text",
+        metadata={},
+        page_count=1,
+        warnings=[],
+    )
+
+    chunks, attempt = StructureAwareChunkingProvider().chunk(extraction, {"quality": "ok", "can_chunk": True})
+    skipped_chunks, skipped_attempt = LlamaIndexChunkingProvider().chunk(extraction, {"quality": "ok", "can_chunk": True})
+
+    assert chunks[0]["chunking_provider"] == "structure_aware"
+    assert attempt.provider == "structure_aware"
+    assert attempt.metadata["wrapped_provider"] == "current"
+    assert LlamaIndexChunkingProvider().dependency_status()["local_only"] is True
+    assert skipped_chunks == []
+    assert skipped_attempt.status == "skipped"
+    assert "llamaindex_chunking_not_enabled" in skipped_attempt.warnings
 
 
 def test_legacy_chunker_preserves_metadata_fallback(tmp_path: Path) -> None:

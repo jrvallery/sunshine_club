@@ -806,6 +806,8 @@ Current implementation:
 - `domain/chunks.py` defines the normalized chunk row contract used by chunking providers and embedding/indexing artifacts.
 - `providers/chunking/base.py` defines the swappable chunking provider contract.
 - `providers/chunking/legacy.py` owns the backward-compatible fixed-size/metadata chunker, and `CurrentChunkingProvider` wraps it without importing from the legacy sample pipeline.
+- `providers/chunking/structure_aware.py` exposes the target in-house structure-aware provider boundary while wrapping the current chunker until Docling/page/table spans are promoted into chunk logic.
+- `providers/chunking/llamaindex_provider.py` exposes the optional LlamaIndex benchmark boundary as skipped unless explicitly implemented/enabled.
 - Graph runs write `sample-chunking-results.jsonl` with provider, status, strategy, chunk count, warnings, and local-only metadata.
 
 ### 14. `embed_chunks`
