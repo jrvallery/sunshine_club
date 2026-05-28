@@ -13,6 +13,7 @@ from sunshine_extraction.graph.nodes.extraction import (
     _after_quality_gate,
     _chunk_content_node,
     _extract_content_node,
+    _normalize_document_structure_node,
     _propose_document_segments_node,
     _quality_gate,
     _validate_text_extraction_node,
@@ -33,6 +34,7 @@ def build_document_graph(deps: DocumentPipelineDeps | None = None, *, checkpoint
     builder.add_node("extract_content", lambda state: _run_node("extract_content", state, lambda active: _extract_content_node(active, active_deps)))
     builder.add_node("validate_text_extraction", lambda state: _run_node("validate_text_extraction", state, lambda active: _validate_text_extraction_node(active, active_deps)))
     builder.add_node("quality_gate", lambda state: _run_node("quality_gate", state, _quality_gate))
+    builder.add_node("normalize_document_structure", lambda state: _run_node("normalize_document_structure", state, _normalize_document_structure_node))
     builder.add_node("propose_document_segments", lambda state: _run_node("propose_document_segments", state, _propose_document_segments_node))
     builder.add_node("chunk_content", lambda state: _run_node("chunk_content", state, _chunk_content_node))
     builder.add_node("embed_chunks", lambda state: _run_node("embed_chunks", state, lambda active: _embed_chunks_node(active, active_deps)))
@@ -58,8 +60,9 @@ def build_document_graph(deps: DocumentPipelineDeps | None = None, *, checkpoint
     builder.add_conditional_edges(
         "quality_gate",
         _after_quality_gate,
-        {"chunk": "propose_document_segments", "route": "assign_deterministic_tags"},
+        {"chunk": "normalize_document_structure", "route": "assign_deterministic_tags"},
     )
+    builder.add_edge("normalize_document_structure", "propose_document_segments")
     builder.add_edge("propose_document_segments", "chunk_content")
     builder.add_edge("chunk_content", "embed_chunks")
     builder.add_edge("embed_chunks", "index_chunks")

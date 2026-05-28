@@ -34,6 +34,7 @@ def _persist_outputs(state: DocumentPipelineState) -> dict[str, Any]:
     artifacts["sample-provider-attempts.jsonl"] = state.get("provider_attempts", [])
     artifacts["sample-ocr-pages.jsonl"] = state.get("ocr_pages", [])
     artifacts["sample-ocr-documents.jsonl"] = [state["ocr_document"]] if state.get("ocr_document") else []
+    artifacts["sample-structure.jsonl"] = [state["document_structure"]] if state.get("document_structure") else []
     artifacts["sample-document-segments.jsonl"] = state.get("document_segments", [])
     artifacts["sample-chunks.jsonl"] = state.get("chunks", [])
     artifacts["sample-embeddings.jsonl"] = state.get("embeddings", [])

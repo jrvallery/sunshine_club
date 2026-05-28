@@ -164,6 +164,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     llm_rows = [json.loads(line) for line in (output_dir / "sample-llm-tag-inspections.jsonl").read_text().splitlines()]
     model_usage_rows = [json.loads(line) for line in (output_dir / "sample-model-usage.jsonl").read_text().splitlines()]
     segment_rows = [json.loads(line) for line in (output_dir / "sample-document-segments.jsonl").read_text().splitlines()]
+    structure_rows = [json.loads(line) for line in (output_dir / "sample-structure.jsonl").read_text().splitlines()]
     provider_attempt_rows = [json.loads(line) for line in (output_dir / "sample-provider-attempts.jsonl").read_text().splitlines()]
 
     assert final_result["route_status"] == "route_candidate"
@@ -182,6 +183,9 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert llm_rows[0]["primary_tag"] == "annual_spring_tea"
     assert segment_rows[0]["segment_type"] == "single_document"
     assert segment_rows[0]["requires_segment_review"] is False
+    assert structure_rows[0]["provider"] == "current"
+    assert structure_rows[0]["text_length"] == len("Annual Sunshine Tea guest list and event notes.")
+    assert structure_rows[0]["pages"][0]["quality"] == "text"
     assert provider_attempt_rows[0]["provider"] == "current"
     assert {row["purpose"] for row in model_usage_rows} == {"chunk_embedding", "semantic_retrieval_embedding", "tag_inspection"}
     assert [event["node"] for event in audit_events] == [
@@ -191,6 +195,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
         "extract_content",
         "validate_text_extraction",
         "quality_gate",
+        "normalize_document_structure",
         "propose_document_segments",
         "chunk_content",
         "embed_chunks",

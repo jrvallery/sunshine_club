@@ -107,6 +107,7 @@ def run_document_batch(
         "sample-provider-attempts.jsonl": [],
         "sample-ocr-pages.jsonl": [],
         "sample-ocr-documents.jsonl": [],
+        "sample-structure.jsonl": [],
         "sample-document-segments.jsonl": [],
         "sample-chunks.jsonl": [],
         "sample-embeddings.jsonl": [],
@@ -308,6 +309,8 @@ def _append_batch_rows(artifact_rows: dict[str, list[dict[str, Any]]], result: d
     artifact_rows["sample-ocr-pages.jsonl"].extend(result.get("ocr_pages", []))
     if result.get("ocr_document"):
         artifact_rows["sample-ocr-documents.jsonl"].append(result["ocr_document"])
+    if result.get("document_structure"):
+        artifact_rows["sample-structure.jsonl"].append(result["document_structure"])
     artifact_rows["sample-document-segments.jsonl"].extend(result.get("document_segments", []))
     artifact_rows["sample-chunks.jsonl"].extend(result.get("chunks", []))
     artifact_rows["sample-embeddings.jsonl"].extend(result.get("embeddings", []))

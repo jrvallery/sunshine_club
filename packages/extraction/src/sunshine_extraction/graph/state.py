@@ -39,6 +39,7 @@ class DocumentPipelineState(TypedDict, total=False):
     provider_attempts: list[dict[str, Any]]
     ocr_pages: list[dict[str, Any]]
     ocr_document: dict[str, Any]
+    document_structure: dict[str, Any]
     document_segments: list[dict[str, Any]]
     chunks: list[dict[str, Any]]
     embeddings: list[dict[str, Any]]

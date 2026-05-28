@@ -13,6 +13,7 @@ from sunshine_extraction.services.extraction import (
     validate_and_repair_extraction,
 )
 from sunshine_extraction.services.segmentation.page_grouping import attach_segment_ids_to_chunks, propose_document_segments
+from sunshine_extraction.services.structure import normalize_document_structure
 
 
 def _extract_content_node(state: DocumentPipelineState, deps: DocumentPipelineDeps) -> dict[str, Any]:
@@ -69,6 +70,15 @@ def _validate_text_extraction_node(state: DocumentPipelineState, deps: DocumentP
 
 def _quality_gate(state: DocumentPipelineState) -> dict[str, Any]:
     return {"extraction_quality": extraction_quality_gate(state["extraction_result"])}
+
+def _normalize_document_structure_node(state: DocumentPipelineState) -> dict[str, Any]:
+    return {
+        "document_structure": normalize_document_structure(
+            state["extraction_result"],
+            ocr_pages=state.get("ocr_pages", []),
+            provider_attempts=state.get("provider_attempts", []),
+        )
+    }
 
 def _propose_document_segments_node(state: DocumentPipelineState) -> dict[str, Any]:
     segments = propose_document_segments(
