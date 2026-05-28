@@ -95,6 +95,33 @@ def test_postgres_run_detail_endpoint_wraps_service(monkeypatch) -> None:
     assert captured == {"run_key": "run-1"}
 
 
+def test_postgres_run_report_endpoint_wraps_service(monkeypatch) -> None:
+    captured = {}
+
+    def fake_get_report(*, run_key: str, limit: int = 500) -> dict:
+        captured["run_key"] = run_key
+        captured["limit"] = limit
+        return {
+            "run": {"run_key": run_key},
+            "results": [{"source_path": "/source/scrapbook.pdf"}],
+            "review_items": [{"segment_id": "segment-001"}],
+            "model_usage": [{"provider": "cortex"}],
+            "provider_attempts": [{"provider": "docling"}],
+            "document_segments": [{"segment_type": "scrapbook_page_group", "requires_segment_review": True}],
+        }
+
+    monkeypatch.setattr("sunshine_api.routers.health.get_postgres_run_report", fake_get_report)
+
+    response = TestClient(app).get("/admin/system/postgres-runtime/runs/run-1/report?limit=7")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run"]["run_key"] == "run-1"
+    assert payload["document_segments"][0]["segment_type"] == "scrapbook_page_group"
+    assert payload["provider_attempts"][0]["provider"] == "docling"
+    assert captured == {"run_key": "run-1", "limit": 7}
+
+
 def test_postgres_review_decision_endpoint_wraps_service(monkeypatch) -> None:
     captured = {}
 

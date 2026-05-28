@@ -95,46 +95,37 @@ class PostgresPipelineStore:
             connection.close()
         raise KeyError(f"Postgres pipeline run not found: {run_key}")
 
+    def get_run_report(self, *, run_key: str, limit: int = 500) -> dict[str, Any]:
+        """Return normalized run-report rows from Postgres.
+
+        This is the V2 read model the dashboard can use instead of stitching
+        together JSONL artifacts or legacy SQLite rows. It intentionally
+        includes document segments so scrapbook/newspaper packet page ranges can
+        be reviewed without mutating the source PDF.
+        """
+
+        connection = self._connect_factory(self.database_url)
+        try:
+            rows = self._list_pipeline_runs(connection, limit=500)
+            run = next((row for row in rows if row.get("run_key") == run_key), None)
+            if run is None:
+                raise KeyError(f"Postgres pipeline run not found: {run_key}")
+            capped_limit = max(1, min(int(limit), 1000))
+            return {
+                "run": run,
+                "results": self._list_pipeline_results(connection, run_key=run_key, limit=capped_limit),
+                "review_items": self._list_review_items(connection, run_key=run_key, limit=capped_limit),
+                "model_usage": self._list_model_usage(connection, run_key=run_key, limit=capped_limit),
+                "provider_attempts": self._list_provider_attempts(connection, run_key=run_key, limit=capped_limit),
+                "document_segments": self._list_document_segments(connection, run_key=run_key, limit=capped_limit),
+            }
+        finally:
+            connection.close()
+
     def list_review_items(self, *, run_key: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
         connection = self._connect_factory(self.database_url)
         try:
-            params: tuple[Any, ...]
-            where_sql = ""
-            if run_key:
-                where_sql = "where r.run_key = %s"
-                params = (run_key, max(1, min(int(limit), 500)))
-            else:
-                params = (max(1, min(int(limit), 500)),)
-            rows = connection.execute(
-                f"""
-                select
-                    ri.id,
-                    ri.run_id,
-                    r.run_key,
-                    r.preset_key,
-                    ri.source_path,
-                    ri.relative_path,
-                    ri.segment_id,
-                    ri.status,
-                    ri.review_reason,
-                    ri.proposed_class,
-                    ri.proposed_tag,
-                    ri.proposed_secondary_tags,
-                    ri.corrected_class,
-                    ri.corrected_tag,
-                    ri.corrected_secondary_tags,
-                    ri.notes,
-                    ri.created_at,
-                    ri.updated_at
-                from review_items_v2 ri
-                left join pipeline_runs r on r.id = ri.run_id
-                {where_sql}
-                order by ri.created_at desc
-                limit %s
-                """,
-                params,
-            ).fetchall()
-            return [_json_safe_row(_row_to_dict(row)) for row in rows]
+            return self._list_review_items(connection, run_key=run_key, limit=limit)
         finally:
             connection.close()
 
@@ -253,6 +244,167 @@ class PostgresPipelineStore:
             limit %s
             """,
             (max(1, min(int(limit), 500)),),
+        ).fetchall()
+        return [_json_safe_row(_row_to_dict(row)) for row in rows]
+
+    def _list_pipeline_results(self, connection: PostgresConnection, *, run_key: str, limit: int) -> list[dict[str, Any]]:
+        rows = connection.execute(
+            """
+            select
+                pr.id,
+                pr.run_id,
+                r.run_key,
+                pr.source_path,
+                pr.relative_path,
+                pr.sample_path,
+                pr.route_status,
+                pr.review_reason,
+                pr.final_class,
+                pr.extraction_strategy,
+                pr.extraction_status,
+                pr.quality,
+                pr.top_tag_candidate,
+                pr.secondary_tags,
+                pr.tag_confidence,
+                pr.result,
+                pr.created_at,
+                pr.updated_at
+            from pipeline_results pr
+            join pipeline_runs r on r.id = pr.run_id
+            where r.run_key = %s
+            order by pr.created_at asc, pr.relative_path asc nulls last, pr.source_path asc
+            limit %s
+            """,
+            (run_key, max(1, min(int(limit), 1000))),
+        ).fetchall()
+        return [_json_safe_row(_row_to_dict(row)) for row in rows]
+
+    def _list_review_items(self, connection: PostgresConnection, *, run_key: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        params: tuple[Any, ...]
+        where_sql = ""
+        if run_key:
+            where_sql = "where r.run_key = %s"
+            params = (run_key, max(1, min(int(limit), 1000)))
+        else:
+            params = (max(1, min(int(limit), 500)),)
+        rows = connection.execute(
+            f"""
+            select
+                ri.id,
+                ri.run_id,
+                r.run_key,
+                r.preset_key,
+                ri.source_path,
+                ri.relative_path,
+                ri.segment_id,
+                ri.status,
+                ri.review_reason,
+                ri.proposed_class,
+                ri.proposed_tag,
+                ri.proposed_secondary_tags,
+                ri.corrected_class,
+                ri.corrected_tag,
+                ri.corrected_secondary_tags,
+                ri.notes,
+                ri.created_at,
+                ri.updated_at
+            from review_items_v2 ri
+            left join pipeline_runs r on r.id = ri.run_id
+            {where_sql}
+            order by ri.created_at desc
+            limit %s
+            """,
+            params,
+        ).fetchall()
+        return [_json_safe_row(_row_to_dict(row)) for row in rows]
+
+    def _list_model_usage(self, connection: PostgresConnection, *, run_key: str, limit: int) -> list[dict[str, Any]]:
+        rows = connection.execute(
+            """
+            select
+                mu.id,
+                mu.run_id,
+                r.run_key,
+                mu.source_path,
+                mu.relative_path,
+                mu.node,
+                mu.purpose,
+                mu.provider,
+                mu.model,
+                mu.status,
+                mu.call_count,
+                mu.input_tokens,
+                mu.output_tokens,
+                mu.total_tokens,
+                mu.runtime_ms,
+                mu.local_only,
+                mu.metadata,
+                mu.created_at
+            from model_usage mu
+            join pipeline_runs r on r.id = mu.run_id
+            where r.run_key = %s
+            order by mu.created_at asc, mu.purpose asc, mu.provider asc
+            limit %s
+            """,
+            (run_key, max(1, min(int(limit), 1000))),
+        ).fetchall()
+        return [_json_safe_row(_row_to_dict(row)) for row in rows]
+
+    def _list_provider_attempts(self, connection: PostgresConnection, *, run_key: str, limit: int) -> list[dict[str, Any]]:
+        rows = connection.execute(
+            """
+            select
+                pa.id,
+                pa.run_id,
+                r.run_key,
+                pa.source_path,
+                pa.relative_path,
+                pa.provider,
+                pa.capability,
+                pa.status,
+                pa.strategy,
+                pa.runtime_ms,
+                pa.warnings,
+                pa.metadata,
+                pa.created_at
+            from provider_attempts pa
+            join pipeline_runs r on r.id = pa.run_id
+            where r.run_key = %s
+            order by pa.created_at asc, pa.source_path asc nulls last, pa.provider asc
+            limit %s
+            """,
+            (run_key, max(1, min(int(limit), 1000))),
+        ).fetchall()
+        return [_json_safe_row(_row_to_dict(row)) for row in rows]
+
+    def _list_document_segments(self, connection: PostgresConnection, *, run_key: str, limit: int) -> list[dict[str, Any]]:
+        rows = connection.execute(
+            """
+            select
+                ds.id,
+                ds.run_id,
+                r.run_key,
+                ds.source_path,
+                ds.relative_path,
+                ds.segment_id,
+                ds.parent_file_id,
+                ds.page_start,
+                ds.page_end,
+                ds.segment_index,
+                ds.segment_type,
+                ds.segment_title,
+                ds.segment_confidence,
+                ds.requires_segment_review,
+                ds.boundary_evidence,
+                ds.metadata,
+                ds.created_at
+            from document_segments ds
+            join pipeline_runs r on r.id = ds.run_id
+            where r.run_key = %s
+            order by ds.source_path asc, ds.segment_index asc, ds.page_start asc nulls last
+            limit %s
+            """,
+            (run_key, max(1, min(int(limit), 1000))),
         ).fetchall()
         return [_json_safe_row(_row_to_dict(row)) for row in rows]
 

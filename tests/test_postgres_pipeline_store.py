@@ -277,6 +277,183 @@ def test_postgres_pipeline_store_gets_run_detail_by_key() -> None:
     assert connection.closed is True
 
 
+def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> None:
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.closed = False
+            self.executed: list[tuple[str, tuple[Any, ...]]] = []
+
+        def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
+            self.executed.append((query, params))
+            normalized = " ".join(query.lower().split())
+            if "from pipeline_runs r" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "run-id",
+                            "run_key": "run-report",
+                            "preset_key": "qa",
+                            "output_dir": "/tmp/run",
+                            "status": "succeeded",
+                            "local_only": True,
+                            "embedding_provider": "cortex",
+                            "llm_provider": "cortex",
+                            "extraction_provider": "docling",
+                            "vector_store_provider": "qdrant",
+                            "vector_store_collection": "sunshine-test",
+                            "started_at": None,
+                            "finished_at": None,
+                            "created_at": None,
+                            "updated_at": None,
+                            "summary": {"counts": {"pipeline_results": 1}},
+                            "result_count": 1,
+                            "review_required_count": 1,
+                            "model_usage_count": 1,
+                            "provider_attempt_count": 1,
+                            "document_segment_count": 1,
+                        }
+                    ]
+                )
+            if "from pipeline_results pr" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "result-id",
+                            "run_id": "run-id",
+                            "run_key": "run-report",
+                            "source_path": "/source/scrapbook.pdf",
+                            "relative_path": "History/scrapbook.pdf",
+                            "sample_path": "/sample/scrapbook.pdf",
+                            "route_status": "review_segment_boundary",
+                            "review_reason": "segment_requires_review",
+                            "final_class": "scanned_document",
+                            "extraction_strategy": "ocr_page_level",
+                            "extraction_status": "extracted",
+                            "quality": "ok",
+                            "top_tag_candidate": "scrapbooks",
+                            "secondary_tags": ["scrapbook_page"],
+                            "tag_confidence": 0.82,
+                            "result": {"text_snippet": "Scrapbook page text"},
+                            "created_at": None,
+                            "updated_at": None,
+                        }
+                    ]
+                )
+            if "from review_items_v2 ri" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "review-id",
+                            "run_id": "run-id",
+                            "run_key": "run-report",
+                            "preset_key": "qa",
+                            "source_path": "/source/scrapbook.pdf",
+                            "relative_path": "History/scrapbook.pdf",
+                            "segment_id": "scrapbook:segment-001",
+                            "status": "open",
+                            "review_reason": "segment_requires_review",
+                            "proposed_class": "scanned_document",
+                            "proposed_tag": "scrapbooks",
+                            "proposed_secondary_tags": ["scrapbook_page"],
+                            "corrected_class": None,
+                            "corrected_tag": None,
+                            "corrected_secondary_tags": [],
+                            "notes": None,
+                            "created_at": None,
+                            "updated_at": None,
+                        }
+                    ]
+                )
+            if "from model_usage mu" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "usage-id",
+                            "run_id": "run-id",
+                            "run_key": "run-report",
+                            "source_path": "/source/scrapbook.pdf",
+                            "relative_path": "History/scrapbook.pdf",
+                            "node": "embed_chunks",
+                            "purpose": "chunk_embedding",
+                            "provider": "cortex",
+                            "model": "local-embedding",
+                            "status": "ok",
+                            "call_count": 1,
+                            "input_tokens": None,
+                            "output_tokens": None,
+                            "total_tokens": None,
+                            "runtime_ms": 12,
+                            "local_only": True,
+                            "metadata": {},
+                            "created_at": None,
+                        }
+                    ]
+                )
+            if "from provider_attempts pa" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "attempt-id",
+                            "run_id": "run-id",
+                            "run_key": "run-report",
+                            "source_path": "/source/scrapbook.pdf",
+                            "relative_path": "History/scrapbook.pdf",
+                            "provider": "docling",
+                            "capability": "extraction",
+                            "status": "extracted",
+                            "strategy": "ocr_page_level",
+                            "runtime_ms": 420,
+                            "warnings": [],
+                            "metadata": {"local_only": True},
+                            "created_at": None,
+                        }
+                    ]
+                )
+            if "from document_segments ds" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "segment-row-id",
+                            "run_id": "run-id",
+                            "run_key": "run-report",
+                            "source_path": "/source/scrapbook.pdf",
+                            "relative_path": "History/scrapbook.pdf",
+                            "segment_id": "scrapbook:segment-001",
+                            "parent_file_id": "file-id",
+                            "page_start": 1,
+                            "page_end": 4,
+                            "segment_index": 1,
+                            "segment_type": "scrapbook_page_group",
+                            "segment_title": "Scrapbook pages 1-4",
+                            "segment_confidence": 0.62,
+                            "requires_segment_review": True,
+                            "boundary_evidence": ["matched:scrapbook", "fixed_window:4_pages"],
+                            "metadata": {"policy": "review_only"},
+                            "created_at": None,
+                        }
+                    ]
+                )
+            return _Cursor()
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+    store = PostgresPipelineStore("postgresql://local/test", connect_factory=lambda _url: connection)
+
+    report = store.get_run_report(run_key="run-report", limit=10)
+
+    assert report["run"]["run_key"] == "run-report"
+    assert report["results"][0]["top_tag_candidate"] == "scrapbooks"
+    assert report["review_items"][0]["segment_id"] == "scrapbook:segment-001"
+    assert report["model_usage"][0]["provider"] == "cortex"
+    assert report["provider_attempts"][0]["provider"] == "docling"
+    assert report["document_segments"][0]["segment_type"] == "scrapbook_page_group"
+    assert report["document_segments"][0]["requires_segment_review"] is True
+    assert any(params == ("run-report", 10) for _query, params in connection.executed)
+    assert connection.closed is True
+
+
 def test_postgres_pipeline_store_records_review_decision() -> None:
     class FakeConnection:
         def __init__(self) -> None:
