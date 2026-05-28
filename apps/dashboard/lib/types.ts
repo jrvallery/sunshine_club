@@ -378,8 +378,13 @@ export type PostgresRunReport = {
 };
 
 export type GoldenLabel = {
-  id: number;
-  review_item_id?: number | null;
+  id: number | string;
+  source?: "sqlite" | "postgres";
+  review_item_id?: number | string | null;
+  run_id?: number | string | null;
+  run_key?: string | null;
+  run_preset_key?: string | null;
+  segment_id?: string | null;
   source_path: string;
   relative_path: string;
   sample_path?: string | null;

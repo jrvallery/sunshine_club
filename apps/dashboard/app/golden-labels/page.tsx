@@ -7,7 +7,7 @@ import { Button } from "../../components/ui/Button";
 import { CheckboxField, SelectInput, TextArea, TextInput } from "../../components/ui/FormControls";
 import { KeyValue } from "../../components/ui/KeyValue";
 import { MultiTagPicker, TagPicker } from "../../components/ui/TagPicker";
-import { deleteJson, fetchJson, patchJson, postJson } from "../../lib/api";
+import { deleteJson, fetchJson, patchJson, postJson, queryString } from "../../lib/api";
 import { contentClassOptions, ocrQualityOptions, primaryTagOptions, privacyOptions, secondaryTagOptions } from "../../lib/taxonomy";
 import type { GoldenLabel, GoldenLabelSummary, SemanticIndexStatus } from "../../lib/types";
 
@@ -17,26 +17,27 @@ export default function GoldenLabelsPage() {
   const [onlyMismatches, setOnlyMismatches] = useState(false);
   const [primaryFilter, setPrimaryFilter] = useState("");
   const [secondaryFilter, setSecondaryFilter] = useState("");
+  const [source, setSource] = useState<"sqlite" | "postgres">("sqlite");
   const labels = useQuery({
-    queryKey: ["golden-labels"],
-    queryFn: () => fetchJson<GoldenLabel[]>("/api/admin/review/golden-labels?limit=500")
+    queryKey: ["golden-labels", source],
+    queryFn: () => fetchJson<GoldenLabel[]>(`/api/admin/review/golden-labels${queryString({ limit: 500, source })}`)
   });
   const summary = useQuery({
-    queryKey: ["golden-label-summary"],
-    queryFn: () => fetchJson<GoldenLabelSummary>("/api/admin/review/golden-labels/summary")
+    queryKey: ["golden-label-summary", source],
+    queryFn: () => fetchJson<GoldenLabelSummary>(`/api/admin/review/golden-labels/summary${queryString({ source })}`)
   });
   const indexStatus = useQuery({
     queryKey: ["semantic-index-status"],
     queryFn: () => fetchJson<SemanticIndexStatus>("/api/admin/semantic-index/status")
   });
   const buildIndex = useMutation({
-    mutationFn: () => postJson<{ ok: boolean; status: SemanticIndexStatus }>("/api/admin/semantic-index/build", {}),
+    mutationFn: () => postJson<{ ok: boolean; status: SemanticIndexStatus }>("/api/admin/semantic-index/build", { labels_source: source }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["semantic-index-status"] });
     }
   });
   const updateLabel = useMutation({
-    mutationFn: (payload: { id: number; body: Record<string, unknown> }) =>
+    mutationFn: (payload: { id: number | string; body: Record<string, unknown> }) =>
       patchJson<GoldenLabel>(`/api/admin/review/golden-labels/${payload.id}`, payload.body),
     onSuccess: async (label) => {
       setSelected(label);
@@ -47,7 +48,7 @@ export default function GoldenLabelsPage() {
     }
   });
   const deleteLabel = useMutation({
-    mutationFn: (id: number) => deleteJson<{ deleted: boolean }>(`/api/admin/review/golden-labels/${id}`),
+    mutationFn: (id: number | string) => deleteJson<{ deleted: boolean }>(`/api/admin/review/golden-labels/${id}`),
     onSuccess: async () => {
       setSelected(null);
       await Promise.all([
@@ -69,12 +70,19 @@ export default function GoldenLabelsPage() {
         <div>
           <p className="eyebrow">Training</p>
           <h1>Golden Labels</h1>
+          <p className="muted">{source === "postgres" ? "V2 Postgres runtime labels" : "Legacy SQLite review labels"}</p>
         </div>
         <div className="metricStrip">
           <Metric label="Total labels" value={summary.data?.total_golden_labels ?? 0} />
           <Metric label="Primary coverage" value={formatPercent(summary.data?.primary_coverage_rate)} />
           <Metric label="Indexed" value={indexStatus.data?.indexed ?? 0} />
           <Metric label="Mismatches" value={mismatchCount} />
+        </div>
+        <div className="buttonRow">
+          <select aria-label="Golden label source" value={source} onChange={(event) => setSource(event.target.value === "postgres" ? "postgres" : "sqlite")}>
+            <option value="sqlite">SQLite golden labels</option>
+            <option value="postgres">V2 Postgres labels</option>
+          </select>
         </div>
       </header>
 
@@ -88,6 +96,7 @@ export default function GoldenLabelsPage() {
             Provider: {indexStatus.data?.embedding_provider ?? "-"} / {indexStatus.data?.embedding_model ?? "-"} /{" "}
             {indexStatus.data?.embedding_dimensions ?? "-"} dims
           </p>
+          {source === "postgres" ? <p className="muted">Build exports V2 labels into a compatible local SQLite labels DB before indexing.</p> : null}
         </div>
         <Button variant="primary" disabled={buildIndex.isPending} onClick={() => buildIndex.mutate()}>
           {buildIndex.isPending ? "Building..." : "Build Semantic Index"}
@@ -100,10 +109,10 @@ export default function GoldenLabelsPage() {
           <p className="muted">Download the reviewed golden set for audit, backup, or command-line evaluation runs.</p>
         </div>
         <div className="buttonRow">
-          <a className="secondaryButton" href="/api/admin/review/golden-labels/export?format=csv&limit=10000" download>
+          <a className="secondaryButton" href={`/api/admin/review/golden-labels/export${queryString({ format: "csv", limit: 10000, source })}`} download>
             Export CSV
           </a>
-          <a className="secondaryButton" href="/api/admin/review/golden-labels/export?format=jsonl&limit=10000" download>
+          <a className="secondaryButton" href={`/api/admin/review/golden-labels/export${queryString({ format: "jsonl", limit: 10000, source })}`} download>
             Export JSONL
           </a>
         </div>
@@ -187,6 +196,7 @@ export default function GoldenLabelsPage() {
           onClose={() => setSelected(null)}
           onSave={(body) => updateLabel.mutate({ id: selected.id, body })}
           onDelete={() => deleteLabel.mutate(selected.id)}
+          editable={source === "sqlite"}
         />
       ) : null}
     </main>
@@ -199,7 +209,8 @@ function GoldenLabelDrawer({
   deleting,
   onClose,
   onSave,
-  onDelete
+  onDelete,
+  editable
 }: {
   label: GoldenLabel;
   saving: boolean;
@@ -207,6 +218,7 @@ function GoldenLabelDrawer({
   onClose: () => void;
   onSave: (body: Record<string, unknown>) => void;
   onDelete: () => void;
+  editable: boolean;
 }) {
   const [primary, setPrimary] = useState(label.correct_primary_tag);
   const [secondary, setSecondary] = useState(label.correct_secondary_tags);
@@ -235,8 +247,9 @@ function GoldenLabelDrawer({
         <section className="wideSection">
           <h3>Evidence</h3>
           <p className="pathText">{label.source_path}</p>
+          {label.source === "postgres" || label.segment_id ? <p className="muted">Segment {label.segment_id || "-"} Run {label.run_key || label.run_id || "-"}</p> : null}
           <div className="buttonRow">
-            <a className="primaryButton" href={`/api/admin/review/golden-labels/${label.id}/file`} target="_blank">
+            <a className={editable ? "primaryButton" : "secondaryButton"} href={editable ? `/api/admin/review/golden-labels/${label.id}/file` : undefined} target="_blank">
               Open Source File
             </a>
           </div>
@@ -290,7 +303,7 @@ function GoldenLabelDrawer({
             <TextArea label="Notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={5} />
             <Button
               variant="primary"
-              disabled={saving}
+              disabled={saving || !editable}
               onClick={() =>
                 onSave({
                   content_class: contentClass || null,
@@ -307,10 +320,10 @@ function GoldenLabelDrawer({
                 })
               }
             >
-              {saving ? "Saving..." : "Save Label"}
+              {saving ? "Saving..." : editable ? "Save Label" : "SQLite labels only"}
             </Button>
-            <Button variant="danger" disabled={deleting} onClick={onDelete}>
-              {deleting ? "Deleting..." : "Delete Label"}
+            <Button variant="danger" disabled={deleting || !editable} onClick={onDelete}>
+              {deleting ? "Deleting..." : editable ? "Delete Label" : "Delete disabled"}
             </Button>
           </div>
         </section>

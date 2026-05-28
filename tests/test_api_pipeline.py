@@ -400,6 +400,7 @@ def test_golden_labels_can_read_postgres_v2_source(monkeypatch) -> None:
 
     labels = TestClient(app).get("/admin/review/golden-labels", params={"source": "postgres"})
     summary = TestClient(app).get("/admin/review/golden-labels/summary", params={"source": "postgres"})
+    export = TestClient(app).get("/admin/review/golden-labels/export", params={"source": "postgres", "format": "csv"})
 
     assert labels.status_code == 200
     assert labels.json()[0]["source"] == "postgres"
@@ -407,6 +408,8 @@ def test_golden_labels_can_read_postgres_v2_source(monkeypatch) -> None:
     assert labels.json()[0]["segment_id"] == "seg-1"
     assert summary.status_code == 200
     assert summary.json()["total_golden_labels"] == 1
+    assert export.status_code == 200
+    assert "history_archive_general" in export.text
 
 
 def test_semantic_index_build_can_use_postgres_golden_labels(tmp_path: Path, monkeypatch) -> None:

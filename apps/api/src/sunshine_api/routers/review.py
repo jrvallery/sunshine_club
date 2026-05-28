@@ -152,8 +152,16 @@ def golden_labels(limit: int = 100, source: str = "sqlite") -> list[dict[str, An
 
 
 @router.get("/admin/review/golden-labels/export")
-def golden_labels_export(format: str = "csv", limit: int = 10000) -> StreamingResponse:
-    rows = review_store().golden_label_export_rows(limit=limit)
+def golden_labels_export(format: str = "csv", limit: int = 10000, source: str = "sqlite") -> StreamingResponse:
+    if source == "postgres":
+        try:
+            rows = [_postgres_golden_label_row(row) for row in list_postgres_golden_labels(limit=limit)]
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+    elif source == "sqlite":
+        rows = review_store().golden_label_export_rows(limit=limit)
+    else:
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
     normalized_format = format.strip().lower()
     if normalized_format == "jsonl":
         payload = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
