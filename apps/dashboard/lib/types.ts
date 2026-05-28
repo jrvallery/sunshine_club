@@ -412,6 +412,13 @@ export type PostgresRunReport = {
     existing_artifact_count?: number;
     missing_artifact_count?: number;
     artifact_total_size_bytes?: number;
+    processing_artifact_count?: number;
+    extraction_result_count?: number;
+    ocr_document_count?: number;
+    ocr_page_count?: number;
+    embedding_result_count?: number;
+    embedding_cache_hits?: number;
+    embedding_cache_misses?: number;
     parser_result_count?: number;
     parser_review_required_count?: number;
     run_event_count: number;
@@ -447,6 +454,10 @@ export type PostgresRunReport = {
     import_status?: Record<string, number>;
     artifact_kind?: Record<string, number>;
     artifact_exists?: Record<string, number>;
+    processing_artifact_type?: Record<string, number>;
+    processing_artifact_status?: Record<string, number>;
+    processing_artifact_quality?: Record<string, number>;
+    processing_artifact_provider?: Record<string, number>;
     parser_status?: Record<string, number>;
     parser_quality?: Record<string, number>;
     parser_provider?: Record<string, number>;
@@ -464,6 +475,7 @@ export type PostgresRunReport = {
   tagging_evidence?: Array<Record<string, unknown>>;
   file_metadata?: Array<Record<string, unknown>>;
   artifacts?: Array<Record<string, unknown>>;
+  processing_artifacts?: Array<Record<string, unknown>>;
   parser_results?: Array<Record<string, unknown>>;
   document_segments: Array<Record<string, unknown>>;
   chunks?: Array<Record<string, unknown>>;

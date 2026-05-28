@@ -72,6 +72,7 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
         "pipeline_tagging_evidence": 8,
         "pipeline_file_metadata": 5,
         "pipeline_artifacts": 1,
+        "pipeline_processing_artifacts": 4,
         "pipeline_parser_results": 1,
         "document_segments": 1,
         "review_items": 1,
@@ -91,6 +92,7 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
     assert "insert into pipeline_tagging_evidence" in executed_sql
     assert "insert into pipeline_file_metadata" in executed_sql
     assert "insert into pipeline_artifacts" in executed_sql
+    assert "insert into pipeline_processing_artifacts" in executed_sql
     assert "insert into pipeline_parser_results" in executed_sql
     assert "insert into document_segments" in executed_sql
     assert "insert into review_items_v2" in executed_sql
@@ -118,6 +120,8 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
     assert file_metadata_params[1:6] == ("/source/a.pdf", "Sunshine/a.pdf", "/sample/a.pdf", "source_identity", "file-a")
     artifact_params = next(params for query, params in connection.executed if "insert into pipeline_artifacts" in query)
     assert artifact_params[1:5] == ("sample-pipeline-results.jsonl", str(output_dir / "sample-pipeline-results.jsonl"), "jsonl", True)
+    processing_params = next(params for query, params in connection.executed if "insert into pipeline_processing_artifacts" in query)
+    assert processing_params[1:8] == ("/source/a.pdf", "Sunshine/a.pdf", "/sample/a.pdf", "extraction_result", "current", None, "extracted")
     parser_params = next(params for query, params in connection.executed if "insert into pipeline_parser_results" in query)
     assert parser_params[1:9] == (
         "/source/a.pdf",
@@ -455,6 +459,7 @@ def test_postgres_pipeline_store_reports_runtime_summary() -> None:
                     "pipeline_tagging_evidence": 5,
                     "pipeline_file_metadata": 5,
                     "pipeline_artifacts": 5,
+                    "pipeline_processing_artifacts": 5,
                     "pipeline_parser_results": 5,
                     "pipeline_run_events": 8,
                     "document_segments": 5,
@@ -531,6 +536,7 @@ def test_postgres_pipeline_store_reports_runtime_summary() -> None:
     assert summary["pipeline_results"] == 7
     assert summary["pipeline_run_events"] == 8
     assert summary["pipeline_artifacts"] == 5
+    assert summary["pipeline_processing_artifacts"] == 5
     assert summary["pipeline_parser_results"] == 5
     assert summary["pipeline_chunk_embeddings"] == 6
     assert summary["provider_benchmark_runs"] == 2
@@ -709,6 +715,7 @@ def test_postgres_pipeline_store_deletes_run_with_cascade_counts() -> None:
                         "pipeline_tagging_evidence": 11,
                         "pipeline_file_metadata": 12,
                         "pipeline_artifacts": 13,
+                        "pipeline_processing_artifacts": 14,
                         "pipeline_parser_results": 9,
                         "document_segments": 6,
                         "review_items": 7,
@@ -741,6 +748,7 @@ def test_postgres_pipeline_store_deletes_run_with_cascade_counts() -> None:
         "pipeline_tagging_evidence": 11,
         "pipeline_file_metadata": 12,
         "pipeline_artifacts": 13,
+        "pipeline_processing_artifacts": 14,
         "pipeline_parser_results": 9,
         "document_segments": 6,
         "review_items": 7,
@@ -789,6 +797,7 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
                             "tagging_evidence_count": 1,
                             "file_metadata_count": 1,
                             "artifact_count": 1,
+                            "processing_artifact_count": 4,
                             "parser_result_count": 1,
                             "document_segment_count": 1,
                         }
@@ -1013,6 +1022,107 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
                         }
                     ]
                 )
+            if "from pipeline_processing_artifacts ppa" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "processing-extraction-id",
+                            "run_id": "run-id",
+                            "run_key": "run-report",
+                            "source_path": "/source/scrapbook.pdf",
+                            "relative_path": "History/scrapbook.pdf",
+                            "sample_path": "/sample/scrapbook.pdf",
+                            "artifact_type": "extraction_result",
+                            "provider": "docling",
+                            "model": None,
+                            "status": "extracted",
+                            "quality": "ok",
+                            "strategy": "ocr_page_level",
+                            "page_number": None,
+                            "text_length": 2450,
+                            "requested_count": None,
+                            "embedded_count": None,
+                            "dimensions": None,
+                            "cache_hits": None,
+                            "cache_misses": None,
+                            "warnings": [],
+                            "result": {"text_snippet": "Scrapbook page text"},
+                            "created_at": None,
+                        },
+                        {
+                            "id": "processing-ocr-doc-id",
+                            "run_id": "run-id",
+                            "run_key": "run-report",
+                            "source_path": "/source/scrapbook.pdf",
+                            "relative_path": "History/scrapbook.pdf",
+                            "sample_path": "/sample/scrapbook.pdf",
+                            "artifact_type": "ocr_document",
+                            "provider": "docling",
+                            "model": None,
+                            "status": "ok",
+                            "quality": "ok",
+                            "strategy": "ocr_page_level",
+                            "page_number": None,
+                            "text_length": 2450,
+                            "requested_count": None,
+                            "embedded_count": None,
+                            "dimensions": None,
+                            "cache_hits": None,
+                            "cache_misses": None,
+                            "warnings": [],
+                            "result": {"page_count": 1},
+                            "created_at": None,
+                        },
+                        {
+                            "id": "processing-ocr-page-id",
+                            "run_id": "run-id",
+                            "run_key": "run-report",
+                            "source_path": "/source/scrapbook.pdf",
+                            "relative_path": "History/scrapbook.pdf",
+                            "sample_path": "/sample/scrapbook.pdf",
+                            "artifact_type": "ocr_page",
+                            "provider": "docling",
+                            "model": None,
+                            "status": "ok",
+                            "quality": "ok",
+                            "strategy": "ocr_page_level",
+                            "page_number": 1,
+                            "text_length": 1200,
+                            "requested_count": None,
+                            "embedded_count": None,
+                            "dimensions": None,
+                            "cache_hits": None,
+                            "cache_misses": None,
+                            "warnings": [],
+                            "result": {"text": "Scrapbook page text"},
+                            "created_at": None,
+                        },
+                        {
+                            "id": "processing-embedding-id",
+                            "run_id": "run-id",
+                            "run_key": "run-report",
+                            "source_path": "/source/scrapbook.pdf",
+                            "relative_path": "History/scrapbook.pdf",
+                            "sample_path": "/sample/scrapbook.pdf",
+                            "artifact_type": "embedding_result",
+                            "provider": "cortex",
+                            "model": "local-embedding",
+                            "status": "embedded",
+                            "quality": None,
+                            "strategy": None,
+                            "page_number": None,
+                            "text_length": None,
+                            "requested_count": 1,
+                            "embedded_count": 1,
+                            "dimensions": 768,
+                            "cache_hits": 0,
+                            "cache_misses": 1,
+                            "warnings": [],
+                            "result": {"embedding_status": "embedded"},
+                            "created_at": None,
+                        },
+                    ]
+                )
             if "from pipeline_parser_results ppr" in normalized:
                 return _Cursor(
                     rows=[
@@ -1145,6 +1255,12 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     assert report["summary"]["file_metadata_count"] == 1
     assert report["summary"]["artifact_count"] == 1
     assert report["summary"]["existing_artifact_count"] == 1
+    assert report["summary"]["processing_artifact_count"] == 4
+    assert report["summary"]["extraction_result_count"] == 1
+    assert report["summary"]["ocr_document_count"] == 1
+    assert report["summary"]["ocr_page_count"] == 1
+    assert report["summary"]["embedding_result_count"] == 1
+    assert report["summary"]["embedding_cache_misses"] == 1
     assert report["summary"]["parser_result_count"] == 1
     assert report["summary"]["parser_status"] == {"extracted": 1}
     assert report["summary"]["parser_quality"] == {"ok": 1}
@@ -1169,6 +1285,12 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     assert report["summary"]["file_media_type"] == {"pdf": 1}
     assert report["summary"]["artifact_kind"] == {"jsonl": 1}
     assert report["summary"]["artifact_exists"] == {"true": 1}
+    assert report["summary"]["processing_artifact_type"] == {
+        "embedding_result": 1,
+        "extraction_result": 1,
+        "ocr_document": 1,
+        "ocr_page": 1,
+    }
     assert report["results"][0]["top_tag_candidate"] == "scrapbooks"
     assert report["review_items"][0]["segment_id"] == "scrapbook:segment-001"
     assert report["model_usage"][0]["provider"] == "cortex"
@@ -1180,6 +1302,7 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     assert report["tagging_evidence"][0]["primary_tag"] == "scrapbooks"
     assert report["file_metadata"][0]["metadata_type"] == "file_probe"
     assert report["artifacts"][0]["name"] == "sample-pipeline-results.jsonl"
+    assert report["processing_artifacts"][0]["artifact_type"] == "extraction_result"
     assert report["parser_results"][0]["provider"] == "docling"
     assert report["parser_results"][0]["page_text_coverage_rate"] == 0.92
     assert report["chunks"][0]["chunk_kind"] == "segment_text"
@@ -2084,6 +2207,52 @@ def _postgres_import_artifacts(tmp_path: Path) -> Path:
         ],
     )
     _write_jsonl(
+        output_dir / "sample-extraction-results.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "sample_path": "/sample/a.pdf",
+                "provider": "current",
+                "extraction_status": "extracted",
+                "quality": "ok",
+                "extraction_strategy": "text_extraction",
+                "text_length": 37,
+                "text": "Meeting minutes and Sunshine Club notes.",
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-ocr-documents.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "sample_path": "/sample/a.pdf",
+                "provider": "current",
+                "status": "ok",
+                "quality": "ok",
+                "total_text_length": 37,
+                "page_count": 1,
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-ocr-pages.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "sample_path": "/sample/a.pdf",
+                "provider": "current",
+                "status": "ok",
+                "quality": "ok",
+                "page_number": 1,
+                "text": "Meeting minutes",
+            }
+        ],
+    )
+    _write_jsonl(
         output_dir / "sample-model-usage.jsonl",
         [
             {
@@ -2098,6 +2267,23 @@ def _postgres_import_artifacts(tmp_path: Path) -> Path:
                 "runtime_ms": 12,
                 "cost_basis": "local",
                 "metadata": {"call_count": 1, "host": "cortex.vallery.net"},
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-embedding-results.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "sample_path": "/sample/a.pdf",
+                "embedding_provider": "cortex",
+                "embedding_model": "local-embedding",
+                "embedding_status": "embedded",
+                "requested_count": 1,
+                "embedded_count": 1,
+                "dimensions": 3,
+                "metadata": {"cache_hits": 0, "cache_misses": 1},
             }
         ],
     )

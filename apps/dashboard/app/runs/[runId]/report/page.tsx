@@ -310,6 +310,7 @@ function PostgresRunReportView({
         <Metric label="Chunks" value={String(report.summary.chunk_count ?? report.chunks?.length ?? 0)} />
         <Metric label="Embeddings" value={String(report.summary.chunk_embedding_count ?? report.chunk_embeddings?.length ?? 0)} />
         <Metric label="Parser results" value={String(report.summary.parser_result_count ?? report.parser_results?.length ?? 0)} />
+        <Metric label="OCR pages" value={String(report.summary.ocr_page_count ?? 0)} />
         <Metric label="Parser review" value={String(report.summary.parser_review_required_count ?? 0)} />
         <Metric label="Model calls" value={String(modelCalls)} />
         <Metric label="Provider attempts" value={String(report.summary.provider_attempt_count ?? 0)} />
@@ -318,6 +319,7 @@ function PostgresRunReportView({
         <Metric label="Tag evidence" value={String(report.summary.tagging_evidence_count ?? report.tagging_evidence?.length ?? 0)} />
         <Metric label="Metadata rows" value={String(report.summary.file_metadata_count ?? report.file_metadata?.length ?? 0)} />
         <Metric label="Artifacts" value={String(report.summary.artifact_count ?? report.artifacts?.length ?? 0)} />
+        <Metric label="Processing rows" value={String(report.summary.processing_artifact_count ?? report.processing_artifacts?.length ?? 0)} />
         <Metric label="Graph events" value={String(report.summary.run_event_count ?? 0)} />
       </section>
 
@@ -374,6 +376,9 @@ function PostgresOverviewTab({ report }: { report: PostgresRunReport }) {
 
 function PostgresParserTab({ report }: { report: PostgresRunReport }) {
   const rows = report.parser_results ?? [];
+  const processingRows = report.processing_artifacts ?? [];
+  const ocrDocs = processingRows.filter((row) => row.artifact_type === "ocr_document");
+  const ocrPages = processingRows.filter((row) => row.artifact_type === "ocr_page");
   return (
     <section className="panel">
       <div className="sectionHeader">
@@ -384,14 +389,19 @@ function PostgresParserTab({ report }: { report: PostgresRunReport }) {
       </div>
       <div className="metrics compactMetrics">
         <Metric label="Rows" value={String(report.summary.parser_result_count ?? rows.length)} />
+        <Metric label="OCR docs" value={String(report.summary.ocr_document_count ?? ocrDocs.length)} />
+        <Metric label="OCR pages" value={String(report.summary.ocr_page_count ?? ocrPages.length)} />
         <Metric label="Needs review" value={String(report.summary.parser_review_required_count ?? 0)} />
       </div>
       <div className="reportGrid">
         <Breakdown title="Parser Status" values={report.summary.parser_status ?? {}} />
         <Breakdown title="Parser Quality" values={report.summary.parser_quality ?? {}} />
         <Breakdown title="Parser Provider" values={report.summary.parser_provider ?? {}} />
+        <Breakdown title="OCR Artifact Quality" values={countRowsByField([...ocrDocs, ...ocrPages], "quality")} />
       </div>
       <JsonTable title="Parser Rows" rows={rows} />
+      <JsonTable title="OCR Documents" rows={ocrDocs} />
+      <JsonTable title="OCR Pages" rows={ocrPages} />
     </section>
   );
 }
@@ -566,6 +576,7 @@ function ExtractionTab({ report, postgresReport }: { report: RunReport; postgres
 
 function PostgresExtractionTab({ report }: { report: PostgresRunReport }) {
   const rows = report.quality_checks ?? [];
+  const extractionRows = (report.processing_artifacts ?? []).filter((row) => row.artifact_type === "extraction_result");
   return (
     <section className="panel">
       <div className="sectionHeader">
@@ -576,13 +587,16 @@ function PostgresExtractionTab({ report }: { report: PostgresRunReport }) {
       </div>
       <div className="metrics compactMetrics">
         <Metric label="Rows" value={String(report.summary.quality_check_count ?? rows.length)} />
+        <Metric label="Extraction rows" value={String(report.summary.extraction_result_count ?? extractionRows.length)} />
         <Metric label="Needs review" value={String(report.summary.quality_review_required_count ?? 0)} />
       </div>
       <div className="reportGrid">
         <Breakdown title="Check Type" values={report.summary.quality_check_type ?? {}} />
         <Breakdown title="Status" values={report.summary.quality_check_status ?? {}} />
         <Breakdown title="Quality" values={report.summary.quality_check_quality ?? {}} />
+        <Breakdown title="Extraction Artifact Quality" values={countRowsByField(extractionRows, "quality")} />
       </div>
+      <JsonTable title="Extraction Result Rows" rows={extractionRows} />
       <JsonTable title="Quality Check Rows" rows={rows} />
     </section>
   );
@@ -618,6 +632,7 @@ function IndexingTab({ report, postgresReport }: { report: RunReport; postgresRe
 function PostgresIndexingTab({ report }: { report: PostgresRunReport }) {
   const chunks = report.chunks ?? [];
   const embeddings = report.chunk_embeddings ?? [];
+  const embeddingResults = (report.processing_artifacts ?? []).filter((row) => row.artifact_type === "embedding_result");
   return (
     <section className="panel">
       <div className="sectionHeader">
@@ -631,15 +646,20 @@ function PostgresIndexingTab({ report }: { report: PostgresRunReport }) {
         <Metric label="Embeddings" value={String(report.summary.chunk_embedding_count ?? embeddings.length)} />
         <Metric label="Semantic" value={String(report.summary.semantic_embedding_count ?? 0)} />
         <Metric label="Placeholder" value={String(report.summary.placeholder_embedding_count ?? 0)} />
+        <Metric label="Embedding result rows" value={String(report.summary.embedding_result_count ?? embeddingResults.length)} />
+        <Metric label="Cache hits" value={String(report.summary.embedding_cache_hits ?? 0)} />
+        <Metric label="Cache misses" value={String(report.summary.embedding_cache_misses ?? 0)} />
       </div>
       <div className="reportGrid">
         <Breakdown title="Chunk Kind" values={report.summary.chunk_kind ?? {}} />
         <Breakdown title="Embedding Status" values={report.summary.embedding_status ?? {}} />
         <Breakdown title="Embedding Provider" values={report.summary.embedding_provider ?? {}} />
         <Breakdown title="Embedding Model" values={report.summary.embedding_model ?? {}} />
+        <Breakdown title="Embedding Result Status" values={countRowsByField(embeddingResults, "status")} />
       </div>
       <JsonTable title="Chunks" rows={chunks} />
       <JsonTable title="Chunk Embeddings" rows={embeddings} />
+      <JsonTable title="Embedding Result Rows" rows={embeddingResults} />
     </section>
   );
 }
@@ -1266,6 +1286,15 @@ function recordNumberMap(value: unknown) {
   const result: Record<string, number> = {};
   for (const [key, count] of Object.entries(value as Record<string, unknown>)) {
     result[key] = Number(count) || 0;
+  }
+  return result;
+}
+
+function countRowsByField(rows: Array<Record<string, unknown>>, field: string) {
+  const result: Record<string, number> = {};
+  for (const row of rows) {
+    const key = String(row[field] ?? "unknown");
+    result[key] = (result[key] ?? 0) + 1;
   }
   return result;
 }
