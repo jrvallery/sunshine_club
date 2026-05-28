@@ -348,6 +348,12 @@ export type RunReport = {
   };
   ocr: { document_count: number; page_count: number; documents: Array<Record<string, unknown>>; pages: Array<Record<string, unknown>> };
   extraction: { count: number; items: Array<Record<string, unknown>> };
+  segments: {
+    count: number;
+    requires_review_count: number;
+    by_type: Record<string, number>;
+    items: Array<Record<string, unknown>>;
+  };
   provider_attempts: {
     count: number;
     by_provider: Record<string, number>;

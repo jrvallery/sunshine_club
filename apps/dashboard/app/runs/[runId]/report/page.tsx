@@ -223,7 +223,7 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
       {activeTab === "overview" ? <OverviewTab report={data} postgresReport={postgresData} postgresError={postgresReport.error} /> : null}
       {activeTab === "files" ? <FilesTab rows={fileRows} /> : null}
       {activeTab === "review" ? <ReviewQueueTab report={data} postgresReport={postgresData} /> : null}
-      {activeTab === "segments" ? <SegmentsTab postgresReport={postgresData} postgresError={postgresReport.error} /> : null}
+      {activeTab === "segments" ? <SegmentsTab report={data} postgresReport={postgresData} postgresError={postgresReport.error} /> : null}
       {activeTab === "training" ? <TrainingCycleTab report={data} /> : null}
       {activeTab === "ocr" ? <OcrTab report={data} /> : null}
       {activeTab === "indexing" ? <IndexingTab report={data} postgresReport={postgresData} /> : null}
@@ -620,7 +620,7 @@ function ReviewQueueTab({ report, postgresReport }: { report: RunReport; postgre
   );
 }
 
-function SegmentsTab({ postgresReport, postgresError }: { postgresReport?: PostgresRunReport; postgresError?: Error | null }) {
+function SegmentsTab({ report, postgresReport, postgresError }: { report?: RunReport; postgresReport?: PostgresRunReport; postgresError?: Error | null }) {
   const queryClient = useQueryClient();
   const runKey = String(postgresReport?.run?.run_key ?? "");
   const segmentDecision = useMutation({
@@ -633,6 +633,30 @@ function SegmentsTab({ postgresReport, postgresError }: { postgresReport?: Postg
       await queryClient.invalidateQueries({ queryKey: ["postgres-run-report", runKey] });
     }
   });
+  if (!postgresReport && report?.segments?.items?.length) {
+    return (
+      <section className="panel">
+        <div className="sectionHeader">
+          <div>
+            <h2>Document Segments</h2>
+            <span>{report.segments.items.length} logical page-range proposals from run artifacts</span>
+          </div>
+        </div>
+        <div className="runtimeCallout muted">
+          <strong>Artifact-backed segment report</strong>
+          <p>Import this run into Postgres to record accept, reject, or needs-split decisions against segment rows.</p>
+        </div>
+        <div className="metrics compactMetrics">
+          <Metric label="Segments" value={String(report.segments.count ?? report.segments.items.length)} />
+          <Metric label="Needs review" value={String(report.segments.requires_review_count ?? 0)} />
+        </div>
+        <div className="reportGrid">
+          <Breakdown title="Segment Type" values={report.segments.by_type ?? {}} />
+        </div>
+        <SegmentRows rows={report.segments.items} disabled onDecision={() => undefined} />
+      </section>
+    );
+  }
   if (!postgresReport) {
     return (
       <section className="panel">
