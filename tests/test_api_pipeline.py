@@ -240,6 +240,22 @@ def test_run_report_reads_live_graph_run_artifacts_before_batch_finalize(tmp_pat
         + "\n",
         encoding="utf-8",
     )
+    (second_run_dir / "sample-source-identity.jsonl").write_text(
+        json.dumps(
+            {
+                "file_id": "file-review",
+                "content_sha256": "a" * 64,
+                "size_bytes": 123,
+                "modified_at_ns": 1000,
+                "extension": ".pdf",
+                "source_path": "/source/review.pdf",
+                "relative_path": "Review/review.pdf",
+                "sample_path": str(second_run_dir / "review.pdf"),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     (second_run_dir / "sample-document-segments.jsonl").write_text(
         json.dumps(
             {
@@ -294,6 +310,8 @@ def test_run_report_reads_live_graph_run_artifacts_before_batch_finalize(tmp_pat
     assert payload["review_queue"]["count"] == 1
     assert payload["ocr"]["document_count"] == 1
     assert payload["ocr"]["page_count"] == 1
+    assert payload["source_identity"]["count"] == 1
+    assert payload["source_identity"]["items"][0]["file_id"] == "file-review"
     assert payload["extraction"]["count"] == 1
     assert payload["provider_attempts"]["count"] == 1
     assert payload["provider_attempts"]["by_provider"]["current"] == 1

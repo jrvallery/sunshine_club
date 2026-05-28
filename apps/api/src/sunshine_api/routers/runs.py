@@ -214,6 +214,7 @@ def run_report(run_id: int) -> dict[str, Any]:
     review_queue = _read_run_jsonl_with_live_fallback(output_dir, "sample-review-queue.jsonl", limit=200)
     ocr_documents = _read_run_jsonl_with_live_fallback(output_dir, "sample-ocr-documents.jsonl", limit=200)
     ocr_pages = _read_run_jsonl_with_live_fallback(output_dir, "sample-ocr-pages.jsonl", limit=200)
+    source_identity = _read_run_jsonl_with_live_fallback(output_dir, "sample-source-identity.jsonl", limit=500)
     extraction_results = _read_run_jsonl_with_live_fallback(output_dir, "sample-extraction-results.jsonl", limit=200)
     provider_attempts = store.list_provider_attempts(run_id) or _read_run_jsonl_with_live_fallback(output_dir, "sample-provider-attempts.jsonl", limit=500)
     document_segments = store.list_document_segments(run_id) or _read_run_jsonl_with_live_fallback(output_dir, "sample-document-segments.jsonl", limit=500)
@@ -249,6 +250,10 @@ def run_report(run_id: int) -> dict[str, Any]:
             "secondary_tags": _count_list_values(results, "secondary_tags"),
         },
         "files": _result_file_rows(results, limit=200),
+        "source_identity": {
+            "count": len(source_identity),
+            "items": source_identity[:100],
+        },
         "review_queue": {
             "count": len(review_items) if review_items else len(review_queue),
             "items": review_items[:100] if review_items else review_queue[:100],

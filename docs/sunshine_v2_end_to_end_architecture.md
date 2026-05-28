@@ -262,6 +262,12 @@ Success criteria:
 - Content changes are detectable.
 - Dashboard can group run results by same source file.
 
+Current implementation:
+
+- Graph has an explicit `identify_file` node after file loading.
+- The node computes `content_sha256`, size, extension, modified timestamp, and a stable content/source-based `file_id`.
+- Results are written to `sample-source-identity.jsonl` and copied onto `sample-pipeline-results.jsonl` rows for dashboard/report grouping.
+
 ### 3. `probe_file`
 
 Purpose:
@@ -1032,6 +1038,7 @@ Artifacts:
 - `graph-audit-events.jsonl`
 - `sample-pipeline-results.jsonl`
 - `sample-review-queue.jsonl`
+- `sample-source-identity.jsonl`
 - `sample-inputs.jsonl`
 - `sample-extraction-results.jsonl`
 - `sample-parser-results.jsonl`
@@ -1561,6 +1568,7 @@ Required artifacts:
 - `artifact-manifest.json`
 - `sample-pipeline-results.jsonl`
 - `sample-review-queue.jsonl`
+- `sample-source-identity.jsonl`
 - `sample-inputs.jsonl`
 - `sample-extraction-results.jsonl`
 - `sample-parser-results.jsonl`

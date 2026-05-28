@@ -27,6 +27,7 @@ def _persist_outputs(state: DocumentPipelineState) -> dict[str, Any]:
         "sample-pipeline-results.jsonl": [final_result],
         "sample-review-queue.jsonl": [_review_queue_row(final_result)] if _review_queue_row(final_result) else [],
     }
+    artifacts["sample-source-identity.jsonl"] = [state["source_identity"]] if state.get("source_identity") else []
     if state.get("sample") and state.get("content_class") and state.get("extraction_plan"):
         artifacts["sample-inputs.jsonl"] = [sample_input_row(state["sample"], state["content_class"], state["extraction_plan"])]
     if state.get("extraction_result") and state.get("extraction_quality"):
@@ -88,6 +89,10 @@ def _final_result_from_state(state: DocumentPipelineState) -> dict[str, Any]:
         )
         result["semantic_example_count"] = len(state.get("semantic_examples", []))
         result["semantic_examples"] = state.get("semantic_examples", [])[:5]
+        if state.get("source_identity"):
+            result["file_id"] = state["source_identity"].get("file_id")
+            result["content_sha256"] = state["source_identity"].get("content_sha256")
+            result["size_bytes"] = state["source_identity"].get("size_bytes")
         result["warnings"] = _unique_strings([*result.get("warnings", []), *state.get("warnings", [])])
         return result
     return {
@@ -134,4 +139,7 @@ def _final_result_from_state(state: DocumentPipelineState) -> dict[str, Any]:
         "review_reason": state.get("route", {}).get("review_reason", "graph_failed_before_extraction"),
         "warnings": state.get("warnings", []),
         "errors": state.get("errors", []),
+        "file_id": state.get("source_identity", {}).get("file_id") or state.get("file_id"),
+        "content_sha256": state.get("source_identity", {}).get("content_sha256"),
+        "size_bytes": state.get("source_identity", {}).get("size_bytes"),
     }

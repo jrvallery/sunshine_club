@@ -167,10 +167,13 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     segment_rows = [json.loads(line) for line in (output_dir / "sample-document-segments.jsonl").read_text().splitlines()]
     structure_rows = [json.loads(line) for line in (output_dir / "sample-structure.jsonl").read_text().splitlines()]
     provider_attempt_rows = [json.loads(line) for line in (output_dir / "sample-provider-attempts.jsonl").read_text().splitlines()]
+    source_identity_rows = [json.loads(line) for line in (output_dir / "sample-source-identity.jsonl").read_text().splitlines()]
 
     assert final_result["route_status"] == "route_candidate"
     assert final_result["top_tag_candidate"] == "annual_spring_tea"
     assert final_result["tag_assignment_source"] == "deterministic+llm"
+    assert final_result["file_id"] == result["file_id"]
+    assert len(final_result["content_sha256"]) == 64
     assert final_result["confidence_calibration"]["status"] == "calibrated"
     assert "semantic_index_missing" in final_result["warnings"]
     assert graph_result["final_result"]["top_tag_candidate"] == "annual_spring_tea"
@@ -190,9 +193,13 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert structure_rows[0]["text_length"] == len("Annual Sunshine Tea guest list and event notes.")
     assert structure_rows[0]["pages"][0]["quality"] == "text"
     assert provider_attempt_rows[0]["provider"] == "current"
+    assert source_identity_rows[0]["size_bytes"] == source.stat().st_size
+    assert len(source_identity_rows[0]["content_sha256"]) == 64
+    assert result["file_id"] == source_identity_rows[0]["file_id"]
     assert {row["purpose"] for row in model_usage_rows} == {"chunk_embedding", "semantic_retrieval_embedding", "tag_inspection"}
     assert [event["node"] for event in audit_events] == [
         "load_file_context",
+        "identify_file",
         "classify_content_type",
         "plan_extraction",
         "extract_content",

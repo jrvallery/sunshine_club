@@ -7,6 +7,7 @@ from typing import Any
 
 from sunshine_extraction.graph.state import DocumentPipelineState
 from sunshine_extraction.services.content import SampleFile
+from sunshine_extraction.services.identity import identify_source_file
 
 
 def _load_file_context(state: DocumentPipelineState) -> dict[str, Any]:
@@ -33,6 +34,14 @@ def _load_file_context(state: DocumentPipelineState) -> dict[str, Any]:
         "filename": input_path.name,
         "source_path": sample.source_path,
         "relative_path": sample.relative_path,
+    }
+
+def _identify_file(state: DocumentPipelineState) -> dict[str, Any]:
+    identity = identify_source_file(state["sample"])
+    return {
+        "file_id": identity["file_id"],
+        "source_identity": identity,
+        "index_metadata": {**state.get("index_metadata", {}), "source_identity": identity},
     }
 
 def _after_load_file_context(state: DocumentPipelineState) -> str:

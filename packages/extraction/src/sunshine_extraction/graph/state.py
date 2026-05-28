@@ -32,6 +32,7 @@ class DocumentPipelineState(TypedDict, total=False):
     thread_id: str
 
     sample: SampleFile
+    source_identity: dict[str, Any]
     content_class: dict[str, Any]
     extraction_plan: dict[str, Any]
     extraction_result: ExtractionResult
