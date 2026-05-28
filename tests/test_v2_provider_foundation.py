@@ -1333,6 +1333,48 @@ def test_segmentation_proposes_mixed_collection_page_ranges_from_page_text(tmp_p
     assert "page_signal:scrapbook_or_photo" in segments[0]["segment_boundary_evidence"]
 
 
+def test_segmentation_groups_related_consecutive_scrapbook_pages(tmp_path: Path) -> None:
+    source = tmp_path / "green_scrapbook.pdf"
+    source.write_text("fake", encoding="utf-8")
+    sample = _sample(source, relative_path="Sunshine shared folders/Scrapbooks/Green scrapbook.pdf")
+    extraction = ExtractionResult(
+        sample=sample,
+        plan={"strategy": "docling_layout", "document_subtype": "scrapbook"},
+        extraction_status="extracted",
+        text="Mixed scrapbook packet",
+        metadata={},
+        page_count=6,
+        warnings=[],
+    )
+
+    segments = propose_document_segments(
+        extraction,
+        file_id="file-related",
+        document_structure={
+            "page_count": 6,
+            "pages": [
+                {"page_number": 1, "text": "Longmont Ledger newspaper article headline about Sunshine"},
+                {"page_number": 2, "text": "continued from page 1 article column"},
+                {"page_number": 3, "text": "Scrapbook photograph caption at the annual tea"},
+                {"page_number": 4, "text": "Second photograph caption from the same scrapbook page"},
+                {"page_number": 5, "text": "Meeting minutes and dental report notes"},
+                {"page_number": 6, "text": "Agenda and minutes continued for the meeting"},
+            ],
+        },
+    )
+
+    assert [(segment["page_start"], segment["page_end"]) for segment in segments] == [(1, 2), (3, 4), (5, 6)]
+    assert [segment["segment_type"] for segment in segments] == [
+        "newspaper_article_group",
+        "scrapbook_page_group",
+        "meeting_packet_section",
+    ]
+    assert all(segment["requires_segment_review"] for segment in segments)
+    assert all(segment["metadata"]["policy"] == "related_page_groups" for segment in segments)
+    assert "page_topic:newspaper_or_article" in segments[0]["segment_boundary_evidence"]
+    assert "page_topic:meeting_packet" in segments[2]["segment_boundary_evidence"]
+
+
 def test_segmentation_uses_provider_structure_pages_when_ocr_pages_are_absent(tmp_path: Path) -> None:
     source = tmp_path / "docling_packet.pdf"
     source.write_text("fake", encoding="utf-8")

@@ -202,6 +202,8 @@ def _candidate_split_segments(
 ) -> list[DocumentSegment]:
     groups = _separator_page_groups(pages, page_count)
     if len(groups) < 2:
+        groups = _related_page_groups(pages, page_count)
+    if len(groups) < 2:
         groups = _page_level_groups(page_count) if page_count <= 50 else _fixed_page_windows(page_count, window_size=10)
 
     child_type_by_parent = {
@@ -214,6 +216,8 @@ def _candidate_split_segments(
         any("blank_separator" in evidence_item for evidence_item in group["evidence"])
         for group in groups
     ) else "page_level_review_candidates"
+    if any(any("related_page_topic" in evidence_item for evidence_item in group["evidence"]) for group in groups):
+        policy = "related_page_groups"
     if page_count > 50 and policy == "page_level_review_candidates":
         policy = "fixed_page_window_review_candidates"
 
@@ -233,7 +237,7 @@ def _candidate_split_segments(
             page_start=group["page_start"],
             page_end=group["page_end"],
             segment_index=index,
-            segment_type=child_type if group["page_start"] == group["page_end"] else segment_type,
+            segment_type=group.get("segment_type") or (child_type if group["page_start"] == group["page_end"] else segment_type),
             segment_title=_segment_title(extraction, group["page_start"], group["page_end"]),
             segment_confidence=0.45 if policy == "separator_page_groups" else 0.35,
             segment_boundary_evidence=[*evidence, *group["evidence"], f"policy:{policy}"],
@@ -299,6 +303,89 @@ def _page_collection_signals(text: str) -> set[str]:
     if any(term in text for term in ("founded", "history", "memorial", "tribute", "anniversary")):
         signals.add("historical_context")
     return signals
+
+
+def _related_page_groups(pages: list[dict[str, Any]], page_count: int) -> list[dict[str, Any]]:
+    if len(pages) < 2:
+        return []
+    groups: list[dict[str, Any]] = []
+    current_pages: list[dict[str, Any]] = []
+    current_topic: str | None = None
+
+    for page in pages:
+        page_number = int(page.get("page_number") or 0)
+        if page_number < 1 or _is_blank_separator(page):
+            if current_pages:
+                groups.append(_topic_group(current_pages, current_topic))
+                current_pages = []
+                current_topic = None
+            continue
+        topic = _page_topic(page, current_topic)
+        if current_pages and topic != current_topic:
+            groups.append(_topic_group(current_pages, current_topic))
+            current_pages = []
+        current_pages.append(page)
+        current_topic = topic
+
+    if current_pages:
+        groups.append(_topic_group(current_pages, current_topic))
+
+    if not any(group["page_end"] > group["page_start"] for group in groups):
+        return []
+    return groups if _groups_cover_pages(groups, page_count) else []
+
+
+def _page_topic(page: dict[str, Any], previous_topic: str | None) -> str:
+    text = str(page.get("text") or "").lower()
+    if any(term in text for term in ("continued from", "continued on", "continued", "same article", "same clipping")) and previous_topic:
+        return previous_topic
+    if any(term in text for term in ("newspaper", "ledger", "times-call", "times call", "article", "headline", "column")):
+        return "newspaper_or_article"
+    if any(term in text for term in ("scrapbook", "caption", "photograph", "photo", "image")):
+        return "scrapbook_or_photo"
+    if any(term in text for term in ("minutes", "agenda", "meeting")):
+        return "meeting_packet"
+    if any(term in text for term in ("budget", "treasurer", "financial", "balance", "expense", "income")):
+        return "financial_packet"
+    if any(term in text for term in ("founded", "history", "memorial", "tribute", "anniversary")):
+        return "historical_context"
+    return "unknown"
+
+
+def _topic_group(pages: list[dict[str, Any]], topic: str | None) -> dict[str, Any]:
+    topic_name = topic or "unknown"
+    page_start = int(pages[0].get("page_number") or 0)
+    page_end = int(pages[-1].get("page_number") or page_start)
+    text_length = sum(int(page.get("text_length") or len(str(page.get("text") or ""))) for page in pages)
+    word_count = sum(int(page.get("word_count") or len(str(page.get("text") or "").split())) for page in pages)
+    snippets = [str(page.get("text") or "").strip().replace("\n", " ")[:220] for page in pages if page.get("text")]
+    group = _group(
+        page_start,
+        page_end,
+        text_length,
+        word_count,
+        snippets,
+        [f"related_page_topic:{topic_name}", f"page_topic:{topic_name}"],
+    )
+    segment_type_by_topic = {
+        "newspaper_or_article": "newspaper_article_group",
+        "scrapbook_or_photo": "scrapbook_page_group",
+        "meeting_packet": "meeting_packet_section",
+        "financial_packet": "financial_packet_section",
+        "historical_context": "history_archive_section",
+    }
+    if topic_name in segment_type_by_topic:
+        group["segment_type"] = segment_type_by_topic[topic_name]
+    return group
+
+
+def _groups_cover_pages(groups: list[dict[str, Any]], page_count: int) -> bool:
+    covered = {
+        page_number
+        for group in groups
+        for page_number in range(int(group["page_start"]), int(group["page_end"]) + 1)
+    }
+    return covered == set(range(1, page_count + 1))
 
 
 def _separator_page_groups(pages: list[dict[str, Any]], page_count: int) -> list[dict[str, Any]]:
