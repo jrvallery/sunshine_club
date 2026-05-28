@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 
 from sunshine_api.dependencies import review_store
+from sunshine_api.services.imports import list_postgres_review_items
 from sunshine_api.schemas import (
     DocumentPipelineRunRequest,
     DocumentPipelineRunResponse,
@@ -254,6 +255,8 @@ def golden_label_file(label_id: int) -> FileResponse:
 def review_items(
     status: str = "open",
     limit: int = 100,
+    source: str = "sqlite",
+    run_key: str | None = None,
     q: str | None = None,
     route_status: str | None = None,
     review_reason: str | None = None,
@@ -273,6 +276,24 @@ def review_items(
     ocr_fallback_used: str | None = None,
     enable_llm_tags: bool | None = None,
 ) -> list[dict[str, Any]]:
+    if source == "postgres":
+        try:
+            rows = list_postgres_review_items(run_key=run_key, limit=limit)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return _postgres_review_rows(
+            rows,
+            status=status,
+            q=q,
+            route_status=route_status,
+            review_reason=review_reason,
+            primary_tag=primary_tag,
+            secondary_tag=secondary_tag,
+            content_class=content_class,
+            run_preset_key=run_preset_key,
+        )[: max(1, min(limit, 500))]
+    if source != "sqlite":
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
     return review_store().list_review_items(
         status=status,
         limit=limit,
@@ -300,6 +321,8 @@ def review_items(
 @router.get("/admin/review/facets")
 def review_facets(
     status: str = "open",
+    source: str = "sqlite",
+    run_key: str | None = None,
     q: str | None = None,
     route_status: str | None = None,
     review_reason: str | None = None,
@@ -319,6 +342,25 @@ def review_facets(
     ocr_fallback_used: str | None = None,
     enable_llm_tags: bool | None = None,
 ) -> dict[str, dict[str, int]]:
+    if source == "postgres":
+        try:
+            rows = list_postgres_review_items(run_key=run_key, limit=500)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        filtered = _postgres_review_rows(
+            rows,
+            status=status,
+            q=q,
+            route_status=route_status,
+            review_reason=review_reason,
+            primary_tag=primary_tag,
+            secondary_tag=secondary_tag,
+            content_class=content_class,
+            run_preset_key=run_preset_key,
+        )
+        return _postgres_review_facets(filtered)
+    if source != "sqlite":
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
     return review_store().review_facets(
         status=status,
         q=q,
@@ -435,3 +477,109 @@ def review_item_neighbors(item_id: int) -> list[dict[str, Any]]:
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     return list(item.get("result", {}).get("semantic_examples") or [])
+
+
+def _postgres_review_rows(
+    rows: list[dict[str, Any]],
+    *,
+    status: str,
+    q: str | None,
+    route_status: str | None,
+    review_reason: str | None,
+    primary_tag: str | None,
+    secondary_tag: str | None,
+    content_class: str | None,
+    run_preset_key: str | None,
+) -> list[dict[str, Any]]:
+    mapped = [_postgres_review_row(row) for row in rows]
+    return [
+        row
+        for row in mapped
+        if _matches_status(row, status)
+        and _matches_text(row, q)
+        and _matches_equal(row.get("route_status"), route_status)
+        and _matches_equal(row.get("review_reason"), review_reason)
+        and _matches_equal(row.get("proposed_tag"), primary_tag)
+        and _matches_equal(row.get("proposed_class"), content_class)
+        and _matches_equal(row.get("run_preset_key"), run_preset_key)
+        and (not secondary_tag or secondary_tag in (row.get("secondary_tags") or []))
+    ]
+
+
+def _postgres_review_row(row: dict[str, Any]) -> dict[str, Any]:
+    secondary_tags = row.get("proposed_secondary_tags") if isinstance(row.get("proposed_secondary_tags"), list) else []
+    corrected_secondary = row.get("corrected_secondary_tags") if isinstance(row.get("corrected_secondary_tags"), list) else []
+    return {
+        "id": row.get("id"),
+        "source": "postgres",
+        "source_path": row.get("source_path"),
+        "relative_path": row.get("relative_path"),
+        "route_status": "review_required",
+        "review_reason": row.get("review_reason"),
+        "status": row.get("status") or "open",
+        "proposed_class": row.get("proposed_class"),
+        "proposed_tag": row.get("proposed_tag"),
+        "secondary_tags": secondary_tags,
+        "extraction_text_snippet": None,
+        "confidence": None,
+        "warnings": [],
+        "display_warnings": [],
+        "run_id": row.get("run_id"),
+        "run_key": row.get("run_key"),
+        "run_preset_key": row.get("preset_key"),
+        "decision": row.get("status"),
+        "correct_class": row.get("corrected_class"),
+        "correct_tag": row.get("corrected_tag"),
+        "correct_secondary_tags": corrected_secondary,
+        "notes": row.get("notes"),
+        "segment_id": row.get("segment_id"),
+        "created_at": row.get("created_at"),
+        "updated_at": row.get("updated_at"),
+        "result": {
+            "source_path": row.get("source_path"),
+            "relative_path": row.get("relative_path"),
+            "final_class": row.get("proposed_class"),
+            "top_tag_candidate": row.get("proposed_tag"),
+            "secondary_tags": secondary_tags,
+            "route_status": "review_required",
+            "review_reason": row.get("review_reason"),
+            "placement_status": "needs_review",
+            "quality": None,
+            "warnings": [],
+        },
+    }
+
+
+def _postgres_review_facets(rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    return {
+        "review_status": _facet_count(rows, "status"),
+        "run": _facet_count(rows, "run_key"),
+        "preset": _facet_count(rows, "run_preset_key"),
+        "review_reason": _facet_count(rows, "review_reason"),
+        "primary_tag": _facet_count(rows, "proposed_tag"),
+        "content_class": _facet_count(rows, "proposed_class"),
+    }
+
+
+def _facet_count(rows: list[dict[str, Any]], field: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        key = str(row.get(field) or "unknown")
+        counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _matches_status(row: dict[str, Any], status: str) -> bool:
+    return status == "all" or row.get("status") == status
+
+
+def _matches_text(row: dict[str, Any], q: str | None) -> bool:
+    if not q:
+        return True
+    needle = q.lower()
+    values = [row.get("relative_path"), row.get("source_path"), row.get("review_reason"), row.get("notes")]
+    return any(needle in str(value or "").lower() for value in values)
+
+
+def _matches_equal(actual: Any, expected: str | None) -> bool:
+    return not expected or str(actual or "") == expected

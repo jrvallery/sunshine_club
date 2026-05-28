@@ -285,6 +285,67 @@ def test_provider_benchmark_api_runs_current_provider(tmp_path: Path) -> None:
     assert latest.json()["parser_results"][0]["text_snippet"] == "Meeting minutes and Sunshine Club notes."
 
 
+def test_review_items_can_read_postgres_v2_source(monkeypatch) -> None:
+    rows = [
+        {
+            "id": "review-1",
+            "run_id": "run-db-id",
+            "run_key": "qa_samples_full-1",
+            "preset_key": "qa_samples_full",
+            "source_path": "/mnt/sunshine/history.pdf",
+            "relative_path": "History/history.pdf",
+            "segment_id": "seg-1",
+            "status": "open",
+            "review_reason": "needs_segment_review",
+            "proposed_class": "scanned_document",
+            "proposed_tag": "scrapbooks",
+            "proposed_secondary_tags": ["history_archive"],
+            "corrected_class": None,
+            "corrected_tag": None,
+            "corrected_secondary_tags": [],
+            "notes": "segment proposal",
+        },
+        {
+            "id": "review-2",
+            "run_id": "run-db-id",
+            "run_key": "qa_samples_full-1",
+            "preset_key": "qa_samples_full",
+            "source_path": "/mnt/sunshine/finance.pdf",
+            "relative_path": "Finance/finance.pdf",
+            "segment_id": None,
+            "status": "accepted",
+            "review_reason": "accepted",
+            "proposed_class": "document",
+            "proposed_tag": "finance_treasurer_records",
+            "proposed_secondary_tags": [],
+            "corrected_class": "document",
+            "corrected_tag": "finance_treasurer_records",
+            "corrected_secondary_tags": [],
+            "notes": None,
+        },
+    ]
+    monkeypatch.setattr("sunshine_api.routers.review.list_postgres_review_items", lambda **kwargs: rows)
+
+    response = TestClient(app).get(
+        "/admin/review/items",
+        params={"source": "postgres", "status": "open", "primary_tag": "scrapbooks", "run_key": "qa_samples_full-1"},
+    )
+    facets = TestClient(app).get("/admin/review/facets", params={"source": "postgres", "status": "all"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 1
+    assert payload[0]["source"] == "postgres"
+    assert payload[0]["id"] == "review-1"
+    assert payload[0]["run_key"] == "qa_samples_full-1"
+    assert payload[0]["run_preset_key"] == "qa_samples_full"
+    assert payload[0]["secondary_tags"] == ["history_archive"]
+    assert payload[0]["result"]["top_tag_candidate"] == "scrapbooks"
+    assert facets.status_code == 200
+    assert facets.json()["primary_tag"]["scrapbooks"] == 1
+    assert facets.json()["review_status"]["accepted"] == 1
+
+
 def test_provider_benchmark_latest_returns_partial_incremental_artifacts(tmp_path: Path) -> None:
     output_dir = tmp_path / "provider-benchmark"
     output_dir.mkdir()
