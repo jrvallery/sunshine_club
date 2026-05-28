@@ -59,6 +59,11 @@ def resolve_route_decision(
             "route_status": "review_embedding_unavailable",
             "review_reason": "embedding_quality_unavailable",
         }
+    elif "document_segmentation_review_recommended" in active_warnings:
+        route = {
+            "route_status": "review_segment_boundary",
+            "review_reason": "segment_boundary_requires_review",
+        }
     else:
         route = resolve_route_or_review(
             tag_candidates,
@@ -128,6 +133,8 @@ def _priority(route_status: str, review_reason: object) -> str:
     reason = str(review_reason or "")
     if route_status == "route_candidate":
         return "none"
+    if "segment" in route_status or "segment" in reason:
+        return "medium"
     if "failed" in route_status or "missing" in reason:
         return "high"
     if "ocr" in route_status or "quality" in reason or "embedding" in reason:
@@ -141,6 +148,8 @@ def _review_stage(route_status: str, review_reason: object) -> str:
     reason = str(review_reason or "")
     if route_status == "route_candidate":
         return "accepted"
+    if "segment" in route_status or "segment" in reason:
+        return "needs_segment_review"
     if "ocr" in route_status or "extraction" in route_status or "quality" in reason:
         return "needs_ocr_review"
     if "tag" in route_status or "confidence" in reason:
@@ -187,4 +196,6 @@ def _route_evidence(
         evidence.append(f"placement_status:{placement.get('placement_status')}")
     if "embedding_quality_unavailable" in warnings:
         evidence.append("warning:embedding_quality_unavailable")
+    if "document_segmentation_review_recommended" in warnings:
+        evidence.append("warning:document_segmentation_review_recommended")
     return evidence

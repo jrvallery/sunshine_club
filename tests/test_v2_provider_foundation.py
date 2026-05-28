@@ -638,6 +638,29 @@ def test_route_decision_service_prioritizes_embedding_unavailable(tmp_path: Path
     assert "warning:embedding_quality_unavailable" in decision["evidence"]
 
 
+def test_route_decision_service_routes_segment_review_warning_to_review(tmp_path: Path) -> None:
+    source = tmp_path / "scrapbook.pdf"
+    source.write_text("Scrapbook packet text", encoding="utf-8")
+    sample = _sample(source, relative_path="History/Green scrapbook.pdf")
+
+    route, decision = resolve_route_decision(
+        sample=sample,
+        tag_candidates=[{"tag": "scrapbooks", "confidence": 0.97}],
+        extraction_quality={"quality": "ok"},
+        extraction_plan={"strategy": "ocr_page_level"},
+        warnings=["document_segmentation_review_recommended"],
+    )
+
+    assert route == {
+        "route_status": "review_segment_boundary",
+        "review_reason": "segment_boundary_requires_review",
+    }
+    assert decision["accepted"] is False
+    assert decision["priority"] == "medium"
+    assert decision["review_stage"] == "needs_segment_review"
+    assert "warning:document_segmentation_review_recommended" in decision["evidence"]
+
+
 def test_tagging_package_exposes_v2_boundaries() -> None:
     assert callable(assign_tag_candidates)
     assert callable(combine_tag_candidates)

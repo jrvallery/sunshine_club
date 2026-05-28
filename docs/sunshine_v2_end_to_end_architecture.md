@@ -763,6 +763,7 @@ Current implementation:
 - Docling/MinerU/RAGFlow layout outputs should feed this node as boundary evidence through normalized structure; they should not create child documents outside the segment-review contract.
 - `graph/nodes/segmentation.py` runs segmentation after structure normalization.
 - `graph/nodes/chunking.py` attaches single-segment IDs to chunks when safe.
+- The routing policy treats `document_segmentation_review_recommended` as a first-class review signal: files with proposed split boundaries route to `review_segment_boundary` with `needs_segment_review`, even if tagging confidence is high.
 - Segment proposals are artifacts only; no physical source files are split or modified.
 - Long mixed scrapbook PDFs are intentionally handled as proposed page-range child documents first. A later export/promote action can create physical child documents only after review accepts the page ranges.
 
