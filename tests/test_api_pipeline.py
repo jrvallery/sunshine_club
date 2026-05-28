@@ -46,6 +46,7 @@ def test_local_infrastructure_status_is_local_only(monkeypatch) -> None:
     monkeypatch.setenv("SUNSHINE_QDRANT_URL", "http://127.0.0.1:6333")
     monkeypatch.setenv("CORTEX_OPENAI_BASE_URL", "http://127.0.0.1:11434/v1")
     monkeypatch.setenv("CORTEX_MODEL", "gemma4-26b")
+    monkeypatch.setenv("TEMPORAL_ADDRESS", "localhost:7233")
 
     response = TestClient(app).get("/admin/system/local-infrastructure")
 
@@ -55,11 +56,16 @@ def test_local_infrastructure_status_is_local_only(monkeypatch) -> None:
     assert payload["policy"]["hosted_third_party_apis_allowed"] is False
     assert payload["policy"]["source_files_mutable"] is False
     assert payload["postgres"]["configured"] is True
+    assert payload["postgres"]["v2_migrations"]["complete"] is True
     assert payload["qdrant"]["provider"] == "qdrant"
     assert payload["qdrant"]["local_only"] is True
+    assert payload["qdrant_retrieval"]["provider"] == "qdrant"
     assert payload["docling"]["provider"] == "docling"
     assert payload["docling"]["local_only"] is True
     assert payload["cortex"]["configured"] is True
+    assert payload["temporal"]["configured"] is True
+    assert payload["temporal"]["worker_registered"] is True
+    assert payload["observability"]["local_only"] is True
 
 
 def test_run_request_rejects_hosted_openai_provider(tmp_path: Path, monkeypatch) -> None:
