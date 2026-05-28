@@ -99,6 +99,22 @@ def test_provider_benchmark_api_runs_current_provider(tmp_path: Path) -> None:
     assert latest.json()["results"][0]["provider"] == "current"
 
 
+def test_provider_benchmark_api_accepts_optional_local_providers(tmp_path: Path) -> None:
+    source = tmp_path / "scan.pdf"
+    source.write_bytes(b"fake pdf")
+    client = TestClient(app)
+
+    response = client.post(
+        "/admin/provider-benchmarks/run",
+        json={"paths": [str(source)], "providers": ["mineru", "ragflow_deepdoc", "unstructured"]},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["result_count"] == 3
+    assert payload["summary"]["local_only"] is True
+
+
 def test_model_usage_report_infers_calls_from_legacy_artifacts(tmp_path: Path) -> None:
     output_dir = tmp_path / "legacy-run"
     output_dir.mkdir()
