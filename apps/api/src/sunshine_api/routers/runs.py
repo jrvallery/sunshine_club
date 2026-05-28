@@ -222,6 +222,7 @@ def run_report(run_id: int) -> dict[str, Any]:
     document_segments = store.list_document_segments(run_id) or _read_run_jsonl_with_live_fallback(output_dir, "sample-document-segments.jsonl", limit=500)
     indexing_rows = _read_run_jsonl_with_live_fallback(output_dir, "sample-indexing.jsonl", limit=200)
     placement_proposals = _read_run_jsonl_with_live_fallback(output_dir, "sample-placement-proposals.jsonl", limit=500)
+    import_results = _read_run_jsonl_with_live_fallback(output_dir, "sample-import-results.jsonl", limit=100)
     model_usage_rows = store.list_model_usage(run_id) or _read_model_usage_artifact(output_dir, run_id=run_id)
     comparison = run_compare_previous(run_id)
     artifacts = _run_artifacts(output_dir)
@@ -325,6 +326,11 @@ def run_report(run_id: int) -> dict[str, Any]:
             "proposal_items": placement_proposals[:100],
         },
         "model_usage": _model_usage_report(model_usage_rows),
+        "imports": {
+            "count": len(import_results),
+            "by_status": _count_values(import_results, "import_status"),
+            "items": import_results[:25],
+        },
         "artifacts": artifacts,
         "diff": comparison,
         "training_cycle": training_cycle,

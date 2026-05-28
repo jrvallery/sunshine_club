@@ -11,6 +11,7 @@ from sunshine_extraction.providers.extraction import ExtractionProvider
 from sunshine_extraction.providers.vectorstores import VectorStoreProvider
 from sunshine_extraction.services.content import SampleFile
 from sunshine_extraction.services.extraction import ExtractionResult, OcrExecutor
+from sunshine_extraction.services.imports import RunResultsImporter
 from sunshine_extraction.services.tagging import LLMTagInspector
 
 
@@ -30,6 +31,7 @@ class DocumentPipelineState(TypedDict, total=False):
     retry_delay_seconds: float
     checkpoint_path: str
     thread_id: str
+    dashboard_run_id: int
 
     sample: SampleFile
     source_identity: dict[str, Any]
@@ -56,6 +58,7 @@ class DocumentPipelineState(TypedDict, total=False):
     placement_proposal: dict[str, Any]
     route: dict[str, Any]
     final_result: dict[str, Any]
+    import_result: dict[str, Any]
 
     warnings: list[str]
     errors: list[dict[str, Any]]
@@ -70,3 +73,4 @@ class DocumentPipelineDeps(TypedDict, total=False):
     llm_tag_inspector: LLMTagInspector
     ocr_executor: OcrExecutor
     semantic_index_path: str | None
+    run_results_importer: RunResultsImporter

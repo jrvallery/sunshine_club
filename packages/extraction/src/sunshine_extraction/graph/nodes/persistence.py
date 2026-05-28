@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from sunshine_extraction.graph.node_utils import _unique_strings
-from sunshine_extraction.graph.state import DocumentPipelineState
+from sunshine_extraction.graph.state import DocumentPipelineDeps, DocumentPipelineState
 from sunshine_extraction.graph.utils import _json_safe, _write_jsonl
 from sunshine_extraction.services.artifacts import extraction_result_row, sample_input_row, write_pipeline_result
 from sunshine_extraction.services.extraction import ExtractionResult
@@ -56,6 +56,13 @@ def _persist_outputs(state: DocumentPipelineState) -> dict[str, Any]:
     graph_result = _json_safe({**state, "final_result": final_result})
     (output_dir / "graph-result.json").write_text(json.dumps(graph_result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return {"final_result": final_result}
+
+
+def _import_run_results_node(state: DocumentPipelineState, deps: DocumentPipelineDeps) -> dict[str, Any]:
+    output_dir = Path(state["output_dir"])
+    import_result = deps["run_results_importer"].import_output(output_dir, run_id=state.get("dashboard_run_id"))
+    _write_jsonl(output_dir / "sample-import-results.jsonl", [import_result])
+    return {"import_result": import_result}
 
 def _review_queue_row(final_result: dict[str, Any]) -> dict[str, Any] | None:
     route_status = final_result.get("route_status")

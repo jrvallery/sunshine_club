@@ -357,6 +357,18 @@ def test_run_report_reads_live_graph_run_artifacts_before_batch_finalize(tmp_pat
         + "\n",
         encoding="utf-8",
     )
+    (second_run_dir / "sample-import-results.jsonl").write_text(
+        json.dumps(
+            {
+                "import_status": "skipped",
+                "importer": "noop",
+                "output_dir": str(second_run_dir),
+                "reason": "run_results_importer_not_configured",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     client = TestClient(app)
     run = client.post(
@@ -390,6 +402,8 @@ def test_run_report_reads_live_graph_run_artifacts_before_batch_finalize(tmp_pat
     assert payload["indexing"]["semantic_embedding_count"] == 1
     assert payload["placement"]["proposal_count"] == 1
     assert payload["placement"]["proposal_status"]["needs_review"] == 1
+    assert payload["imports"]["count"] == 1
+    assert payload["imports"]["by_status"]["skipped"] == 1
     assert payload["model_usage"]["summary"]["total_calls"] == 1
     assert payload["model_usage"]["summary"]["external_calls"] == 1
     assert payload["distributions"]["primary_tag"]["meeting_records"] == 1

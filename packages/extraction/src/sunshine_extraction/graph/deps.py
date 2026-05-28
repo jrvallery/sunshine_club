@@ -15,6 +15,7 @@ from sunshine_extraction.graph.state import DocumentPipelineDeps
 from sunshine_extraction.providers.extraction import ExtractionProvider, extraction_provider_from_env
 from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider, VectorStoreProvider
 from sunshine_extraction.services.extraction import OcrExecutor, ocr_executor_from_env
+from sunshine_extraction.services.imports import RunResultsImporter, run_results_importer_from_env
 from sunshine_extraction.services.tagging import LLMTagInspector, llm_tag_inspector_from_env
 
 SEMANTIC_INDEX_FROM_ENV = object()
@@ -28,6 +29,7 @@ def _resolve_deps(
     embedding_failure_mode: str | None = None,
     llm_tag_inspector: LLMTagInspector | None = None,
     ocr_executor: OcrExecutor | None = None,
+    run_results_importer: RunResultsImporter | None = None,
     semantic_index_path: str | Path | None | object = SEMANTIC_INDEX_FROM_ENV,
 ) -> DocumentPipelineDeps:
     if embedding_provider is None:
@@ -42,6 +44,7 @@ def _resolve_deps(
         "embedding_failure_mode": _embedding_failure_mode(embedding_failure_mode),
         "llm_tag_inspector": llm_tag_inspector or llm_tag_inspector_from_env(),
         "ocr_executor": ocr_executor or ocr_executor_from_env(),
+        "run_results_importer": run_results_importer or run_results_importer_from_env(),
         "semantic_index_path": _resolve_semantic_index_path(semantic_index_path),
     }
 

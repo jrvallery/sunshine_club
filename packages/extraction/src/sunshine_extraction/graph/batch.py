@@ -122,6 +122,7 @@ def run_document_batch(
         "sample-llm-tag-inspections.jsonl": [],
         "sample-tag-candidates.jsonl": [],
         "sample-model-usage.jsonl": [],
+        "sample-import-results.jsonl": [],
         "sample-pipeline-results.jsonl": [],
         "sample-review-queue.jsonl": [],
         "graph-audit-events.jsonl": [],
@@ -339,6 +340,8 @@ def _append_batch_rows(artifact_rows: dict[str, list[dict[str, Any]]], result: d
         artifact_rows["sample-llm-tag-inspections.jsonl"].append(llm_inspection_row(sample, llm_tag_inspection))
     artifact_rows["sample-tag-candidates.jsonl"].extend(result.get("tag_candidates", []))
     artifact_rows["sample-model-usage.jsonl"].extend(result.get("model_usage", []))
+    if result.get("import_result"):
+        artifact_rows["sample-import-results.jsonl"].append(result["import_result"])
     if result.get("final_result"):
         artifact_rows["sample-pipeline-results.jsonl"].append(result["final_result"])
         review_row = _review_queue_row(result["final_result"])

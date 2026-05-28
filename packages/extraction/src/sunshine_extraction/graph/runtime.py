@@ -67,6 +67,7 @@ from sunshine_extraction.graph.deps import SEMANTIC_INDEX_FROM_ENV, _resolve_dep
 from sunshine_extraction.graph.utils import _json_safe, _write_jsonl
 from sunshine_extraction.providers.extraction import ExtractionProvider
 from sunshine_extraction.providers.vectorstores import VectorStoreProvider
+from sunshine_extraction.services.imports import RunResultsImporter
 
 def run_document_graph(
     input_file: str | Path,
@@ -86,6 +87,8 @@ def run_document_graph(
     embedding_failure_mode: str | None = None,
     llm_tag_inspector: LLMTagInspector | None = None,
     ocr_executor: OcrExecutor | None = None,
+    run_results_importer: RunResultsImporter | None = None,
+    dashboard_run_id: int | None = None,
     semantic_index_path: str | Path | None | object = SEMANTIC_INDEX_FROM_ENV,
     progress: bool = False,
     checkpoint_path: str | Path | None = None,
@@ -124,6 +127,8 @@ def run_document_graph(
         state["content_class"] = content_class
     if extraction_plan is not None:
         state["extraction_plan"] = extraction_plan
+    if dashboard_run_id is not None:
+        state["dashboard_run_id"] = dashboard_run_id
 
     deps = _resolve_deps(
         extraction_provider=extraction_provider,
@@ -132,6 +137,7 @@ def run_document_graph(
         embedding_failure_mode=embedding_failure_mode,
         llm_tag_inspector=llm_tag_inspector,
         ocr_executor=ocr_executor,
+        run_results_importer=run_results_importer,
         semantic_index_path=semantic_index_path,
     )
     config = {"configurable": {"thread_id": active_thread_id}}

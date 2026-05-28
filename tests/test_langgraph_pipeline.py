@@ -173,6 +173,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     probe_rows = [json.loads(line) for line in (output_dir / "sample-file-probes.jsonl").read_text().splitlines()]
     provider_selection_rows = [json.loads(line) for line in (output_dir / "sample-provider-selections.jsonl").read_text().splitlines()]
     placement_rows = [json.loads(line) for line in (output_dir / "sample-placement-proposals.jsonl").read_text().splitlines()]
+    import_rows = [json.loads(line) for line in (output_dir / "sample-import-results.jsonl").read_text().splitlines()]
 
     assert final_result["route_status"] == "route_candidate"
     assert final_result["top_tag_candidate"] == "annual_spring_tea"
@@ -208,6 +209,8 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert placement_rows[0]["primary_tag"] == "annual_spring_tea"
     assert placement_rows[0]["proposal"]["placement_status"] == "needs_review"
     assert placement_rows[0]["proposal"]["placement_rule"] == "by_year"
+    assert import_rows[0]["import_status"] == "skipped"
+    assert import_rows[0]["importer"] == "noop"
     assert {row["purpose"] for row in model_usage_rows} == {"chunk_embedding", "semantic_retrieval_embedding", "tag_inspection"}
     assert [event["node"] for event in audit_events] == [
         "load_file_context",
@@ -232,6 +235,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
         "propose_placement",
         "resolve_route_or_review",
         "persist_outputs",
+        "import_run_results",
     ]
 
 
@@ -425,6 +429,7 @@ def test_langgraph_missing_file_persists_failure_state(tmp_path: Path) -> None:
     graph_result = json.loads((output_dir / "graph-result.json").read_text())
     pipeline_rows = [json.loads(line) for line in (output_dir / "sample-pipeline-results.jsonl").read_text().splitlines()]
     review_rows = [json.loads(line) for line in (output_dir / "sample-review-queue.jsonl").read_text().splitlines()]
+    import_rows = [json.loads(line) for line in (output_dir / "sample-import-results.jsonl").read_text().splitlines()]
 
     assert final_result["route_status"] == "review_failed_extraction"
     assert final_result["review_reason"] == "file_missing"
@@ -432,7 +437,8 @@ def test_langgraph_missing_file_persists_failure_state(tmp_path: Path) -> None:
     assert graph_result["errors"][0]["error_type"] == "file_missing"
     assert pipeline_rows == [final_result]
     assert review_rows[0]["review_reason"] == "file_missing"
-    assert [event["node"] for event in audit_events] == ["load_file_context", "persist_outputs"]
+    assert import_rows[0]["import_status"] == "skipped"
+    assert [event["node"] for event in audit_events] == ["load_file_context", "persist_outputs", "import_run_results"]
 
 
 def test_langgraph_batch_aggregates_artifacts_and_continues_after_file_failure(tmp_path: Path) -> None:

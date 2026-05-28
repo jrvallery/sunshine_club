@@ -1076,6 +1076,7 @@ Artifacts:
 - `sample-tag-candidates.jsonl`
 - `sample-placement-proposals.jsonl`
 - `sample-model-usage.jsonl`
+- `sample-import-results.jsonl`
 - `artifact-manifest.json`
 
 Success criteria:
@@ -1108,6 +1109,13 @@ Success criteria:
 - Dashboard updates while run is active.
 - Imported rows preserve run ID/provider configuration.
 - Delete run removes only run-owned dashboard state/artifacts, never source files.
+
+Current implementation:
+
+- Graph has an explicit `import_run_results` node after `persist_artifacts`.
+- The default importer is no-op and writes `sample-import-results.jsonl` with `import_status=skipped`, so CLI/test runs remain side-effect free.
+- An opt-in SQLite review-store importer can be enabled through `SUNSHINE_GRAPH_IMPORT_RESULTS=sqlite` or injected graph deps.
+- Run reports expose import status rows, while the existing dashboard runner can continue importing completed subprocess output with its known dashboard run ID.
 
 ## Target Folder Structure
 
@@ -1608,6 +1616,7 @@ Required artifacts:
 - `sample-tag-candidates.jsonl`
 - `sample-placement-proposals.jsonl`
 - `sample-model-usage.jsonl`
+- `sample-import-results.jsonl`
 - `sample-provider-attempts.jsonl`
 
 Rules:

@@ -103,4 +103,6 @@ def _node_summary(name: str, updates: dict[str, Any]) -> str:
         return f"route {updates['route'].get('route_status')}"
     if name == "persist_outputs":
         return "persisted graph outputs"
+    if name == "import_run_results" and updates.get("import_result"):
+        return f"import {updates['import_result'].get('import_status')}"
     return "completed"

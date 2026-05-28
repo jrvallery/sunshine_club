@@ -20,7 +20,7 @@ from sunshine_extraction.graph.nodes.extraction import (
     _validate_text_extraction_node,
 )
 from sunshine_extraction.graph.nodes.loading import _after_load_file_context, _identify_file, _load_file_context
-from sunshine_extraction.graph.nodes.persistence import _persist_outputs
+from sunshine_extraction.graph.nodes.persistence import _import_run_results_node, _persist_outputs
 from sunshine_extraction.graph.nodes.placement import _propose_placement_node
 from sunshine_extraction.graph.nodes.probing import _probe_file
 from sunshine_extraction.graph.nodes.routing import _resolve_route_or_review_node
@@ -53,6 +53,7 @@ def build_document_graph(deps: DocumentPipelineDeps | None = None, *, checkpoint
     builder.add_node("propose_placement", lambda state: _run_node("propose_placement", state, _propose_placement_node))
     builder.add_node("resolve_route_or_review", lambda state: _run_node("resolve_route_or_review", state, _resolve_route_or_review_node))
     builder.add_node("persist_outputs", lambda state: _run_node("persist_outputs", state, _persist_outputs))
+    builder.add_node("import_run_results", lambda state: _run_node("import_run_results", state, lambda active: _import_run_results_node(active, active_deps)))
 
     builder.add_edge(START, "load_file_context")
     builder.add_conditional_edges(
@@ -84,5 +85,6 @@ def build_document_graph(deps: DocumentPipelineDeps | None = None, *, checkpoint
     builder.add_edge("calibrate_tag_confidence", "propose_placement")
     builder.add_edge("propose_placement", "resolve_route_or_review")
     builder.add_edge("resolve_route_or_review", "persist_outputs")
-    builder.add_edge("persist_outputs", END)
+    builder.add_edge("persist_outputs", "import_run_results")
+    builder.add_edge("import_run_results", END)
     return builder.compile(checkpointer=checkpointer)
