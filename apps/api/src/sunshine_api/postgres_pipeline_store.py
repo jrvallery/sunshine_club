@@ -50,6 +50,7 @@ class PostgresPipelineStore:
                 "model_usage": self._import_model_usage(connection, run_id, output_path),
                 "provider_attempts": self._import_provider_attempts(connection, run_id, output_path),
                 "document_segments": self._import_document_segments(connection, run_id, output_path),
+                "review_items": self._import_review_items(connection, run_id, output_path),
             }
             connection.commit()
         finally:
@@ -301,6 +302,36 @@ class PostgresPipelineStore:
             )
         return len(rows)
 
+    def _import_review_items(self, connection: PostgresConnection, run_id: str, output_path: Path) -> int:
+        rows = _read_jsonl(output_path / "sample-review-queue.jsonl")
+        connection.execute("delete from review_items_v2 where run_id = %s", (run_id,))
+        imported = 0
+        for row in rows:
+            source_path = row.get("source_path") or row.get("sample_path")
+            if not source_path:
+                continue
+            connection.execute(
+                """
+                insert into review_items_v2 (
+                    run_id, source_path, relative_path, segment_id, status, review_reason,
+                    proposed_class, proposed_tag, proposed_secondary_tags, notes
+                ) values (%s, %s, %s, %s, 'open', %s, %s, %s, %s::jsonb, %s)
+                """,
+                (
+                    run_id,
+                    source_path,
+                    row.get("relative_path"),
+                    row.get("segment_id"),
+                    row.get("review_reason") or row.get("route_status") or "review_required",
+                    row.get("final_class"),
+                    row.get("top_tag_candidate"),
+                    json.dumps(row.get("secondary_tags") or []),
+                    _review_notes(row),
+                ),
+            )
+            imported += 1
+        return imported
+
 
 def _connect_with_psycopg(database_url: str) -> PostgresConnection:
     import psycopg
@@ -370,3 +401,15 @@ def _vector_literal(value: Any) -> str | None:
     if not isinstance(value, list) or not all(isinstance(item, int | float) for item in value):
         return None
     return "[" + ",".join(str(float(item)) for item in value) + "]"
+
+
+def _review_notes(row: dict[str, Any]) -> str | None:
+    warnings = row.get("warnings")
+    parts = [
+        f"route_status={row.get('route_status')}" if row.get("route_status") else None,
+        f"quality={row.get('quality')}" if row.get("quality") else None,
+        f"tag_confidence={row.get('tag_confidence')}" if row.get("tag_confidence") is not None else None,
+        "warnings=" + ";".join(map(str, warnings)) if isinstance(warnings, list) and warnings else None,
+    ]
+    note = " | ".join(part for part in parts if part)
+    return note or None

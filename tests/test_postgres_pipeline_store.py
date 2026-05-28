@@ -60,6 +60,7 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
         "model_usage": 1,
         "provider_attempts": 1,
         "document_segments": 1,
+        "review_items": 1,
     }
     assert connection.committed is True
     assert connection.closed is True
@@ -71,7 +72,20 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
     assert "insert into model_usage" in executed_sql
     assert "insert into provider_attempts" in executed_sql
     assert "insert into document_segments" in executed_sql
+    assert "insert into review_items_v2" in executed_sql
     assert any("[0.1,0.2,0.3]" in str(params) for _query, params in connection.executed)
+    provider_attempt_params = next(params for query, params in connection.executed if "insert into provider_attempts" in query)
+    assert provider_attempt_params[1:4] == ("/source/a.pdf", "Sunshine/a.pdf", "current")
+    review_item_params = next(params for query, params in connection.executed if "insert into review_items_v2" in query)
+    assert review_item_params[1:8] == (
+        "/source/a.pdf",
+        "Sunshine/a.pdf",
+        None,
+        "tag_confidence_below_threshold",
+        "document",
+        "meeting_records",
+        '["meeting_minutes"]',
+    )
 
 
 def test_postgres_import_service_wraps_store(tmp_path: Path) -> None:
@@ -337,6 +351,23 @@ def _postgres_import_artifacts(tmp_path: Path) -> Path:
                 "requires_segment_review": False,
                 "segment_boundary_evidence": ["default:single_document"],
                 "metadata": {},
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-review-queue.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "route_status": "review_tag_confidence_calibration",
+                "review_reason": "tag_confidence_below_threshold",
+                "final_class": "document",
+                "top_tag_candidate": "meeting_records",
+                "secondary_tags": ["meeting_minutes"],
+                "tag_confidence": 0.62,
+                "quality": "ok",
+                "warnings": [],
             }
         ],
     )
