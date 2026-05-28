@@ -138,12 +138,13 @@ def llm_tag_inspector_from_env(*, enabled: bool = True, provider_override: str |
         else:
             return LLMTagInspector()
     if provider_name in {"cortex", "openai-compatible"}:
+        from sunshine_extraction.providers.llm.cortex import CortexLLMTagInspector
+
         try:
-            return OpenAICompatibleLLMTagInspector(
+            return CortexLLMTagInspector(
                 api_key=os.environ.get("CORTEX_API_KEY") or os.environ.get("CORTEX_OPENAI_API_KEY", ""),
                 model=os.environ.get("CORTEX_MODEL", DEFAULT_CORTEX_MODEL),
                 base_url=os.environ.get("CORTEX_OPENAI_BASE_URL") or cortex_openai_base_url(os.environ.get("CORTEX_BASE_URL", DEFAULT_CORTEX_BASE_URL)),
-                provider_name="cortex",
                 timeout_seconds=float(os.environ.get("SUNSHINE_LLM_TAG_TIMEOUT_SECONDS", "120")),
             )
         except ValueError:

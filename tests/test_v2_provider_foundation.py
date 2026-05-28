@@ -17,7 +17,7 @@ from sunshine_extraction.providers.chunking import CurrentChunkingProvider
 from sunshine_extraction.providers.chunking.legacy import chunk_content as legacy_chunk_content
 from sunshine_extraction.providers.embeddings import CortexEmbeddingProvider, CurrentChunkEmbeddingProvider, HostedOpenAIEmbeddingProvider, embedding_cache_key
 from sunshine_extraction.providers.extraction import CurrentExtractionProvider, DoclingExtractionProvider, extraction_provider_from_env
-from sunshine_extraction.providers.llm import CurrentLLMTagInspectionProvider
+from sunshine_extraction.providers.llm import CortexLLMTagInspector, CurrentLLMTagInspectionProvider, HostedOpenAILLMTagInspector, llm_cache_key
 from sunshine_extraction.providers.retrieval import CurrentSemanticRetrievalProvider
 from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider
 from sunshine_extraction.domain.documents import IMAGE_EXTENSIONS, SPREADSHEET_EXTENSIONS, TEXT_EXTENSIONS, SampleFile
@@ -362,6 +362,24 @@ def test_current_llm_tag_inspection_provider_wraps_existing_behavior(tmp_path: P
     assert attempt.status == "inspected"
     assert attempt.input_tokens == 10
     assert attempt.total_tokens == 15
+
+
+def test_llm_provider_modules_expose_local_only_boundaries(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SUNSHINE_LLM_TAG_PROVIDER", "cortex")
+    monkeypatch.setenv("CORTEX_API_KEY", "local-test-key")
+    monkeypatch.delenv("CORTEX_OPENAI_BASE_URL", raising=False)
+    monkeypatch.setenv("CORTEX_BASE_URL", "http://cortex.local")
+    monkeypatch.setenv("CORTEX_MODEL", "gemma-local")
+
+    inspector = llm_tag_inspector_from_env()
+    cache_key = llm_cache_key(prompt="classify this", provider="cortex", model="gemma-local")
+
+    assert isinstance(inspector, CortexLLMTagInspector)
+    assert inspector.provider_name == "cortex"
+    assert inspector.base_url == "http://cortex.local/v1"
+    assert len(cache_key) == 64
+    with pytest.raises(ValueError):
+        HostedOpenAILLMTagInspector()
 
 
 def test_confidence_calibration_service_writes_auditable_row() -> None:

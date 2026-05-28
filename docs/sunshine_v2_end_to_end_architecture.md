@@ -1013,6 +1013,9 @@ Success criteria:
 Current implementation:
 
 - `providers/llm/base.py` defines the LLM tag inspection provider contract.
+- `providers/llm/cortex.py` defines the local Cortex/OpenAI-compatible LLM tag inspector.
+- `providers/llm/openai.py` is an explicit hosted-OpenAI policy boundary that raises because production is local-only.
+- `providers/llm/cache.py` defines deterministic prompt/model cache keys for the future persistent LLM cache.
 - `CurrentLLMTagInspectionProvider` wraps the existing local/OpenAI-compatible inspector shape and preserves structured inspection output.
 - `services/tagging/llm_inspection.py` owns prompt construction, structured-output normalization, disabled-inspector behavior, Cortex-compatible inspector creation, and LLM inspection artifact rows.
 - Graph runs write `sample-llm-tag-inspection-results.jsonl` with provider, model, status, token counts, warnings, and normalized metadata.
