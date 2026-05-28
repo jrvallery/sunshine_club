@@ -1063,6 +1063,7 @@ Current implementation:
 - Graph has an explicit `propose_placement` node after confidence calibration and before route/review.
 - The node writes `sample-placement-proposals.jsonl` with primary tag, raw placement proposal, date evidence, destination path, privacy, and placement status.
 - Final persistence still blocks/quarantines resolved placement when the route is not accepted, preserving the proposal while preventing unsafe auto-filing.
+- Placement quarantine now lives in `services/placement.py`, so graph persistence no longer imports that policy from the legacy sample pipeline.
 - Run reports summarize placement proposal counts/status separately from final routed placement status.
 
 ### 22. `route_or_review`

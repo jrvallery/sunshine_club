@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from sunshine_extraction.placement import resolve_tag_placement
+from sunshine_extraction.services.placement import quarantine_placement_for_review_route
 
 
 def test_resolve_flat_tag_placement_from_taxonomy_seed() -> None:
@@ -49,3 +50,17 @@ def test_unknown_primary_tag_goes_to_review_holding_area() -> None:
     assert placement["placement_status"] == "needs_review"
     assert placement["destination_path"] == "90_Intake_Needs_Review"
     assert placement["review_reason"] == "unknown_primary_tag"
+
+
+def test_quarantine_placement_blocks_resolved_destination_for_review_route() -> None:
+    placement = resolve_tag_placement("anniversary_125th", relative_path="125th/project plan.docx")
+
+    quarantined = quarantine_placement_for_review_route(
+        placement,
+        {"route_status": "review_low_confidence_tag", "review_reason": "tag_confidence_below_threshold"},
+    )
+
+    assert quarantined["placement_status"] == "needs_review"
+    assert quarantined["destination_path"] == "90_Intake_Needs_Review/09_125th_Anniversary"
+    assert quarantined["blocked_destination_path"] == "09_125th_Anniversary"
+    assert quarantined["placement_blocked_by_route"] is True

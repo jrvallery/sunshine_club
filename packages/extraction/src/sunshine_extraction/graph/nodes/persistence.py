@@ -12,8 +12,8 @@ from sunshine_extraction.graph.utils import _json_safe, _write_jsonl
 from sunshine_extraction.services.artifact_manifest import write_artifact_manifest
 from sunshine_extraction.services.artifacts import extraction_result_row, sample_input_row, write_pipeline_result
 from sunshine_extraction.services.extraction import ExtractionResult
+from sunshine_extraction.services.placement import quarantine_placement_for_review_route
 from sunshine_extraction.services.tagging import llm_inspection_row
-from sunshine_extraction.sample_pipeline import quarantine_placement_for_review_route
 
 
 def _persist_outputs(state: DocumentPipelineState) -> dict[str, Any]:
