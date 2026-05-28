@@ -102,6 +102,20 @@ export default function SettingsPage() {
     queryFn: () => fetchJson<PostgresRunDetail>(`/api/admin/system/postgres-runtime/runs/${encodeURIComponent(postgresRunKey)}`),
     retry: false
   });
+  const decidePostgresReviewItem = useMutation({
+    mutationFn: ({ item, decision }: { item: Record<string, unknown>; decision: "accept" | "defer" }) =>
+      postJson(`/api/admin/system/postgres-runtime/review-items/${encodeURIComponent(String(item.id))}/decision`, {
+        decision,
+        correct_class: decision === "accept" ? item.proposed_class : undefined,
+        correct_tag: decision === "accept" ? item.proposed_tag : undefined,
+        correct_secondary_tags: decision === "accept" ? item.proposed_secondary_tags : undefined,
+        notes: decision === "defer" ? "Deferred from Postgres runtime settings review." : "Accepted from Postgres runtime settings review."
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["postgres-review-items"] });
+      await queryClient.invalidateQueries({ queryKey: ["postgres-runtime"] });
+    }
+  });
   const rebuildQdrant = useMutation({
     mutationFn: () =>
       postJson<QdrantRebuildResponse>("/api/admin/vector-index/qdrant/rebuild", {
@@ -278,6 +292,7 @@ export default function SettingsPage() {
                   <th>Status</th>
                   <th>Reason</th>
                   <th>Proposed</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -293,6 +308,20 @@ export default function SettingsPage() {
                     <td>{String(item.status ?? "-")}</td>
                     <td>{String(item.review_reason ?? "-")}</td>
                     <td>{[item.proposed_class, item.proposed_tag].filter(Boolean).join(" / ") || "-"}</td>
+                    <td>
+                      {item.status === "open" ? (
+                        <div className="buttonRow">
+                          <Button disabled={decidePostgresReviewItem.isPending} onClick={() => decidePostgresReviewItem.mutate({ item, decision: "accept" })}>
+                            Accept
+                          </Button>
+                          <Button disabled={decidePostgresReviewItem.isPending} onClick={() => decidePostgresReviewItem.mutate({ item, decision: "defer" })}>
+                            Defer
+                          </Button>
+                        </div>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

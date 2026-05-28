@@ -34,7 +34,13 @@ router = APIRouter()
 from sunshine_core.models import FoundationRunRequest, ThinSliceOutcome
 from sunshine_core.repository import InMemoryFoundationRepository
 from sunshine_core.thin_slice import run_foundation_slice
-from sunshine_api.services.imports import get_postgres_pipeline_run, list_postgres_pipeline_runs, list_postgres_review_items, postgres_runtime_summary
+from sunshine_api.services.imports import (
+    get_postgres_pipeline_run,
+    list_postgres_pipeline_runs,
+    list_postgres_review_items,
+    postgres_runtime_summary,
+    record_postgres_review_decision,
+)
 from sunshine_api.services.local_infrastructure import local_infrastructure_status
 
 repository = InMemoryFoundationRepository()
@@ -69,6 +75,24 @@ def postgres_runtime_review_items(limit: int = 100, run_key: str | None = None) 
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     return {"ok": True, "run_key": run_key, "count": len(items), "items": items}
+
+
+@router.post("/admin/system/postgres-runtime/review-items/{item_id}/decision")
+def postgres_runtime_review_item_decision(item_id: str, request: ReviewDecisionRequest) -> dict[str, Any]:
+    try:
+        item = record_postgres_review_decision(
+            item_id,
+            decision=request.decision,
+            correct_class=request.correct_class,
+            correct_tag=request.correct_tag,
+            correct_secondary_tags=request.correct_secondary_tags,
+            notes=request.notes,
+        )
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"ok": True, "item": item}
 
 
 @router.get("/admin/system/postgres-runtime/runs/{run_key}")

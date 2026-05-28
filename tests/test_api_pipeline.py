@@ -95,6 +95,39 @@ def test_postgres_run_detail_endpoint_wraps_service(monkeypatch) -> None:
     assert captured == {"run_key": "run-1"}
 
 
+def test_postgres_review_decision_endpoint_wraps_service(monkeypatch) -> None:
+    captured = {}
+
+    def fake_record_decision(item_id: str, **kwargs) -> dict:
+        captured["item_id"] = item_id
+        captured.update(kwargs)
+        return {"id": item_id, "status": "changed", "corrected_tag": kwargs["correct_tag"]}
+
+    monkeypatch.setattr("sunshine_api.routers.health.record_postgres_review_decision", fake_record_decision)
+
+    response = TestClient(app).post(
+        "/admin/system/postgres-runtime/review-items/review-1/decision",
+        json={
+            "decision": "change",
+            "correct_class": "document",
+            "correct_tag": "history_archive_general",
+            "correct_secondary_tags": ["history_archive"],
+            "notes": "fixed",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["item"]["status"] == "changed"
+    assert captured == {
+        "item_id": "review-1",
+        "decision": "change",
+        "correct_class": "document",
+        "correct_tag": "history_archive_general",
+        "correct_secondary_tags": ["history_archive"],
+        "notes": "fixed",
+    }
+
+
 def test_local_infrastructure_status_is_local_only(monkeypatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://sunshine:local@localhost:5432/sunshine_club")
     monkeypatch.setenv("SUNSHINE_QDRANT_URL", "http://127.0.0.1:6333")

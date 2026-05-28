@@ -60,10 +60,33 @@ def list_postgres_review_items(
     return store.list_review_items(run_key=run_key, limit=limit)
 
 
+def record_postgres_review_decision(
+    item_id: str,
+    *,
+    decision: str,
+    correct_class: str | None = None,
+    correct_tag: str | None = None,
+    correct_secondary_tags: list[str] | None = None,
+    notes: str | None = None,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> dict[str, Any]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.record_review_decision(
+        item_id,
+        decision=decision,
+        correct_class=correct_class,
+        correct_tag=correct_tag,
+        correct_secondary_tags=correct_secondary_tags,
+        notes=notes,
+    )
+
+
 __all__ = [
     "import_langgraph_output_to_postgres",
     "get_postgres_pipeline_run",
     "list_postgres_pipeline_runs",
     "list_postgres_review_items",
     "postgres_runtime_summary",
+    "record_postgres_review_decision",
 ]

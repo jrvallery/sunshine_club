@@ -277,6 +277,77 @@ def test_postgres_pipeline_store_gets_run_detail_by_key() -> None:
     assert connection.closed is True
 
 
+def test_postgres_pipeline_store_records_review_decision() -> None:
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.closed = False
+            self.committed = False
+            self.executed: list[tuple[str, tuple[Any, ...]]] = []
+
+        def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
+            self.executed.append((query, params))
+            normalized = " ".join(query.lower().split())
+            if "select id, proposed_class" in normalized:
+                return _Cursor(
+                    {
+                        "id": "review-id",
+                        "proposed_class": "document",
+                        "proposed_tag": "meeting_records",
+                        "proposed_secondary_tags": ["meeting_minutes"],
+                        "notes": "existing",
+                    }
+                )
+            if "from review_items_v2 ri" in normalized:
+                return _Cursor(
+                    {
+                        "id": "review-id",
+                        "run_id": "run-id",
+                        "run_key": "run-1",
+                        "preset_key": "qa",
+                        "source_path": "/source/a.pdf",
+                        "relative_path": "Sunshine/a.pdf",
+                        "segment_id": None,
+                        "status": "changed",
+                        "review_reason": "tag_confidence_below_threshold",
+                        "proposed_class": "document",
+                        "proposed_tag": "meeting_records",
+                        "proposed_secondary_tags": ["meeting_minutes"],
+                        "corrected_class": "document",
+                        "corrected_tag": "history_archive_general",
+                        "corrected_secondary_tags": ["history_archive"],
+                        "notes": "existing\ncorrected after review",
+                        "created_at": None,
+                        "updated_at": None,
+                    }
+                )
+            return _Cursor()
+
+        def commit(self) -> None:
+            self.committed = True
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+    store = PostgresPipelineStore("postgresql://local/test", connect_factory=lambda _url: connection)
+
+    item = store.record_review_decision(
+        "review-id",
+        decision="change",
+        correct_class="document",
+        correct_tag="history_archive_general",
+        correct_secondary_tags=["history_archive"],
+        notes="corrected after review",
+    )
+
+    assert item["status"] == "changed"
+    assert item["corrected_tag"] == "history_archive_general"
+    assert connection.committed is True
+    update_params = next(params for query, params in connection.executed if "update review_items_v2" in query)
+    assert update_params[:5] == ("changed", "document", "history_archive_general", '["history_archive"]', "existing\ncorrected after review")
+    assert connection.closed is True
+
+
 def test_rebuild_qdrant_from_postgres_replays_semantic_embeddings() -> None:
     class FakeConnection:
         def __init__(self) -> None:

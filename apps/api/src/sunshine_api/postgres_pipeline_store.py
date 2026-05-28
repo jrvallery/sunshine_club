@@ -138,6 +138,91 @@ class PostgresPipelineStore:
         finally:
             connection.close()
 
+    def record_review_decision(
+        self,
+        item_id: str,
+        *,
+        decision: str,
+        correct_class: str | None = None,
+        correct_tag: str | None = None,
+        correct_secondary_tags: list[str] | None = None,
+        notes: str | None = None,
+    ) -> dict[str, Any]:
+        status = _review_status_from_decision(decision)
+        connection = self._connect_factory(self.database_url)
+        try:
+            existing = connection.execute(
+                """
+                select id, proposed_class, proposed_tag, proposed_secondary_tags, notes
+                from review_items_v2
+                where id = %s
+                """,
+                (item_id,),
+            ).fetchone()
+            if existing is None:
+                raise KeyError(f"Postgres review item not found: {item_id}")
+            existing_row = _row_to_dict(existing)
+            resolved_class = correct_class if correct_class is not None else (existing_row.get("proposed_class") if decision == "accept" else None)
+            resolved_tag = correct_tag if correct_tag is not None else (existing_row.get("proposed_tag") if decision == "accept" else None)
+            resolved_secondary = (
+                correct_secondary_tags
+                if correct_secondary_tags is not None
+                else (existing_row.get("proposed_secondary_tags") if decision == "accept" else [])
+            )
+            connection.execute(
+                """
+                update review_items_v2
+                set status = %s,
+                    corrected_class = %s,
+                    corrected_tag = %s,
+                    corrected_secondary_tags = %s::jsonb,
+                    notes = %s,
+                    updated_at = now()
+                where id = %s
+                """,
+                (
+                    status,
+                    resolved_class,
+                    resolved_tag,
+                    json.dumps(resolved_secondary or []),
+                    _append_note(existing_row.get("notes"), notes),
+                    item_id,
+                ),
+            )
+            connection.commit()
+            row = connection.execute(
+                """
+                select
+                    ri.id,
+                    ri.run_id,
+                    r.run_key,
+                    r.preset_key,
+                    ri.source_path,
+                    ri.relative_path,
+                    ri.segment_id,
+                    ri.status,
+                    ri.review_reason,
+                    ri.proposed_class,
+                    ri.proposed_tag,
+                    ri.proposed_secondary_tags,
+                    ri.corrected_class,
+                    ri.corrected_tag,
+                    ri.corrected_secondary_tags,
+                    ri.notes,
+                    ri.created_at,
+                    ri.updated_at
+                from review_items_v2 ri
+                left join pipeline_runs r on r.id = ri.run_id
+                where ri.id = %s
+                """,
+                (item_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Postgres review item not found after update: {item_id}")
+            return _json_safe_row(_row_to_dict(row))
+        finally:
+            connection.close()
+
     def _list_pipeline_runs(self, connection: PostgresConnection, *, limit: int) -> list[dict[str, Any]]:
         rows = connection.execute(
             """
@@ -558,3 +643,25 @@ def _review_notes(row: dict[str, Any]) -> str | None:
     ]
     note = " | ".join(part for part in parts if part)
     return note or None
+
+
+def _review_status_from_decision(decision: str) -> str:
+    normalized = (decision or "").strip().lower()
+    return {
+        "accept": "accepted",
+        "accepted": "accepted",
+        "change": "changed",
+        "changed": "changed",
+        "defer": "deferred",
+        "deferred": "deferred",
+        "reject": "rejected",
+        "rejected": "rejected",
+    }.get(normalized, "open")
+
+
+def _append_note(existing: Any, note: str | None) -> str | None:
+    existing_text = str(existing).strip() if existing else ""
+    note_text = str(note).strip() if note else ""
+    if existing_text and note_text:
+        return f"{existing_text}\n{note_text}"
+    return existing_text or note_text or None
