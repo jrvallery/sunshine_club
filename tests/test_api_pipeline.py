@@ -330,6 +330,29 @@ def test_run_report_reads_live_graph_run_artifacts_before_batch_finalize(tmp_pat
         + "\n",
         encoding="utf-8",
     )
+    (second_run_dir / "sample-quality-gates.jsonl").write_text(
+        json.dumps(
+            {
+                "source_path": "/source/review.pdf",
+                "relative_path": "Review/review.pdf",
+                "sample_path": str(second_run_dir / "review.pdf"),
+                "quality": "poor",
+                "can_chunk": True,
+                "can_embed": True,
+                "requires_review": True,
+                "extraction_status": "extracted",
+                "strategy": "ocr_page_level",
+                "provider": "current",
+                "text_length": 42,
+                "validation_status": "ok",
+                "validation_reason": None,
+                "repair_status": "not_needed",
+                "quality_evidence": ["quality:poor", "requires_review:true"],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     (second_run_dir / "sample-document-segments.jsonl").write_text(
         json.dumps(
             {
@@ -424,8 +447,11 @@ def test_run_report_reads_live_graph_run_artifacts_before_batch_finalize(tmp_pat
     assert payload["extraction"]["count"] == 1
     assert payload["extraction"]["validation_count"] == 1
     assert payload["extraction"]["repair_count"] == 1
+    assert payload["extraction"]["quality_gate_count"] == 1
     assert payload["extraction"]["validation_status"]["ok"] == 1
     assert payload["extraction"]["repair_status"]["not_needed"] == 1
+    assert payload["extraction"]["quality_gate_quality"]["poor"] == 1
+    assert payload["extraction"]["quality_gate_review_required"]["True"] == 1
     assert payload["provider_attempts"]["count"] == 1
     assert payload["provider_attempts"]["by_provider"]["current"] == 1
     assert payload["segments"]["count"] == 1

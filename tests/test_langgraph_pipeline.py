@@ -165,6 +165,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     indexing_rows = [json.loads(line) for line in (output_dir / "sample-indexing.jsonl").read_text().splitlines()]
     validation_rows = [json.loads(line) for line in (output_dir / "sample-extraction-validations.jsonl").read_text().splitlines()]
     repair_rows = [json.loads(line) for line in (output_dir / "sample-extraction-repairs.jsonl").read_text().splitlines()]
+    quality_gate_rows = [json.loads(line) for line in (output_dir / "sample-quality-gates.jsonl").read_text().splitlines()]
     semantic_rows = [json.loads(line) for line in (output_dir / "sample-semantic-examples.jsonl").read_text().splitlines()]
     llm_rows = [json.loads(line) for line in (output_dir / "sample-llm-tag-inspections.jsonl").read_text().splitlines()]
     model_usage_rows = [json.loads(line) for line in (output_dir / "sample-model-usage.jsonl").read_text().splitlines()]
@@ -195,6 +196,11 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert indexing_rows[0]["placeholder_embedding_count"] == 1
     assert validation_rows[0]["status"] == "ok"
     assert repair_rows[0]["status"] == "not_needed"
+    assert quality_gate_rows[0]["quality"] == "ok"
+    assert quality_gate_rows[0]["can_chunk"] is True
+    assert quality_gate_rows[0]["can_embed"] is True
+    assert quality_gate_rows[0]["requires_review"] is False
+    assert "validation:ok" in quality_gate_rows[0]["quality_evidence"]
     assert semantic_rows == []
     assert llm_rows[0]["primary_tag"] == "annual_spring_tea"
     assert segment_rows[0]["segment_type"] == "single_document"

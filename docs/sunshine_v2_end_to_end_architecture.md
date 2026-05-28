@@ -582,6 +582,12 @@ Success criteria:
 - Stable quality labels.
 - Per-provider quality breakdowns in reports.
 
+Current implementation:
+
+- Graph writes `sample-quality-gates.jsonl` from the `quality_gate` node.
+- Rows include `quality`, `can_chunk`, `can_embed`, `requires_review`, provider/strategy, validation status/reason, repair status, and quality evidence.
+- Run reports summarize quality gate counts, quality labels, and review-required flags separately from extraction result rows.
+
 ### 11. `normalize_document_structure`
 
 Purpose:
@@ -1078,6 +1084,7 @@ Artifacts:
 - `sample-extraction-results.jsonl`
 - `sample-extraction-validations.jsonl`
 - `sample-extraction-repairs.jsonl`
+- `sample-quality-gates.jsonl`
 - `sample-parser-results.jsonl`
 - `sample-ocr-pages.jsonl`
 - `sample-ocr-documents.jsonl`
@@ -1620,6 +1627,7 @@ Required artifacts:
 - `sample-extraction-results.jsonl`
 - `sample-extraction-validations.jsonl`
 - `sample-extraction-repairs.jsonl`
+- `sample-quality-gates.jsonl`
 - `sample-parser-results.jsonl`
 - `sample-ocr-pages.jsonl`
 - `sample-ocr-documents.jsonl`

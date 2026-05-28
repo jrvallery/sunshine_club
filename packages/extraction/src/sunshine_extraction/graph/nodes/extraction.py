@@ -156,7 +156,51 @@ def _with_text_validation(extraction: Any, validation: dict[str, Any]) -> Any:
     )
 
 def _quality_gate(state: DocumentPipelineState) -> dict[str, Any]:
-    return {"extraction_quality": extraction_quality_gate(state["extraction_result"])}
+    quality = extraction_quality_gate(state["extraction_result"])
+    row = {
+        "source_path": state["sample"].source_path,
+        "relative_path": state["sample"].relative_path,
+        "sample_path": str(state["sample"].sample_path),
+        "quality": quality.get("quality"),
+        "can_chunk": quality.get("can_chunk"),
+        "can_embed": quality.get("can_embed"),
+        "requires_review": quality.get("requires_review"),
+        "extraction_status": state["extraction_result"].extraction_status,
+        "strategy": state["extraction_result"].plan.get("strategy"),
+        "provider": state["extraction_result"].metadata.get("provider")
+        or state.get("extraction_provider_selection", {}).get("selected_provider"),
+        "text_length": len(state["extraction_result"].text or ""),
+        "validation_status": state.get("extraction_validation", {}).get("status"),
+        "validation_reason": state.get("extraction_validation", {}).get("reason"),
+        "repair_status": state.get("extraction_repair", {}).get("status"),
+        "quality_evidence": _quality_evidence(state, quality),
+    }
+    return {"extraction_quality": quality, "quality_gate_result": row}
+
+
+def _quality_evidence(state: DocumentPipelineState, quality: dict[str, Any]) -> list[str]:
+    evidence = [f"quality:{quality.get('quality')}"]
+    extraction = state["extraction_result"]
+    evidence.append(f"extraction_status:{extraction.extraction_status}")
+    if quality.get("requires_review"):
+        evidence.append("requires_review:true")
+    validation = state.get("extraction_validation", {})
+    if validation.get("status"):
+        evidence.append(f"validation:{validation.get('status')}")
+    if validation.get("reason"):
+        evidence.append(f"validation_reason:{validation.get('reason')}")
+    repair = state.get("extraction_repair", {})
+    if repair.get("status"):
+        evidence.append(f"repair:{repair.get('status')}")
+    ocr_document = extraction.metadata.get("ocr_document")
+    if isinstance(ocr_document, dict):
+        if ocr_document.get("quality"):
+            evidence.append(f"ocr_quality:{ocr_document.get('quality')}")
+        if ocr_document.get("mean_confidence") is not None:
+            evidence.append(f"ocr_mean_confidence:{ocr_document.get('mean_confidence')}")
+    if not extraction.text.strip() and extraction.metadata:
+        evidence.append("metadata_only_candidate")
+    return evidence
 
 def _normalize_document_structure_node(state: DocumentPipelineState) -> dict[str, Any]:
     return {

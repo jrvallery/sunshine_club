@@ -220,6 +220,7 @@ def run_report(run_id: int) -> dict[str, Any]:
     extraction_results = _read_run_jsonl_with_live_fallback(output_dir, "sample-extraction-results.jsonl", limit=200)
     extraction_validations = _read_run_jsonl_with_live_fallback(output_dir, "sample-extraction-validations.jsonl", limit=500)
     extraction_repairs = _read_run_jsonl_with_live_fallback(output_dir, "sample-extraction-repairs.jsonl", limit=500)
+    quality_gates = _read_run_jsonl_with_live_fallback(output_dir, "sample-quality-gates.jsonl", limit=500)
     provider_attempts = store.list_provider_attempts(run_id) or _read_run_jsonl_with_live_fallback(output_dir, "sample-provider-attempts.jsonl", limit=500)
     document_segments = store.list_document_segments(run_id) or _read_run_jsonl_with_live_fallback(output_dir, "sample-document-segments.jsonl", limit=500)
     indexing_rows = _read_run_jsonl_with_live_fallback(output_dir, "sample-indexing.jsonl", limit=200)
@@ -295,11 +296,15 @@ def run_report(run_id: int) -> dict[str, Any]:
             "count": len(extraction_results),
             "validation_count": len(extraction_validations),
             "repair_count": len(extraction_repairs),
+            "quality_gate_count": len(quality_gates),
             "validation_status": _count_values(extraction_validations, "status"),
             "repair_status": _count_values(extraction_repairs, "status"),
+            "quality_gate_quality": _count_values(quality_gates, "quality"),
+            "quality_gate_review_required": _count_values(quality_gates, "requires_review"),
             "items": extraction_results[:100],
             "validations": extraction_validations[:100],
             "repairs": extraction_repairs[:100],
+            "quality_gates": quality_gates[:100],
         },
         "provider_attempts": {
             "count": len(provider_attempts),
