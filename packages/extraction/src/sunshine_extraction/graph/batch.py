@@ -23,6 +23,8 @@ from sunshine_extraction.graph.runtime import run_document_graph
 from sunshine_extraction.graph.utils import _progress, _write_jsonl
 from sunshine_extraction.providers.chunking import ChunkingProvider
 from sunshine_extraction.providers.extraction import ExtractionProvider
+from sunshine_extraction.providers.reranking import RerankProvider
+from sunshine_extraction.providers.retrieval import SemanticRetrievalProvider
 from sunshine_extraction.services.artifacts import extraction_result_row, parser_result_row, sample_input_row
 from sunshine_extraction.services.artifacts.review_queue import build_review_queue_rows
 from sunshine_extraction.services.artifact_manifest import write_artifact_manifest
@@ -45,6 +47,8 @@ def run_document_batch(
     embedding_provider: EmbeddingProvider | None = None,
     llm_tag_inspector: LLMTagInspector | None = None,
     ocr_executor: OcrExecutor | None = None,
+    semantic_retrieval_provider: SemanticRetrievalProvider | None = None,
+    rerank_provider: RerankProvider | None = None,
     semantic_index_path: str | Path | None = None,
     semantic_retrieval_filter: dict[str, Any] | None = None,
     progress: bool = False,
@@ -143,6 +147,8 @@ def run_document_batch(
                         embedding_provider,
                         llm_tag_inspector,
                         ocr_executor,
+                        semantic_retrieval_provider,
+                        rerank_provider,
                         semantic_index_path,
                         semantic_retrieval_filter,
                     ),
@@ -170,6 +176,8 @@ def run_document_batch(
                         embedding_provider,
                         llm_tag_inspector,
                         ocr_executor,
+                        semantic_retrieval_provider,
+                        rerank_provider,
                         semantic_index_path,
                         semantic_retrieval_filter,
                     )
@@ -258,6 +266,8 @@ def _run_batch_item(
     embedding_provider: EmbeddingProvider | None,
     llm_tag_inspector: LLMTagInspector | None,
     ocr_executor: OcrExecutor | None,
+    semantic_retrieval_provider: SemanticRetrievalProvider | None,
+    rerank_provider: RerankProvider | None,
     semantic_index_path: str | Path | None,
     semantic_retrieval_filter: dict[str, Any] | None,
 ) -> dict[str, Any]:
@@ -280,6 +290,8 @@ def _run_batch_item(
         embedding_provider=embedding_provider,
         llm_tag_inspector=llm_tag_inspector,
         ocr_executor=ocr_executor,
+        semantic_retrieval_provider=semantic_retrieval_provider,
+        rerank_provider=rerank_provider,
         semantic_index_path=semantic_index_path,
         semantic_retrieval_filter=semantic_retrieval_filter,
         checkpoint_path=checkpoint_path,

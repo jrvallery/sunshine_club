@@ -19,6 +19,8 @@ from sunshine_extraction.services.artifact_manifest import write_artifact_manife
 from sunshine_extraction.providers.chunking import ChunkingProvider
 from sunshine_extraction.providers.extraction import ExtractionProvider
 from sunshine_extraction.providers.observability import ObservabilityProvider
+from sunshine_extraction.providers.reranking import RerankProvider
+from sunshine_extraction.providers.retrieval import SemanticRetrievalProvider
 from sunshine_extraction.providers.vectorstores import VectorStoreProvider
 from sunshine_extraction.services.extraction import OcrExecutor
 from sunshine_extraction.services.imports import RunResultsImporter
@@ -47,6 +49,8 @@ def run_document_graph(
     run_results_importer: RunResultsImporter | None = None,
     observability_provider: ObservabilityProvider | None = None,
     dashboard_run_id: int | None = None,
+    semantic_retrieval_provider: SemanticRetrievalProvider | None = None,
+    rerank_provider: RerankProvider | None = None,
     semantic_index_path: str | Path | None | object = SEMANTIC_INDEX_FROM_ENV,
     semantic_retrieval_filter: dict[str, Any] | None = None,
     progress: bool = False,
@@ -101,6 +105,8 @@ def run_document_graph(
         ocr_executor=ocr_executor,
         run_results_importer=run_results_importer,
         observability_provider=observability_provider,
+        semantic_retrieval_provider=semantic_retrieval_provider,
+        rerank_provider=rerank_provider,
         semantic_index_path=semantic_index_path,
         semantic_retrieval_filter=semantic_retrieval_filter,
     )

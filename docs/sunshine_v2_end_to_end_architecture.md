@@ -1004,6 +1004,7 @@ Current implementation:
 - Qdrant retrieval normalizes each match into a citation-first row with source path, relative path, chunk ID, segment ID, page range, text snippet, score, and a human-readable retrieval explanation. This keeps tagging evidence traceable back to the parent document and proposed child segment.
 - `providers/reranking/base.py` and `providers/reranking/cortex.py` define the Cortex reranking provider boundary for future reranked semantic examples.
 - The retrieval graph node can now apply an optional Cortex reranker after semantic retrieval when `SUNSHINE_RERANK_PROVIDER=cortex` or a reranker is injected. Rerank attempts are stored in retrieval metadata, reranked examples keep `rerank_score`, and model-usage rows record local rerank call counts.
+- Single-file and batch graph runtimes accept injected retrieval/rerank providers for controlled experiments, and the LangGraph CLI exposes `--rerank-provider cortex|disabled` for local provider comparison runs.
 - `graph/nodes/retrieval.py` owns the `retrieve_labeled_examples` node, separated from chunk embedding and vector indexing.
 - Graph runs write `sample-retrieval-results.jsonl` with provider, status, index path, query count, result count, warnings, and metadata.
 - Missing semantic indexes are explicit skipped retrieval attempts with `semantic_index_missing`, not silent absence.

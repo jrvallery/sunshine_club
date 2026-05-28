@@ -8,6 +8,8 @@ from pypdf import PdfWriter
 
 from sunshine_extraction.embeddings import EmbeddingProviderError, PlaceholderEmbeddingProvider
 from sunshine_extraction.providers.extraction import CurrentExtractionProvider, ExtractionProviderAttempt
+from sunshine_extraction.providers.reranking.base import RerankProviderAttempt
+from sunshine_extraction.providers.retrieval.base import SemanticRetrievalProviderAttempt
 from sunshine_extraction.semantic_index import build_semantic_index
 from sunshine_extraction.langgraph_pipeline import run_document_batch, run_document_graph
 from sunshine_extraction.domain.documents import SampleFile
@@ -36,6 +38,45 @@ class _FailingEmbeddingProvider:
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         raise EmbeddingProviderError("embedding service unavailable")
+
+
+class _FakeSemanticRetrievalProvider:
+    provider_name = "fake_retrieval"
+
+    def retrieve(self, *, index_path: str | None, query_text: str, limit: int, metadata_filter: dict | None = None):
+        del query_text, limit, metadata_filter
+        return [
+            {"correct_primary_tag": "press_publications", "text": "newspaper clipping", "score": 0.5},
+            {"correct_primary_tag": "history_archive_general", "text": "founders history", "score": 0.4},
+        ], SemanticRetrievalProviderAttempt(
+            provider=self.provider_name,
+            status="retrieved",
+            index_path=index_path,
+            query_count=1,
+            result_count=2,
+            warnings=[],
+            metadata={"local_only": True},
+        )
+
+
+class _FakeRerankProvider:
+    provider_name = "cortex"
+
+    def rerank(self, *, query_text: str, documents: list[dict], limit: int):
+        del query_text, limit
+        return [
+            {**documents[1], "rerank_score": 0.99},
+            {**documents[0], "rerank_score": 0.12},
+        ], RerankProviderAttempt(
+            provider=self.provider_name,
+            model="rerank-local",
+            status="reranked",
+            query_count=1,
+            input_count=2,
+            output_count=2,
+            warnings=[],
+            metadata={"local_only": True, "base_url": "http://cortex.local"},
+        )
 
 
 class _LocalRawExtractionProvider:
@@ -500,6 +541,33 @@ def test_langgraph_retrieves_labeled_examples_and_uses_them_as_tag_evidence(tmp_
     assert final_result["semantic_example_count"] == 1
     assert final_result["tag_assignment_source"] == "deterministic+semantic"
     assert any("semantic_example_agreement:history_archive_general" in evidence for evidence in final_result["tag_evidence"])
+
+
+def test_langgraph_runtime_accepts_retrieval_and_rerank_provider_injection(tmp_path: Path) -> None:
+    source = tmp_path / "founders.txt"
+    source.write_text("Founders of Sunshine Club organized in 1902 to help poor people.", encoding="utf-8")
+    output_dir = tmp_path / "graph-out"
+
+    result = run_document_graph(
+        source,
+        source_path="/source/current-founders.txt",
+        relative_path="Current yearbook/founders.txt",
+        output_dir=output_dir,
+        embedding_provider=PlaceholderEmbeddingProvider(dimensions=4),
+        llm_tag_inspector=LLMTagInspector(),
+        semantic_retrieval_provider=_FakeSemanticRetrievalProvider(),
+        rerank_provider=_FakeRerankProvider(),
+        semantic_index_path="semantic.sqlite",
+    )
+
+    retrieval_rows = [json.loads(line) for line in (output_dir / "sample-retrieval-results.jsonl").read_text().splitlines()]
+    semantic_rows = [json.loads(line) for line in (output_dir / "sample-semantic-examples.jsonl").read_text().splitlines()]
+    model_usage_rows = [json.loads(line) for line in (output_dir / "sample-model-usage.jsonl").read_text().splitlines()]
+
+    assert result["semantic_examples"][0]["correct_primary_tag"] == "history_archive_general"
+    assert semantic_rows[0]["rerank_score"] == 0.99
+    assert retrieval_rows[0]["metadata"]["rerank"]["status"] == "reranked"
+    assert any(row["purpose"] == "semantic_example_rerank" and row["metadata"]["call_count"] == 1 for row in model_usage_rows)
 
 
 def test_langgraph_embedding_failure_mode_routes_to_review_without_placeholder_fallback(tmp_path: Path) -> None:

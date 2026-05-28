@@ -41,6 +41,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--ocr-fallback-provider", choices=["cortex", "disabled"])
     parser.add_argument("--semantic-index-path")
     parser.add_argument("--semantic-retrieval-filter-json")
+    parser.add_argument("--rerank-provider", choices=["cortex", "disabled"])
     parser.add_argument("--checkpoint-path")
     parser.add_argument("--thread-id")
     parser.add_argument("--retry-attempts", type=int, default=1)
@@ -56,6 +57,8 @@ def main() -> None:
     load_pipeline_env()
     if args.embedding_provider:
         os.environ["SUNSHINE_EMBEDDING_PROVIDER"] = "placeholder" if args.embedding_provider == "disabled" else args.embedding_provider
+    if args.rerank_provider:
+        os.environ["SUNSHINE_RERANK_PROVIDER"] = args.rerank_provider
     extraction_provider = extraction_provider_from_env(args.extraction_provider)
     inspector = llm_tag_inspector_from_env(
         enabled=args.enable_llm_tags,
