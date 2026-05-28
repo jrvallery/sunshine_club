@@ -929,6 +929,9 @@ Current implementation:
 
 - `providers/retrieval/base.py` defines the semantic retrieval provider contract.
 - `CurrentSemanticRetrievalProvider` wraps the existing local SQLite semantic index and uses the configured embedding provider for query embedding.
+- `providers/retrieval/golden_examples.py` exposes the current SQLite golden-label retrieval provider under the V2 target name.
+- `providers/retrieval/qdrant.py` defines a local Qdrant retrieval boundary; it reports skipped until query-time reviewed-example retrieval is enabled.
+- `providers/reranking/base.py` and `providers/reranking/cortex.py` define the Cortex reranking provider boundary for future reranked semantic examples.
 - `graph/nodes/retrieval.py` owns the `retrieve_labeled_examples` node, separated from chunk embedding and vector indexing.
 - Graph runs write `sample-retrieval-results.jsonl` with provider, status, index path, query count, result count, warnings, and metadata.
 - Missing semantic indexes are explicit skipped retrieval attempts with `semantic_index_missing`, not silent absence.

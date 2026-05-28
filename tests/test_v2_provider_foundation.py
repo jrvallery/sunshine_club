@@ -18,7 +18,8 @@ from sunshine_extraction.providers.chunking.legacy import chunk_content as legac
 from sunshine_extraction.providers.embeddings import CortexEmbeddingProvider, CurrentChunkEmbeddingProvider, HostedOpenAIEmbeddingProvider, embedding_cache_key
 from sunshine_extraction.providers.extraction import CurrentExtractionProvider, DoclingExtractionProvider, extraction_provider_from_env
 from sunshine_extraction.providers.llm import CortexLLMTagInspector, CurrentLLMTagInspectionProvider, HostedOpenAILLMTagInspector, llm_cache_key
-from sunshine_extraction.providers.retrieval import CurrentSemanticRetrievalProvider
+from sunshine_extraction.providers.reranking import CortexRerankProvider
+from sunshine_extraction.providers.retrieval import CurrentSemanticRetrievalProvider, GoldenExampleRetrievalProvider, QdrantSemanticRetrievalProvider
 from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider
 from sunshine_extraction.domain.documents import IMAGE_EXTENSIONS, SPREADSHEET_EXTENSIONS, TEXT_EXTENSIONS, SampleFile
 from sunshine_extraction.services.artifacts.writers import extraction_result_row, sample_input_row, write_pipeline_result
@@ -330,6 +331,26 @@ def test_current_semantic_retrieval_provider_reports_missing_index() -> None:
     assert attempt.result_count == 0
     assert attempt.warnings == ["semantic_index_missing"]
     assert attempt.metadata["local_only"] is True
+
+
+def test_retrieval_and_rerank_provider_boundaries_are_local_only() -> None:
+    golden = GoldenExampleRetrievalProvider(PlaceholderEmbeddingProvider(dimensions=4))
+    qdrant = QdrantSemanticRetrievalProvider(url="http://127.0.0.1:6333", collection="sunshine-test")
+    reranker = CortexRerankProvider(api_key="", base_url="http://cortex.local", model="rerank-local")
+
+    qdrant_examples, qdrant_attempt = qdrant.retrieve(index_path=None, query_text="meeting", limit=3)
+    reranked, rerank_attempt = reranker.rerank(query_text="meeting", documents=[{"text": "minutes"}], limit=1)
+
+    assert golden.provider_name == "sqlite_semantic_index"
+    assert qdrant.dependency_status()["local_only"] is True
+    assert qdrant_examples == []
+    assert qdrant_attempt.provider == "qdrant"
+    assert qdrant_attempt.status == "skipped"
+    assert "qdrant_semantic_retrieval_not_enabled" in qdrant_attempt.warnings
+    assert reranked == [{"text": "minutes"}]
+    assert rerank_attempt.provider == "cortex"
+    assert rerank_attempt.status == "skipped"
+    assert rerank_attempt.metadata["local_only"] is True
 
 
 def test_current_llm_tag_inspection_provider_wraps_existing_behavior(tmp_path: Path) -> None:
