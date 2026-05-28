@@ -744,6 +744,9 @@ Success criteria:
 - Child segments carry parent source path, page range, extraction provider, and OCR quality.
 - Long scrapbook/newspaper PDFs become inspectable as page ranges in the dashboard.
 - Segment proposals can be promoted to accepted child documents by review decisions.
+- Segment proposals are evaluated separately from file-level tagging so a bad page-range split cannot silently become an accepted archival document.
+- The dashboard can show the parent packet, proposed child page ranges, extracted text snippets, thumbnails/page previews when available, and reviewer accept/merge/split/reject decisions.
+- Review decisions can create durable golden segment labels for future segmentation benchmarks.
 
 Implementation note:
 
@@ -768,6 +771,20 @@ Current implementation:
 - Segment proposals are artifacts only; no physical source files are split or modified.
 - Long mixed scrapbook PDFs are intentionally handled as proposed page-range child documents first. A later export/promote action can create physical child documents only after review accepts the page ranges.
 - Large conglomerate scrapbook PDFs, newspaper PDFs, and mixed historical packets are explicitly in scope for V2 as review-only logical splits. The current pass should preserve enough page-level structure to make splitting easy later; it should not attempt irreversible physical PDF splitting until segment proposals have dashboard review and benchmark-backed acceptance criteria.
+
+Segmentation benchmark criteria:
+
+- Benchmark samples must include scrapbook packets, newspaper packets, mixed historical packets, meeting/financial packets, and normal single-document PDFs so the segmenter learns when not to split.
+- Measure boundary precision, boundary recall, false split rate, missed split rate, segment title usefulness, and percent of proposed segments requiring manual correction.
+- A provider can improve boundary evidence only if it preserves page numbers and enough layout/text structure to map every child proposal back to the original parent file.
+- Automatic acceptance is not allowed until reviewed benchmark data shows low false-split risk. Until then, `propose_document_segments` emits review-only logical children.
+
+Physical split/export phase:
+
+- Physical child PDFs or derivative files are a later reviewed action, not part of default extraction.
+- Exported child documents must include parent file ID, source path, page range, source hash, extraction provider, reviewer decision ID, and generated artifact hash.
+- Re-running the same accepted segment decision must produce the same child artifact path and metadata.
+- Rejecting or changing a segment must never delete or mutate the original parent packet.
 
 ### 13. `chunk_document`
 
