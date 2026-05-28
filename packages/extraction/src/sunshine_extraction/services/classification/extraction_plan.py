@@ -51,7 +51,7 @@ def plan_extraction(sample: SampleFile, content_class: dict[str, Any], *, file_p
 
 def provider_hints(file_probe: dict[str, Any], strategy: str) -> dict[str, Any]:
     if strategy == "ocr_page_level":
-        preferred = parser_provider_for_strategy(strategy, default="docling")
+        preferred = parser_provider_for_strategy(strategy, default="current")
         return {
             "preferred_parser": preferred,
             "fallback_ocr": "cortex",
@@ -59,7 +59,7 @@ def provider_hints(file_probe: dict[str, Any], strategy: str) -> dict[str, Any]:
             "image_only_pdf_likelihood": file_probe.get("image_only_pdf_likelihood"),
         }
     if strategy == "text_extraction":
-        fallback = parser_provider_for_strategy(strategy, default="docling")
+        fallback = parser_provider_for_strategy(strategy, default="current")
         return {
             "preferred_parser": "current",
             "fallback_parser": fallback,

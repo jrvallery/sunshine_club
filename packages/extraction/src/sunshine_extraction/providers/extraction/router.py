@@ -73,9 +73,9 @@ def _provider_name(provider: ExtractionProvider) -> str:
 
 def _preferred_provider(plan: dict[str, Any], file_probe: dict[str, Any]) -> str:
     if plan.get("strategy") == "ocr_page_level":
-        return parser_provider_for_strategy("ocr_page_level", default="docling")
+        return parser_provider_for_strategy("ocr_page_level", default="current")
     if file_probe.get("media_type") == "pdf" and file_probe.get("image_only_pdf_likelihood", 0) >= 0.8:
-        return parser_provider_for_strategy("ocr_page_level", default="docling")
+        return parser_provider_for_strategy("ocr_page_level", default="current")
     return "current"
 
 

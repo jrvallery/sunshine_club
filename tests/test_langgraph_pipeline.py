@@ -339,11 +339,11 @@ def test_langgraph_probe_routes_image_only_pdf_to_ocr(tmp_path: Path) -> None:
     assert probe_rows[0]["image_only_pdf_likelihood"] == 0.95
     assert result["content_class"]["final_class"] == "scanned_document"
     assert result["extraction_plan"]["strategy"] == "ocr_page_level"
-    assert result["extraction_plan"]["provider_hints"]["preferred_parser"] == "docling"
-    assert result["extraction_provider_selection"]["preferred_provider"] == "docling"
+    assert result["extraction_plan"]["provider_hints"]["preferred_parser"] == "current"
+    assert result["extraction_provider_selection"]["preferred_provider"] == "current"
     assert result["extraction_provider_selection"]["selected_provider"] == "current"
-    assert result["extraction_provider_selection"]["provider_chain"] == ["docling", "cortex_ocr", "current"]
-    assert result["extraction_provider_selection"]["provider_selection_reason"] == "preferred_docling_unavailable_fell_back_to_configured"
+    assert result["extraction_provider_selection"]["provider_chain"] == ["current", "cortex_ocr"]
+    assert result["extraction_provider_selection"]["provider_selection_reason"] == "configured_provider_matches_preferred"
 
 
 def test_langgraph_confidence_calibration_routes_llm_disagreement_to_review(tmp_path: Path) -> None:

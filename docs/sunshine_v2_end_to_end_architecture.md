@@ -439,7 +439,8 @@ Current implementation:
 
 - Graph has an explicit `select_extraction_provider` node between planning and extraction.
 - Selection writes `sample-provider-selections.jsonl` with selected provider, preferred provider, configured provider, provider chain, skipped providers, and selection reason.
-- Image-only/OCR plans prefer Docling, fall back to the configured local provider when Docling is unavailable, and keep Cortex OCR in the recorded provider chain.
+- Image-only/OCR plans default to the current local provider until a parser is explicitly promoted through `SUNSHINE_OCR_PARSER_PROVIDER` or `SUNSHINE_DEFAULT_PARSER_PROVIDER`. Docling can be selected by policy, but installing the package alone must not change production behavior.
+- OCR provider chains keep Cortex OCR in the recorded fallback path for auditability.
 - Extraction consumes the selected provider so future local Docling installs can be used without changing graph shape.
 
 ### 7. `extract_document`
@@ -1579,6 +1580,8 @@ Important missing V2 dependencies:
 - Parser promotion is configurable through local-only provider policy: `SUNSHINE_OCR_PARSER_PROVIDER`, `SUNSHINE_TEXT_PARSER_PROVIDER`, and `SUNSHINE_DEFAULT_PARSER_PROVIDER` may select `current`, `docling`, `mineru`, `ragflow_deepdoc`, or `unstructured`. Hosted providers are rejected by policy, unavailable promoted parsers fall back to the configured provider, and the provider-selection artifact records the preferred provider, selected provider, skipped providers, and reason.
 - Provider benchmarks can now run from a JSON sample manifest, and `docs/provider_benchmark_canonical_samples.example.json` defines the intended canonical local sample categories.
 - Provider benchmark manifests can now be generated from private QA sample indexes with `python -m sunshine_extraction.provider_benchmark --generate-manifest-from-qa-root ...`; generated manifests live under `.local/` and are ignored by git so real customer paths are reproducible locally without being committed.
+- Docling has been installed and validated in the VM `.venv` as `docling==2.96.0`. A tiny current-vs-Docling smoke benchmark succeeded locally, but Docling used RapidOCR on CPU because the VM NVIDIA driver is older than the installed Torch CUDA build. The first run downloaded RapidOCR model weights from ModelScope/HF into the virtualenv; production must pre-provision/cache these model weights locally and must not rely on runtime external downloads.
+- Initial Docling smoke results are promising but not promotion-ready: on a two-file sample, Docling extracted more structured/table text from a treasurer PDF, but took about 69 seconds vs 0.08 seconds for the current provider; on a scanned bylaws image, Docling took about 57 seconds vs 11 seconds for current OCR with similar text length. Full 12-file benchmark on CPU was stopped because large scanned PDFs made it too slow for a smoke run.
 
 ## Local-Only Infrastructure Decision
 
@@ -2064,5 +2067,6 @@ Deliverables:
 - Review benchmark recommendations and result snippets for OCR quality, layout/table handling, provider runtime, and review-required routing.
 - If Docling improves quality without hiding bad text, promote Docling for scanned/image-only/PDF layout plans by setting `SUNSHINE_OCR_PARSER_PROVIDER=docling` and rerunning golden-label evals. The same promotion mechanism can be used later for MinerU, RAGFlow DeepDoc, or Unstructured if benchmarks beat Docling on specific local document classes.
 - Keep scrapbook/newspaper splitting as review-only logical page-range proposals until benchmark evidence proves boundaries are reliable.
+- Before any Docling production promotion, decide whether Docling runs on CPU in the VM, on the basement GPU host, or in a dedicated local parser container. The decision must include expected throughput for long scrapbook/news/financial packets and a no-network model-cache setup.
 
 This is the first slice that should change the production extraction default. It must be benchmark-driven, local-only, and reversible through provider policy.
