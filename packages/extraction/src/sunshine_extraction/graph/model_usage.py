@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any
+from urllib.parse import urlparse
 
 from sunshine_extraction.domain.model_usage import ModelUsageRow, cost_basis as provider_cost_basis
 from sunshine_extraction.embeddings import EmbeddingProvider
@@ -36,6 +38,7 @@ def _ocr_model_usage_rows(state: DocumentPipelineState, pages: list[dict[str, An
                 purpose=purpose,
                 provider=provider,
                 model=model,
+                host=_provider_host(provider),
                 status="ok" if page.get("ocr_status") == "ok" else str(page.get("ocr_status") or "unknown"),
                 runtime_ms=_seconds_to_ms(page.get("seconds")),
                 cost_basis=provider_cost_basis(provider),
@@ -71,6 +74,7 @@ def _embedding_model_usage_row(
         purpose=purpose,
         provider=provider_name,
         model=str(getattr(provider, "model", "unknown")),
+        host=_provider_host(provider_name, provider=provider),
         status=status,
         runtime_ms=round((time.monotonic() - started) * 1000),
         error=error,
@@ -94,6 +98,7 @@ def _llm_tag_model_usage_row(state: DocumentPipelineState, inspection: dict[str,
         purpose="tag_inspection",
         provider=provider,
         model=str(inspection.get("model") or "unknown"),
+        host=_host_from_url(str(inspection.get("host") or "")) or _provider_host(provider),
         status="ok" if status == "inspected" else status,
         runtime_ms=round((time.monotonic() - started) * 1000),
         input_tokens=_optional_int(inspection.get("input_tokens")),
@@ -112,6 +117,7 @@ def _model_usage_row(
     purpose: str,
     provider: str,
     model: str,
+    host: str | None = None,
     status: str,
     runtime_ms: int | None = None,
     input_tokens: int | None = None,
@@ -122,6 +128,10 @@ def _model_usage_row(
     cost_basis: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    resolved_host = host or _provider_host(provider)
+    row_metadata = metadata or {}
+    if resolved_host:
+        row_metadata = {**row_metadata, "host": resolved_host}
     row = {
         "source_path": state.get("source_path"),
         "relative_path": state.get("relative_path"),
@@ -129,6 +139,7 @@ def _model_usage_row(
         "purpose": purpose,
         "provider": provider,
         "model": model,
+        "host": resolved_host,
         "status": status,
         "runtime_ms": runtime_ms,
         "input_tokens": input_tokens,
@@ -137,7 +148,7 @@ def _model_usage_row(
         "estimated_cost_usd": estimated_cost_usd,
         "cost_basis": cost_basis or provider_cost_basis(provider),
         "error": error,
-        "metadata": metadata or {},
+        "metadata": row_metadata,
     }
     return ModelUsageRow(**row).as_row()
 
@@ -156,6 +167,29 @@ def _provider_model_from_engine(engine: str) -> tuple[str, str]:
     if not separator:
         return provider or "unknown", "unknown"
     return provider or "unknown", model or "unknown"
+
+def _provider_host(provider_name: str, *, provider: Any | None = None) -> str | None:
+    explicit = getattr(provider, "base_url", None) if provider is not None else None
+    if explicit:
+        return _host_from_url(str(explicit))
+    normalized = provider_name.lower()
+    if normalized == "cortex":
+        return _host_from_url(
+            os.environ.get("CORTEX_BASE_URL")
+            or os.environ.get("CORTEX_OPENAI_BASE_URL")
+            or os.environ.get("SUNSHINE_OCR_FALLBACK_BASE_URL")
+        )
+    if normalized in {"placeholder", "local-placeholder"}:
+        return "local-placeholder"
+    if normalized in {"tesseract", "docling", "mineru", "ragflow_deepdoc", "unstructured"}:
+        return "local"
+    return None
+
+def _host_from_url(value: str | None) -> str | None:
+    if not value:
+        return None
+    parsed = urlparse(value if "://" in value else f"http://{value}")
+    return parsed.hostname or None
 
 def _cost_basis(provider: str) -> str:
     return provider_cost_basis(provider)

@@ -271,6 +271,7 @@ def test_model_usage_domain_contract_tracks_cost_basis() -> None:
         purpose="chunk_embedding",
         provider="cortex",
         model="local-model",
+        host="cortex.vallery.net",
         status="ok",
         runtime_ms=12,
         input_tokens=None,
@@ -279,10 +280,11 @@ def test_model_usage_domain_contract_tracks_cost_basis() -> None:
         estimated_cost_usd=None,
         cost_basis=cost_basis("cortex"),
         error=None,
-        metadata={"call_count": 1},
+        metadata={"call_count": 1, "host": "cortex.vallery.net"},
     ).as_row()
 
     assert row["cost_basis"] == "local"
+    assert row["host"] == "cortex.vallery.net"
     assert cost_basis("openai") == "external"
     assert cost_basis("placeholder") == "placeholder"
 

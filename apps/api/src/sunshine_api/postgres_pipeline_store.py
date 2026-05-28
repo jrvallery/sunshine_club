@@ -1576,7 +1576,7 @@ class PostgresPipelineStore:
             """,
             (max(1, min(int(limit), 500)),),
         ).fetchall()
-        return [_json_safe_row(_row_to_dict(row)) for row in rows]
+        return [_model_usage_report_row(_json_safe_row(_row_to_dict(row))) for row in rows]
 
     def _list_pipeline_results(self, connection: PostgresConnection, *, run_key: str, limit: int) -> list[dict[str, Any]]:
         rows = connection.execute(
@@ -2155,6 +2155,9 @@ class PostgresPipelineStore:
         rows = _read_jsonl(output_path / "sample-model-usage.jsonl")
         connection.execute("delete from model_usage where run_id = %s", (run_id,))
         for row in rows:
+            metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+            if row.get("host") and not metadata.get("host"):
+                metadata = {**metadata, "host": row.get("host")}
             connection.execute(
                 """
                 insert into model_usage (
@@ -2176,7 +2179,7 @@ class PostgresPipelineStore:
                     row.get("output_tokens"),
                     row.get("total_tokens"),
                     row.get("runtime_ms"),
-                    json.dumps(row.get("metadata") or {}, sort_keys=True),
+                    json.dumps(metadata, sort_keys=True),
                 ),
             )
         return len(rows)
@@ -2823,6 +2826,11 @@ def _call_count(row: dict[str, Any]) -> int:
         return max(0, int(metadata.get("call_count", 1)))
     except (TypeError, ValueError):
         return 1
+
+
+def _model_usage_report_row(row: dict[str, Any]) -> dict[str, Any]:
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    return {**row, "host": metadata.get("host")}
 
 
 def _seconds_to_runtime_ms(value: Any) -> int | None:

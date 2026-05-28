@@ -1674,6 +1674,9 @@ class ReviewStore:
         return imported
 
     def record_model_usage(self, connection: sqlite3.Connection, *, run_id: int | None, row: dict[str, Any]) -> None:
+        metadata = row.get("metadata") or row.get("metadata_json") or {}
+        if isinstance(metadata, dict) and row.get("host") and not metadata.get("host"):
+            metadata = {**metadata, "host": row.get("host")}
         connection.execute(
             """
             insert into pipeline_run_model_usage (
@@ -1702,7 +1705,7 @@ class ReviewStore:
                 row.get("request_id"),
                 row.get("trace_id"),
                 row.get("error"),
-                json.dumps(row.get("metadata") or row.get("metadata_json") or {}, sort_keys=True),
+                json.dumps(metadata if isinstance(metadata, dict) else {}, sort_keys=True),
             ),
         )
 
@@ -3186,6 +3189,7 @@ def _pipeline_run_event_from_row(row: sqlite3.Row) -> dict[str, Any]:
 
 
 def _model_usage_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    metadata = _json_object(row["metadata_json"])
     return {
         "id": row["id"],
         "run_id": row["run_id"],
@@ -3195,6 +3199,7 @@ def _model_usage_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "purpose": row["purpose"],
         "provider": row["provider"],
         "model": row["model"],
+        "host": metadata.get("host"),
         "status": row["status"],
         "started_at": row["started_at"],
         "completed_at": row["completed_at"],
@@ -3207,7 +3212,7 @@ def _model_usage_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "request_id": row["request_id"],
         "trace_id": row["trace_id"],
         "error": row["error"],
-        "metadata": _json_object(row["metadata_json"]),
+        "metadata": metadata,
         "created_at": row["created_at"],
     }
 

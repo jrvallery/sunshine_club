@@ -92,6 +92,7 @@ class OpenAICompatibleLLMTagInspector(LLMTagInspector):
             payload = extract_json_object(message_content_to_text(response.content))
             inspection = normalize_llm_inspection(json.loads(payload), taxonomy, model=self.model, provider=self.provider_name)
             inspection.update(chat_response_usage_fields(response))
+            inspection["host"] = self.base_url
             return inspection
         except Exception as error:  # noqa: BLE001 - every file needs an auditable failure row.
             return {
@@ -105,6 +106,7 @@ class OpenAICompatibleLLMTagInspector(LLMTagInspector):
                 "rationale": "LLM tag inspection failed.",
                 "needs_review": True,
                 "warning": f"llm_tag_inspection_failed:{type(error).__name__}",
+                "host": self.base_url,
             }
 
     def _chat_client(self) -> Any:

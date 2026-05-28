@@ -14,6 +14,7 @@ class ModelUsageRow:
     purpose: str
     provider: str
     model: str
+    host: str | None
     status: str
     runtime_ms: int | None
     input_tokens: int | None
