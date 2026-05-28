@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from sunshine_extraction.evals.provider_benchmark import benchmark_extraction_providers
+from sunshine_extraction.evals.provider_benchmark_samples import generate_provider_benchmark_manifest
 from sunshine_extraction.services.evaluation import benchmark_extraction_providers as benchmark_extraction_providers_service
 
 
@@ -87,3 +88,96 @@ def test_provider_benchmark_loads_canonical_sample_manifest(tmp_path: Path) -> N
     assert result["results"][0]["sample_label"] == "meeting minutes text fixture"
     assert result["parser_results"][0]["sample_category"] == "born_digital_text"
     assert result["parser_results"][0]["metadata"]["sample_metadata"] == {"risk": "low"}
+
+
+def test_generate_provider_benchmark_manifest_from_qa_indexes(tmp_path: Path) -> None:
+    qa_root = tmp_path / "qa samples"
+    document_group = qa_root / "changed-scanned_document-to-document-pdf_extractable_text_detected"
+    scanned_group = qa_root / "changed-document-to-scanned_document-pdf_image_only_or_empty_text"
+    image_group = qa_root / "accepted-scanned-document-random-100"
+    finance_group = qa_root / "finance"
+    for group in [document_group, scanned_group, image_group, finance_group]:
+        group.mkdir(parents=True)
+    born = document_group / "001 - minutes.pdf"
+    scanned = scanned_group / "002 - scrapbook packet.pdf"
+    image = image_group / "003 - Longmont Ledger clipping.jpg"
+    finance = finance_group / "004 - budget report.pdf"
+    for path in [born, scanned, image, finance]:
+        path.write_text("fixture", encoding="utf-8")
+    _write_index(
+        document_group / "index.jsonl",
+        [
+            {
+                "after_class": "document",
+                "before_class": "scanned_document",
+                "link_name": born.name,
+                "relative_path": "Minutes/1992-1993.pdf",
+                "source_path": str(born),
+                "transition_reason": "pdf_extractable_text_detected",
+                "metadata": {"page_count": 12, "sample_text_chars": 1000},
+            }
+        ],
+    )
+    _write_index(
+        scanned_group / "index.jsonl",
+        [
+            {
+                "after_class": "scanned_document",
+                "before_class": "document",
+                "link_name": scanned.name,
+                "relative_path": "History/Green scrapbook packet.pdf",
+                "source_path": str(scanned),
+                "transition_reason": "pdf_image_only_or_empty_text",
+                "metadata": {"page_count": 30, "sample_text_chars": 0},
+            }
+        ],
+    )
+    _write_index(
+        image_group / "index.jsonl",
+        [
+            {
+                "after_class": "scanned_document",
+                "before_class": "image",
+                "link_name": image.name,
+                "relative_path": "Press/Longmont Ledger clipping.jpg",
+                "source_path": str(image),
+                "transition_reason": "image_scan_evidence_confirmed",
+                "metadata": {},
+            }
+        ],
+    )
+    _write_index(
+        finance_group / "index.jsonl",
+        [
+            {
+                "after_class": "document",
+                "before_class": "document",
+                "link_name": finance.name,
+                "relative_path": "Treasurer/Budget financial report.pdf",
+                "source_path": str(finance),
+                "transition_reason": "pdf_extractable_text_detected",
+                "metadata": {"page_count": 5, "sample_text_chars": 500},
+            }
+        ],
+    )
+    output = tmp_path / ".local" / "provider-benchmark-canonical-samples.json"
+
+    result = generate_provider_benchmark_manifest(qa_root, output, per_category=1)
+    payload = json.loads(output.read_text(encoding="utf-8"))
+
+    assert result["sample_count"] >= 6
+    assert result["missing_categories"] == []
+    assert set(result["categories"]) == {
+        "born_digital_text",
+        "financial_table",
+        "image_scan",
+        "newspaper_packet",
+        "scanned_pdf",
+        "scrapbook_packet",
+    }
+    assert payload["source_qa_root"] == str(qa_root)
+    assert all(Path(sample["path"]).exists() for sample in payload["samples"])
+
+
+def _write_index(path: Path, rows: list[dict[str, object]]) -> None:
+    path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")

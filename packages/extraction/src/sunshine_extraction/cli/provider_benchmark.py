@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from sunshine_extraction.evals.provider_benchmark import benchmark_extraction_providers
+from sunshine_extraction.evals.provider_benchmark_samples import generate_provider_benchmark_manifest
 
 
 def main() -> None:
@@ -20,7 +21,18 @@ def main() -> None:
     parser.add_argument("--output-dir", help="Optional output directory for benchmark artifacts.")
     parser.add_argument("--sample-manifest", help="JSON manifest containing canonical benchmark sample paths.")
     parser.add_argument("--sample-root", help="Optional root for resolving relative sample manifest paths.")
+    parser.add_argument("--generate-manifest-from-qa-root", help="QA samples root containing grouped index.jsonl files.")
+    parser.add_argument("--manifest-output", default=".local/provider-benchmark-canonical-samples.json")
+    parser.add_argument("--manifest-per-category", type=int, default=2)
     args = parser.parse_args()
+    if args.generate_manifest_from_qa_root:
+        result = generate_provider_benchmark_manifest(
+            args.generate_manifest_from_qa_root,
+            args.manifest_output,
+            per_category=args.manifest_per_category,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
     provider_names = [name.strip() for name in args.providers.split(",") if name.strip()]
     result = benchmark_extraction_providers(
         [Path(path) for path in args.paths],

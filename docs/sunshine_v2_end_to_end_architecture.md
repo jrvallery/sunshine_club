@@ -766,6 +766,7 @@ Current implementation:
 - The routing policy treats `document_segmentation_review_recommended` as a first-class review signal: files with proposed split boundaries route to `review_segment_boundary` with `needs_segment_review`, even if tagging confidence is high.
 - Segment proposals are artifacts only; no physical source files are split or modified.
 - Long mixed scrapbook PDFs are intentionally handled as proposed page-range child documents first. A later export/promote action can create physical child documents only after review accepts the page ranges.
+- Large conglomerate scrapbook PDFs, newspaper PDFs, and mixed historical packets are explicitly in scope for V2 as review-only logical splits. The current pass should preserve enough page-level structure to make splitting easy later; it should not attempt irreversible physical PDF splitting until segment proposals have dashboard review and benchmark-backed acceptance criteria.
 
 ### 13. `chunk_document`
 
@@ -1577,6 +1578,7 @@ Important missing V2 dependencies:
 - The local-infrastructure API and Settings dashboard expose parser candidate dependency status for Docling, MinerU, RAGFlow DeepDoc, and Unstructured, so missing local packages are visible before running provider benchmarks.
 - Parser promotion is configurable through local-only provider policy: `SUNSHINE_OCR_PARSER_PROVIDER`, `SUNSHINE_TEXT_PARSER_PROVIDER`, and `SUNSHINE_DEFAULT_PARSER_PROVIDER` may select `current`, `docling`, `mineru`, `ragflow_deepdoc`, or `unstructured`. Hosted providers are rejected by policy, unavailable promoted parsers fall back to the configured provider, and the provider-selection artifact records the preferred provider, selected provider, skipped providers, and reason.
 - Provider benchmarks can now run from a JSON sample manifest, and `docs/provider_benchmark_canonical_samples.example.json` defines the intended canonical local sample categories.
+- Provider benchmark manifests can now be generated from private QA sample indexes with `python -m sunshine_extraction.provider_benchmark --generate-manifest-from-qa-root ...`; generated manifests live under `.local/` and are ignored by git so real customer paths are reproducible locally without being committed.
 
 ## Local-Only Infrastructure Decision
 
@@ -2056,6 +2058,7 @@ Run real local provider benchmarks and use them to choose the first promoted par
 Deliverables:
 
 - Create a private local copy of `docs/provider_benchmark_canonical_samples.example.json` with real Sunshine corpus paths for born-digital text, image scans, scanned PDFs, scrapbook packets, newspaper packets, and financial/table-heavy documents. The checked-in file stays as a template only.
+- Use the manifest generator for the private copy: `python -m sunshine_extraction.provider_benchmark --generate-manifest-from-qa-root "/mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/qa samples" --manifest-output ".local/provider-benchmark-canonical-samples.json" --manifest-per-category 2`.
 - Install and validate the Docling optional dependency locally.
 - Run current vs Docling benchmarks from the dashboard Provider Benchmarks panel.
 - Review benchmark recommendations and result snippets for OCR quality, layout/table handling, provider runtime, and review-required routing.
