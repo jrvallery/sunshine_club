@@ -109,6 +109,8 @@ def run_document_batch(
         "sample-provider-selections.jsonl": [],
         "sample-inputs.jsonl": [],
         "sample-extraction-results.jsonl": [],
+        "sample-extraction-validations.jsonl": [],
+        "sample-extraction-repairs.jsonl": [],
         "sample-provider-attempts.jsonl": [],
         "sample-ocr-pages.jsonl": [],
         "sample-ocr-documents.jsonl": [],
@@ -322,6 +324,10 @@ def _append_batch_rows(artifact_rows: dict[str, list[dict[str, Any]]], result: d
         artifact_rows["sample-provider-selections.jsonl"].append(result["extraction_provider_selection"])
     if extraction_result and extraction_quality:
         artifact_rows["sample-extraction-results.jsonl"].append(extraction_result_row(extraction_result, extraction_quality))
+    if result.get("extraction_validation"):
+        artifact_rows["sample-extraction-validations.jsonl"].append(result["extraction_validation"])
+    if result.get("extraction_repair"):
+        artifact_rows["sample-extraction-repairs.jsonl"].append(result["extraction_repair"])
     artifact_rows["sample-provider-attempts.jsonl"].extend(result.get("provider_attempts", []))
     artifact_rows["sample-ocr-pages.jsonl"].extend(result.get("ocr_pages", []))
     if result.get("ocr_document"):

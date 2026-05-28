@@ -2212,6 +2212,8 @@ def _looks_like_dashboard_run_output(output_dir: Path) -> bool:
         "sample-file-probes.jsonl",
         "sample-provider-selections.jsonl",
         "sample-provider-attempts.jsonl",
+        "sample-extraction-validations.jsonl",
+        "sample-extraction-repairs.jsonl",
         "sample-document-segments.jsonl",
         "sample-indexing.jsonl",
         "sample-placement-proposals.jsonl",

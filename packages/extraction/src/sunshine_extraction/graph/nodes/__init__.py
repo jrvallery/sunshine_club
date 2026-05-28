@@ -2,7 +2,14 @@
 
 from sunshine_extraction.graph.nodes.classification import _classify_content_type, _plan_extraction
 from sunshine_extraction.graph.nodes.embeddings import _embed_chunks_node, _retrieve_labeled_examples_node
-from sunshine_extraction.graph.nodes.extraction import _after_quality_gate, _chunk_content_node, _extract_content_node, _quality_gate, _validate_text_extraction_node
+from sunshine_extraction.graph.nodes.extraction import (
+    _after_quality_gate,
+    _chunk_content_node,
+    _extract_content_node,
+    _quality_gate,
+    _repair_or_escalate_extraction_node,
+    _validate_extraction_node,
+)
 from sunshine_extraction.graph.nodes.loading import _after_load_file_context, _load_file_context
 from sunshine_extraction.graph.nodes.persistence import _persist_outputs
 from sunshine_extraction.graph.nodes.routing import _resolve_route_or_review_node
@@ -23,7 +30,8 @@ __all__ = [
     "_persist_outputs",
     "_plan_extraction",
     "_quality_gate",
+    "_repair_or_escalate_extraction_node",
     "_resolve_route_or_review_node",
     "_retrieve_labeled_examples_node",
-    "_validate_text_extraction_node",
+    "_validate_extraction_node",
 ]

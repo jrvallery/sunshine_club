@@ -40,6 +40,8 @@ class DocumentPipelineState(TypedDict, total=False):
     extraction_plan: dict[str, Any]
     extraction_provider_selection: dict[str, Any]
     extraction_result: ExtractionResult
+    extraction_validation: dict[str, Any]
+    extraction_repair: dict[str, Any]
     extraction_quality: dict[str, Any]
     provider_attempts: list[dict[str, Any]]
     ocr_pages: list[dict[str, Any]]

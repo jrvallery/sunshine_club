@@ -78,8 +78,10 @@ def _node_summary(name: str, updates: dict[str, Any]) -> str:
         return f"selected {updates['extraction_provider_selection'].get('selected_provider')}"
     if name == "extract_content" and updates.get("extraction_result"):
         return f"extracted {updates['extraction_result'].extraction_status}"
-    if name == "validate_text_extraction" and updates.get("extraction_result"):
-        return f"validated {updates['extraction_result'].plan.get('strategy')}"
+    if name == "validate_extraction" and updates.get("extraction_validation"):
+        return f"validation {updates['extraction_validation'].get('status')}"
+    if name == "repair_or_escalate_extraction" and updates.get("extraction_repair"):
+        return f"repair {updates['extraction_repair'].get('status')}"
     if name == "quality_gate" and updates.get("extraction_quality"):
         return f"quality {updates['extraction_quality'].get('quality')}"
     if name == "chunk_content":

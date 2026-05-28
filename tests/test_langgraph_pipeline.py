@@ -163,6 +163,8 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     chunk_rows = [json.loads(line) for line in (output_dir / "sample-chunks.jsonl").read_text().splitlines()]
     embedding_rows = [json.loads(line) for line in (output_dir / "sample-embeddings.jsonl").read_text().splitlines()]
     indexing_rows = [json.loads(line) for line in (output_dir / "sample-indexing.jsonl").read_text().splitlines()]
+    validation_rows = [json.loads(line) for line in (output_dir / "sample-extraction-validations.jsonl").read_text().splitlines()]
+    repair_rows = [json.loads(line) for line in (output_dir / "sample-extraction-repairs.jsonl").read_text().splitlines()]
     semantic_rows = [json.loads(line) for line in (output_dir / "sample-semantic-examples.jsonl").read_text().splitlines()]
     llm_rows = [json.loads(line) for line in (output_dir / "sample-llm-tag-inspections.jsonl").read_text().splitlines()]
     model_usage_rows = [json.loads(line) for line in (output_dir / "sample-model-usage.jsonl").read_text().splitlines()]
@@ -191,6 +193,8 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert indexing_rows[0]["status"] == "skipped"
     assert indexing_rows[0]["chunk_count"] == 1
     assert indexing_rows[0]["placeholder_embedding_count"] == 1
+    assert validation_rows[0]["status"] == "ok"
+    assert repair_rows[0]["status"] == "not_needed"
     assert semantic_rows == []
     assert llm_rows[0]["primary_tag"] == "annual_spring_tea"
     assert segment_rows[0]["segment_type"] == "single_document"
@@ -220,7 +224,8 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
         "plan_extraction",
         "select_extraction_provider",
         "extract_content",
-        "validate_text_extraction",
+        "validate_extraction",
+        "repair_or_escalate_extraction",
         "quality_gate",
         "normalize_document_structure",
         "propose_document_segments",

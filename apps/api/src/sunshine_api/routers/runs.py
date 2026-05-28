@@ -218,6 +218,8 @@ def run_report(run_id: int) -> dict[str, Any]:
     file_probes = _read_run_jsonl_with_live_fallback(output_dir, "sample-file-probes.jsonl", limit=500)
     provider_selections = _read_run_jsonl_with_live_fallback(output_dir, "sample-provider-selections.jsonl", limit=500)
     extraction_results = _read_run_jsonl_with_live_fallback(output_dir, "sample-extraction-results.jsonl", limit=200)
+    extraction_validations = _read_run_jsonl_with_live_fallback(output_dir, "sample-extraction-validations.jsonl", limit=500)
+    extraction_repairs = _read_run_jsonl_with_live_fallback(output_dir, "sample-extraction-repairs.jsonl", limit=500)
     provider_attempts = store.list_provider_attempts(run_id) or _read_run_jsonl_with_live_fallback(output_dir, "sample-provider-attempts.jsonl", limit=500)
     document_segments = store.list_document_segments(run_id) or _read_run_jsonl_with_live_fallback(output_dir, "sample-document-segments.jsonl", limit=500)
     indexing_rows = _read_run_jsonl_with_live_fallback(output_dir, "sample-indexing.jsonl", limit=200)
@@ -289,7 +291,16 @@ def run_report(run_id: int) -> dict[str, Any]:
             "documents": ocr_documents[:100],
             "pages": ocr_pages[:100],
         },
-        "extraction": {"count": len(extraction_results), "items": extraction_results[:100]},
+        "extraction": {
+            "count": len(extraction_results),
+            "validation_count": len(extraction_validations),
+            "repair_count": len(extraction_repairs),
+            "validation_status": _count_values(extraction_validations, "status"),
+            "repair_status": _count_values(extraction_repairs, "status"),
+            "items": extraction_results[:100],
+            "validations": extraction_validations[:100],
+            "repairs": extraction_repairs[:100],
+        },
         "provider_attempts": {
             "count": len(provider_attempts),
             "by_provider": _count_values(provider_attempts, "provider"),

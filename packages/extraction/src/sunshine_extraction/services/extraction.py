@@ -8,6 +8,7 @@ from sunshine_extraction.sample_pipeline import (
     extract_content,
     extraction_quality_gate,
     ocr_executor_from_env,
+    validate_extracted_text,
     validate_and_repair_extraction,
 )
 
@@ -19,5 +20,6 @@ __all__ = [
     "extract_content",
     "extraction_quality_gate",
     "ocr_executor_from_env",
+    "validate_extracted_text",
     "validate_and_repair_extraction",
 ]

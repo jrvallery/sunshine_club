@@ -503,6 +503,12 @@ Success criteria:
 - Known good text is not over-flagged.
 - Validation reasons are visible in dashboard.
 
+Current implementation:
+
+- Graph has an explicit `validate_extraction` node after extraction.
+- The node writes `sample-extraction-validations.jsonl` with validation status, reason, strategy, extraction status, and text length.
+- Validation metadata is attached to the extraction result before quality gating.
+
 ### 9. `repair_or_escalate_extraction`
 
 Purpose:
@@ -537,6 +543,13 @@ Success criteria:
 - No provider failure hides original extraction.
 - Original and repaired snippets are saved.
 - No repair path calls third-party APIs.
+
+Current implementation:
+
+- Graph has an explicit `repair_or_escalate_extraction` node between validation and quality gate.
+- The node writes `sample-extraction-repairs.jsonl`; successful validation records `not_needed`, failed validation invokes the existing local OCR repair/escalation path.
+- OCR model usage from repair is attributed to `repair_or_escalate_extraction`.
+- Original extraction metadata/snippets are preserved by the existing repair helper.
 
 ### 10. `quality_gate`
 
@@ -1063,6 +1076,8 @@ Artifacts:
 - `sample-provider-selections.jsonl`
 - `sample-inputs.jsonl`
 - `sample-extraction-results.jsonl`
+- `sample-extraction-validations.jsonl`
+- `sample-extraction-repairs.jsonl`
 - `sample-parser-results.jsonl`
 - `sample-ocr-pages.jsonl`
 - `sample-ocr-documents.jsonl`
@@ -1603,6 +1618,8 @@ Required artifacts:
 - `sample-provider-selections.jsonl`
 - `sample-inputs.jsonl`
 - `sample-extraction-results.jsonl`
+- `sample-extraction-validations.jsonl`
+- `sample-extraction-repairs.jsonl`
 - `sample-parser-results.jsonl`
 - `sample-ocr-pages.jsonl`
 - `sample-ocr-documents.jsonl`

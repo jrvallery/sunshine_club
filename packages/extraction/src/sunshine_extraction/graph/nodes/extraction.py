@@ -13,6 +13,7 @@ from sunshine_extraction.services.extraction import (
     OcrArtifacts,
     chunk_content,
     extraction_quality_gate,
+    validate_extracted_text,
     validate_and_repair_extraction,
 )
 from sunshine_extraction.services.segmentation.page_grouping import attach_segment_ids_to_chunks, propose_document_segments
@@ -75,8 +76,39 @@ def _provider_for_selection(selection: dict[str, Any], deps: DocumentPipelineDep
         return CurrentExtractionProvider()
     return configured
 
-def _validate_text_extraction_node(state: DocumentPipelineState, deps: DocumentPipelineDeps) -> dict[str, Any]:
+def _validate_extraction_node(state: DocumentPipelineState) -> dict[str, Any]:
     original = state["extraction_result"]
+    validation = validate_extracted_text(original)
+    validation_row = {
+        "source_path": state["sample"].source_path,
+        "relative_path": state["sample"].relative_path,
+        "sample_path": str(state["sample"].sample_path),
+        "status": validation.get("status"),
+        "reason": validation.get("reason"),
+        "strategy": original.plan.get("strategy"),
+        "extraction_status": original.extraction_status,
+        "text_length": len(original.text or ""),
+    }
+    return {
+        "extraction_validation": validation_row,
+        "extraction_result": _with_text_validation(original, validation),
+    }
+
+
+def _repair_or_escalate_extraction_node(state: DocumentPipelineState, deps: DocumentPipelineDeps) -> dict[str, Any]:
+    original = state["extraction_result"]
+    validation = state.get("extraction_validation", {})
+    if validation.get("status") != "failed":
+        return {
+            "extraction_repair": {
+                "source_path": state["sample"].source_path,
+                "relative_path": state["sample"].relative_path,
+                "sample_path": str(state["sample"].sample_path),
+                "status": "not_needed",
+                "reason": validation.get("reason"),
+                "repair_strategy": None,
+            }
+        }
     ocr_artifacts = OcrArtifacts(pages=[], documents=[])
     repaired = validate_and_repair_extraction(
         state["sample"],
@@ -89,16 +121,39 @@ def _validate_text_extraction_node(state: DocumentPipelineState, deps: DocumentP
     updates: dict[str, Any] = {
         "extraction_result": repaired,
         "extraction_plan": repaired.plan,
+        "extraction_repair": {
+            "source_path": state["sample"].source_path,
+            "relative_path": state["sample"].relative_path,
+            "sample_path": str(state["sample"].sample_path),
+            "status": "attempted",
+            "reason": validation.get("reason"),
+            "repair_strategy": repaired.plan.get("strategy"),
+            "original_strategy": original.plan.get("strategy"),
+            "result_status": repaired.extraction_status,
+            "text_length": len(repaired.text or ""),
+        },
         "warnings": [*state.get("warnings", []), *new_warnings],
     }
     if ocr_artifacts.pages:
         updates["ocr_pages"] = [*state.get("ocr_pages", []), *ocr_artifacts.pages]
     if ocr_artifacts.documents:
         updates["ocr_document"] = ocr_artifacts.documents[-1]
-    usage_rows = _ocr_model_usage_rows(state, ocr_artifacts.pages, node="validate_text_extraction")
+    usage_rows = _ocr_model_usage_rows(state, ocr_artifacts.pages, node="repair_or_escalate_extraction")
     if usage_rows:
         updates["model_usage"] = [*state.get("model_usage", []), *usage_rows]
     return updates
+
+
+def _with_text_validation(extraction: Any, validation: dict[str, Any]) -> Any:
+    return type(extraction)(
+        sample=extraction.sample,
+        plan=extraction.plan,
+        extraction_status=extraction.extraction_status,
+        text=extraction.text,
+        metadata={**extraction.metadata, "text_validation": validation},
+        page_count=extraction.page_count,
+        warnings=extraction.warnings,
+    )
 
 def _quality_gate(state: DocumentPipelineState) -> dict[str, Any]:
     return {"extraction_quality": extraction_quality_gate(state["extraction_result"])}

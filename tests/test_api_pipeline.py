@@ -300,6 +300,36 @@ def test_run_report_reads_live_graph_run_artifacts_before_batch_finalize(tmp_pat
         + "\n",
         encoding="utf-8",
     )
+    (second_run_dir / "sample-extraction-validations.jsonl").write_text(
+        json.dumps(
+            {
+                "source_path": "/source/review.pdf",
+                "relative_path": "Review/review.pdf",
+                "sample_path": str(second_run_dir / "review.pdf"),
+                "status": "ok",
+                "reason": None,
+                "strategy": "ocr_page_level",
+                "extraction_status": "extracted",
+                "text_length": 42,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (second_run_dir / "sample-extraction-repairs.jsonl").write_text(
+        json.dumps(
+            {
+                "source_path": "/source/review.pdf",
+                "relative_path": "Review/review.pdf",
+                "sample_path": str(second_run_dir / "review.pdf"),
+                "status": "not_needed",
+                "reason": None,
+                "repair_strategy": None,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     (second_run_dir / "sample-document-segments.jsonl").write_text(
         json.dumps(
             {
@@ -392,6 +422,10 @@ def test_run_report_reads_live_graph_run_artifacts_before_batch_finalize(tmp_pat
     assert payload["provider_selections"]["count"] == 1
     assert payload["provider_selections"]["by_selected_provider"]["current"] == 1
     assert payload["extraction"]["count"] == 1
+    assert payload["extraction"]["validation_count"] == 1
+    assert payload["extraction"]["repair_count"] == 1
+    assert payload["extraction"]["validation_status"]["ok"] == 1
+    assert payload["extraction"]["repair_status"]["not_needed"] == 1
     assert payload["provider_attempts"]["count"] == 1
     assert payload["provider_attempts"]["by_provider"]["current"] == 1
     assert payload["segments"]["count"] == 1
