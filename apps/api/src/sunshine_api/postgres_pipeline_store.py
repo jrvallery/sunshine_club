@@ -2694,9 +2694,10 @@ class PostgresPipelineStore:
     def _import_pipeline_artifacts(self, connection: PostgresConnection, run_id: str, output_path: Path) -> int:
         manifest = _read_json(output_path / "artifact-manifest.json")
         rows = manifest.get("artifacts") if isinstance(manifest.get("artifacts"), list) else []
+        raw_provider_rows = _read_jsonl(output_path / "sample-raw-provider-artifacts.jsonl")
         connection.execute("delete from pipeline_artifacts where run_id = %s", (run_id,))
         imported = 0
-        for row in rows:
+        for row in [*rows, *[_raw_provider_artifact_manifest_row(row) for row in raw_provider_rows]]:
             if not isinstance(row, dict):
                 continue
             connection.execute(
@@ -3586,6 +3587,21 @@ def _call_count(row: dict[str, Any]) -> int:
 def _model_usage_report_row(row: dict[str, Any]) -> dict[str, Any]:
     metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
     return {**row, "host": row.get("host") or metadata.get("host")}
+
+
+def _raw_provider_artifact_manifest_row(row: dict[str, Any]) -> dict[str, Any]:
+    relative_path = row.get("relative_path") or row.get("path") or "unknown"
+    return {
+        "name": f"raw-provider:{relative_path}",
+        "path": row.get("path"),
+        "kind": row.get("kind") or "raw_provider_snapshot",
+        "exists": bool(row.get("exists", True)),
+        "size_bytes": row.get("size_bytes"),
+        "row_count": None,
+        "sha256": row.get("sha256"),
+        "note": "raw_provider_artifact",
+        "result": row,
+    }
 
 
 def _model_usage_local_only(row: dict[str, Any]) -> bool:

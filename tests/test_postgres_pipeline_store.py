@@ -71,7 +71,7 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
         "pipeline_quality_checks": 4,
         "pipeline_tagging_evidence": 8,
         "pipeline_file_metadata": 5,
-        "pipeline_artifacts": 1,
+        "pipeline_artifacts": 2,
         "pipeline_processing_artifacts": 4,
         "pipeline_parser_results": 1,
         "document_segments": 1,
@@ -120,6 +120,9 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
     assert file_metadata_params[1:6] == ("/source/a.pdf", "Sunshine/a.pdf", "/sample/a.pdf", "source_identity", "file-a")
     artifact_params = next(params for query, params in connection.executed if "insert into pipeline_artifacts" in query)
     assert artifact_params[1:5] == ("sample-pipeline-results.jsonl", str(output_dir / "sample-pipeline-results.jsonl"), "jsonl", True)
+    raw_artifact_params = next(params for query, params in connection.executed if "insert into pipeline_artifacts" in query and params[1] == "raw-provider:raw-providers/docling-test.json")
+    assert raw_artifact_params[2:5] == (str(output_dir / "raw-providers/docling-test.json"), "raw_provider_snapshot", True)
+    assert json.loads(raw_artifact_params[-1])["note"] == "raw_provider_artifact"
     processing_params = next(params for query, params in connection.executed if "insert into pipeline_processing_artifacts" in query)
     assert processing_params[1:8] == ("/source/a.pdf", "Sunshine/a.pdf", "/sample/a.pdf", "extraction_result", "current", None, "extracted")
     parser_params = next(params for query, params in connection.executed if "insert into pipeline_parser_results" in query)
@@ -2587,6 +2590,23 @@ def _postgres_import_artifacts(tmp_path: Path) -> Path:
                 "provider": "qdrant",
                 "collection": "sunshine-test",
                 "status": "indexed",
+            }
+        ],
+    )
+    raw_provider_path = output_dir / "raw-providers" / "docling-test.json"
+    raw_provider_path.parent.mkdir(parents=True, exist_ok=True)
+    raw_provider_path.write_text(json.dumps({"provider": "docling", "text": "raw text"}), encoding="utf-8")
+    _write_jsonl(
+        output_dir / "sample-raw-provider-artifacts.jsonl",
+        [
+            {
+                "provider": "docling",
+                "path": str(raw_provider_path),
+                "relative_path": "raw-providers/docling-test.json",
+                "kind": "raw_provider_snapshot",
+                "exists": True,
+                "size_bytes": raw_provider_path.stat().st_size,
+                "sha256": "c" * 64,
             }
         ],
     )
