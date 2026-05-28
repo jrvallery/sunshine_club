@@ -45,6 +45,8 @@ class PostgresPipelineStore:
             run_id = self._upsert_run(connection, run_key=run_key, preset_key=preset_key, output_dir=output_path)
             counts = {
                 "pipeline_results": self._import_results(connection, run_id, output_path),
+                "pipeline_chunks": self._import_chunks(connection, run_id, output_path),
+                "pipeline_chunk_embeddings": self._import_chunk_embeddings(connection, run_id, output_path),
                 "model_usage": self._import_model_usage(connection, run_id, output_path),
                 "provider_attempts": self._import_provider_attempts(connection, run_id, output_path),
                 "document_segments": self._import_document_segments(connection, run_id, output_path),
@@ -97,6 +99,58 @@ class PostgresPipelineStore:
                     json.dumps(row.get("secondary_tags") or []),
                     row.get("tag_confidence"),
                     json.dumps(row, sort_keys=True),
+                ),
+            )
+        return len(rows)
+
+    def _import_chunks(self, connection: PostgresConnection, run_id: str, output_path: Path) -> int:
+        rows = _read_jsonl(output_path / "sample-chunks.jsonl")
+        connection.execute("delete from pipeline_chunks where run_id = %s", (run_id,))
+        for row in rows:
+            connection.execute(
+                """
+                insert into pipeline_chunks (
+                    run_id, source_path, relative_path, sample_path, chunk_id, chunk_index,
+                    chunk_kind, content, metadata
+                ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                """,
+                (
+                    run_id,
+                    row.get("source_path"),
+                    row.get("relative_path"),
+                    row.get("sample_path"),
+                    row.get("chunk_id") or "",
+                    row.get("chunk_index") or 0,
+                    row.get("chunk_kind") or "text",
+                    row.get("text") or "",
+                    json.dumps(row.get("metadata") or {}, sort_keys=True),
+                ),
+            )
+        return len(rows)
+
+    def _import_chunk_embeddings(self, connection: PostgresConnection, run_id: str, output_path: Path) -> int:
+        rows = _read_jsonl(output_path / "sample-embeddings.jsonl")
+        connection.execute("delete from pipeline_chunk_embeddings where run_id = %s", (run_id,))
+        for row in rows:
+            connection.execute(
+                """
+                insert into pipeline_chunk_embeddings (
+                    run_id, chunk_id, source_path, relative_path, embedding_provider, embedding_model,
+                    embedding_dimensions, embedding_status, semantic_quality, embedding, metadata
+                ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector, %s::jsonb)
+                """,
+                (
+                    run_id,
+                    row.get("chunk_id") or "",
+                    row.get("source_path"),
+                    row.get("relative_path"),
+                    row.get("embedding_provider") or "unknown",
+                    row.get("embedding_model") or "unknown",
+                    row.get("embedding_dimensions"),
+                    row.get("embedding_status") or "unknown",
+                    bool(row.get("semantic_quality")),
+                    _vector_literal(row.get("embedding")),
+                    json.dumps(row.get("metadata") or {}, sort_keys=True),
                 ),
             )
         return len(rows)
@@ -218,3 +272,9 @@ def _seconds_to_runtime_ms(value: Any) -> int | None:
     if not isinstance(value, int | float):
         return None
     return int(round(float(value) * 1000))
+
+
+def _vector_literal(value: Any) -> str | None:
+    if not isinstance(value, list) or not all(isinstance(item, int | float) for item in value):
+        return None
+    return "[" + ",".join(str(float(item)) for item in value) + "]"

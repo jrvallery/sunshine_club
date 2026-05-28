@@ -76,6 +76,37 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
         ],
     )
     _write_jsonl(
+        output_dir / "sample-chunks.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "sample_path": "/sample/a.pdf",
+                "chunk_id": "golden-eval:1:1",
+                "chunk_index": 1,
+                "chunk_kind": "text",
+                "text": "Meeting minutes and Sunshine Club notes.",
+                "metadata": {"page_start": 1},
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-embeddings.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "chunk_id": "golden-eval:1:1",
+                "embedding_status": "embedded",
+                "embedding_provider": "cortex",
+                "embedding_model": "local-embedding",
+                "embedding_dimensions": 3,
+                "semantic_quality": True,
+                "embedding": [0.1, 0.2, 0.3],
+            }
+        ],
+    )
+    _write_jsonl(
         output_dir / "sample-provider-attempts.jsonl",
         [
             {
@@ -116,6 +147,8 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
     assert result["run_id"] == "00000000-0000-0000-0000-000000000123"
     assert result["imported"] == {
         "pipeline_results": 1,
+        "pipeline_chunks": 1,
+        "pipeline_chunk_embeddings": 1,
         "model_usage": 1,
         "provider_attempts": 1,
         "document_segments": 1,
@@ -125,6 +158,9 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
     executed_sql = "\n".join(query for query, _params in connection.executed)
     assert "insert into pipeline_runs" in executed_sql
     assert "insert into pipeline_results" in executed_sql
+    assert "insert into pipeline_chunks" in executed_sql
+    assert "insert into pipeline_chunk_embeddings" in executed_sql
     assert "insert into model_usage" in executed_sql
     assert "insert into provider_attempts" in executed_sql
     assert "insert into document_segments" in executed_sql
+    assert any("[0.1,0.2,0.3]" in str(params) for _query, params in connection.executed)
