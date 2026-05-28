@@ -15,7 +15,9 @@ def test_provider_benchmark_runs_current_provider_and_writes_artifacts(tmp_path:
 
     assert result["summary"]["result_count"] == 1
     assert result["summary"]["by_provider"]["current"] == 1
+    assert result["summary"]["provider_availability"]["current"]["available"] is True
     assert result["summary"]["local_only"] is True
+    assert result["summary"]["comparison"]["paired_file_count"] == 0
     assert result["results"][0]["status"] == "extracted"
     assert result["results"][0]["quality"] == "ok"
     rows = [json.loads(line) for line in (output_dir / "provider-benchmark-results.jsonl").read_text(encoding="utf-8").splitlines()]

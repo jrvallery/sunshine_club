@@ -45,16 +45,18 @@ class DoclingExtractionProvider:
     ) -> tuple[ExtractionResult, ExtractionProviderAttempt]:
         del ocr_executor, ocr_artifacts
         started = time.monotonic()
-        converter = self._converter or self._build_converter()
         try:
+            converter = self._converter or self._build_converter()
             result = converter.convert(str(sample.sample_path))
             document = result.document
-            text = document.export_to_markdown()
+            text = _export_markdown(document)
+            structure = _docling_structure(document)
             metadata = {
                 "provider": self.provider_name,
                 "local_only": True,
                 "structure_provider": self.provider_name,
                 "raw_provider_type": result.__class__.__name__,
+                "docling_structure": structure,
             }
             extraction = ExtractionResult(
                 sample=sample,
@@ -62,7 +64,7 @@ class DoclingExtractionProvider:
                 extraction_status="extracted" if text.strip() else "failed",
                 text=text,
                 metadata=metadata,
-                page_count=None,
+                page_count=structure.get("page_count"),
                 warnings=[] if text.strip() else ["docling_empty_text"],
             )
         except Exception as error:  # noqa: BLE001 - provider failures route through graph.
@@ -82,7 +84,12 @@ class DoclingExtractionProvider:
             strategy=plan.get("strategy"),
             seconds=seconds,
             warnings=extraction.warnings,
-            metadata={"local_only": True, "text_length": len(extraction.text or "")},
+            metadata={
+                "local_only": True,
+                "text_length": len(extraction.text or ""),
+                "page_count": extraction.page_count,
+                "structure": extraction.metadata.get("docling_structure", {}),
+            },
         )
 
     def _build_converter(self) -> Any:
@@ -92,3 +99,48 @@ class DoclingExtractionProvider:
             raise RuntimeError("docling is not installed") from error
         return DocumentConverter()
 
+
+def _export_markdown(document: Any) -> str:
+    exporter = getattr(document, "export_to_markdown", None)
+    if callable(exporter):
+        value = exporter()
+        return value if isinstance(value, str) else str(value or "")
+    exporter = getattr(document, "export_to_text", None)
+    if callable(exporter):
+        value = exporter()
+        return value if isinstance(value, str) else str(value or "")
+    return str(document or "")
+
+
+def _docling_structure(document: Any) -> dict[str, Any]:
+    pages = _safe_len(getattr(document, "pages", None))
+    tables = _safe_len(getattr(document, "tables", None))
+    pictures = _safe_len(getattr(document, "pictures", None))
+    groups = _safe_len(getattr(document, "groups", None))
+    texts = _safe_len(getattr(document, "texts", None))
+    page_count = pages if pages is not None else _safe_int(getattr(document, "num_pages", None))
+    return {
+        "page_count": page_count,
+        "table_count": tables,
+        "picture_count": pictures,
+        "group_count": groups,
+        "text_item_count": texts,
+    }
+
+
+def _safe_len(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return len(value)
+    except TypeError:
+        return None
+
+
+def _safe_int(value: Any) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None

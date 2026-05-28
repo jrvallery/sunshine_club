@@ -14,25 +14,29 @@ def normalize_document_structure(
     ocr_pages: list[dict[str, Any]] | None = None,
     provider_attempts: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    docling_structure = extraction.metadata.get("docling_structure")
     pages = _pages(extraction, ocr_pages or [])
     sections = _sections(extraction)
     provider = _provider(extraction, provider_attempts or [])
+    provider_page_count = docling_structure.get("page_count") if isinstance(docling_structure, dict) else None
+    page_count = extraction.page_count or provider_page_count
     structure = DocumentStructure(
         source_path=extraction.sample.source_path,
         relative_path=extraction.sample.relative_path,
         sample_path=str(extraction.sample.sample_path),
         provider=provider,
-        page_count=extraction.page_count or (len(pages) if pages else None),
+        page_count=page_count or (len(pages) if pages else None),
         text_length=len(extraction.text or ""),
         sections=sections,
         pages=pages,
-        tables=[],
-        figures=[],
+        tables=_placeholder_items("table", (docling_structure or {}).get("table_count") if isinstance(docling_structure, dict) else None),
+        figures=_placeholder_items("figure", (docling_structure or {}).get("picture_count") if isinstance(docling_structure, dict) else None),
         metadata={
             "extraction_status": extraction.extraction_status,
             "strategy": extraction.plan.get("strategy"),
             "document_subtype": extraction.plan.get("document_subtype"),
             "structure_policy": "v2_basic_text_page_normalization",
+            "provider_structure": docling_structure if isinstance(docling_structure, dict) else {},
         },
     )
     return structure.as_row()
@@ -79,3 +83,9 @@ def _provider(extraction: ExtractionResult, provider_attempts: list[dict[str, An
     if provider_attempts:
         return str(provider_attempts[-1].get("provider") or "unknown")
     return "current"
+
+
+def _placeholder_items(kind: str, count: Any) -> list[dict[str, Any]]:
+    if not isinstance(count, int) or count <= 0:
+        return []
+    return [{"index": index, "kind": kind, "source": "provider_structure"} for index in range(1, count + 1)]

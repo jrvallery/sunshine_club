@@ -10,6 +10,28 @@ from sunshine_extraction.sample_pipeline import SampleFile, llm_tag_inspector_fr
 from sunshine_extraction.services.provider_policy import assert_local_provider
 from sunshine_extraction.services.segmentation import propose_document_segments
 from sunshine_extraction.services.extraction import ExtractionResult
+from sunshine_extraction.services.structure import normalize_document_structure
+
+
+class _FakeDoclingDocument:
+    pages = [object(), object()]
+    tables = [object()]
+    pictures = [object(), object(), object()]
+    groups = []
+    texts = [object(), object()]
+
+    def export_to_markdown(self) -> str:
+        return "# Sunshine Docling Text\n\nMeeting minutes."
+
+
+class _FakeDoclingResult:
+    document = _FakeDoclingDocument()
+
+
+class _FakeDoclingConverter:
+    def convert(self, path: str) -> _FakeDoclingResult:
+        assert path
+        return _FakeDoclingResult()
 
 
 def _sample(path: Path, *, relative_path: str = "Sunshine shared folders/file.pdf") -> SampleFile:
@@ -41,6 +63,25 @@ def test_docling_provider_is_optional_and_local_only() -> None:
     assert status["provider"] == "docling"
     assert status["local_only"] is True
     assert "available" in status
+
+
+def test_docling_provider_extracts_with_injected_local_converter(tmp_path: Path) -> None:
+    source = tmp_path / "scan.pdf"
+    source.write_bytes(b"fake pdf")
+    sample = _sample(source)
+    provider = DoclingExtractionProvider(converter=_FakeDoclingConverter())
+
+    extraction, attempt = provider.extract(sample, {"strategy": "text_extraction"})
+    structure = normalize_document_structure(extraction, provider_attempts=[attempt.as_row()])
+
+    assert extraction.extraction_status == "extracted"
+    assert extraction.page_count == 2
+    assert extraction.metadata["docling_structure"]["table_count"] == 1
+    assert attempt.metadata["structure"]["picture_count"] == 3
+    assert structure["provider"] == "docling"
+    assert structure["page_count"] == 2
+    assert len(structure["tables"]) == 1
+    assert len(structure["figures"]) == 3
 
 
 def test_extraction_provider_factory_selects_current_and_docling(monkeypatch: pytest.MonkeyPatch) -> None:

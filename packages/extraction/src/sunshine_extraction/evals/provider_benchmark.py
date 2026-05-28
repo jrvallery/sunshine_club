@@ -96,12 +96,22 @@ def _sample(path: Path, index: int) -> SampleFile:
 
 
 def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    by_provider = _rows_by_provider(rows)
     return {
         "result_count": len(rows),
         "by_provider": _count(rows, "provider"),
+        "provider_availability": {
+            provider: {
+                "available": all(bool(row.get("provider_available")) for row in provider_rows),
+                "local_only": all(bool(row.get("local_only")) for row in provider_rows),
+                "result_count": len(provider_rows),
+            }
+            for provider, provider_rows in by_provider.items()
+        },
         "by_status": _count(rows, "status"),
         "by_quality": _count(rows, "quality"),
         "review_required_count": sum(1 for row in rows if row.get("requires_review")),
+        "comparison": _comparison(rows),
         "local_only": all(bool(row.get("local_only")) for row in rows),
     }
 
@@ -112,6 +122,38 @@ def _count(rows: list[dict[str, Any]], field: str) -> dict[str, int]:
         key = str(row.get(field) or "unknown")
         counts[key] = counts.get(key, 0) + 1
     return dict(sorted(counts.items()))
+
+
+def _rows_by_provider(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        grouped.setdefault(str(row.get("provider") or "unknown"), []).append(row)
+    return dict(sorted(grouped.items()))
+
+
+def _comparison(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    by_source: dict[str, dict[str, dict[str, Any]]] = {}
+    for row in rows:
+        by_source.setdefault(str(row.get("source_path") or row.get("sample_path")), {})[str(row.get("provider"))] = row
+    changed_quality = 0
+    changed_status = 0
+    text_length_deltas: list[int] = []
+    for provider_rows in by_source.values():
+        current = provider_rows.get("current")
+        docling = provider_rows.get("docling")
+        if not current or not docling:
+            continue
+        if current.get("quality") != docling.get("quality"):
+            changed_quality += 1
+        if current.get("status") != docling.get("status"):
+            changed_status += 1
+        text_length_deltas.append(int(docling.get("text_length") or 0) - int(current.get("text_length") or 0))
+    return {
+        "paired_file_count": len(text_length_deltas),
+        "changed_quality_count": changed_quality,
+        "changed_status_count": changed_status,
+        "docling_minus_current_text_length_total": sum(text_length_deltas),
+    }
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
