@@ -457,7 +457,21 @@ def test_qdrant_retrieval_provider_queries_local_collection(monkeypatch: pytest.
 
     class FakePoint:
         score = 0.87
-        payload = {"source_path": "/source/minutes.pdf", "correct_primary_tag": "meeting_records", "text": "minutes"}
+        payload = {
+            "source_path": "/source/minutes.pdf",
+            "relative_path": "Minutes/1992-1993.pdf",
+            "correct_primary_tag": "meeting_records",
+            "text": "minutes " * 80,
+            "metadata": {
+                "chunk_id": "file-1:chunk-003",
+                "chunk_index": 3,
+                "chunk_kind": "segment_text",
+                "segment_id": "file-1:pages-00003-00004:segment-002",
+                "page_start": 3,
+                "page_end": 4,
+                "segment_type": "meeting_packet_section",
+            },
+        }
 
     class FakeClient:
         def __init__(self, *, url: str) -> None:
@@ -489,6 +503,16 @@ def test_qdrant_retrieval_provider_queries_local_collection(monkeypatch: pytest.
     assert examples[0]["correct_primary_tag"] == "meeting_records"
     assert examples[0]["retrieval_provider"] == "qdrant"
     assert examples[0]["score"] == 0.87
+    assert examples[0]["citation"]["source_path"] == "/source/minutes.pdf"
+    assert examples[0]["citation"]["relative_path"] == "Minutes/1992-1993.pdf"
+    assert examples[0]["citation"]["chunk_id"] == "file-1:chunk-003"
+    assert examples[0]["citation"]["segment_id"] == "file-1:pages-00003-00004:segment-002"
+    assert examples[0]["citation"]["page_start"] == 3
+    assert examples[0]["citation"]["page_end"] == 4
+    assert examples[0]["citation"]["segment_type"] == "meeting_packet_section"
+    assert examples[0]["citation"]["text_snippet"].endswith("...")
+    assert "qdrant_vector_match" in examples[0]["retrieval_explanation"]
+    assert "pages:3-4" in examples[0]["retrieval_explanation"]
 
 
 def test_current_llm_tag_inspection_provider_wraps_existing_behavior(tmp_path: Path) -> None:

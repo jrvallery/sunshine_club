@@ -101,11 +101,70 @@ def _point_to_example(point: Any) -> dict[str, Any]:
     if isinstance(point, dict):
         payload = point.get("payload") or {}
         score = point.get("score")
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    citation = _citation_from_payload(payload, metadata, score)
     return {
         **payload,
         "score": score,
         "retrieval_provider": "qdrant",
+        "retrieval_explanation": _retrieval_explanation(score, citation),
+        "citation": citation,
     }
+
+
+def _citation_from_payload(payload: dict[str, Any], metadata: dict[str, Any], score: Any) -> dict[str, Any]:
+    return {
+        "source_path": _payload_value(payload, metadata, "source_path"),
+        "relative_path": _payload_value(payload, metadata, "relative_path"),
+        "sample_path": _payload_value(payload, metadata, "sample_path"),
+        "chunk_id": _payload_value(payload, metadata, "chunk_id"),
+        "chunk_index": _payload_value(payload, metadata, "chunk_index"),
+        "chunk_kind": _payload_value(payload, metadata, "chunk_kind"),
+        "segment_id": _payload_value(payload, metadata, "segment_id"),
+        "parent_segment_id": _payload_value(payload, metadata, "parent_segment_id"),
+        "page_start": _payload_value(payload, metadata, "page_start"),
+        "page_end": _payload_value(payload, metadata, "page_end"),
+        "segment_title": _payload_value(payload, metadata, "segment_title"),
+        "segment_type": _payload_value(payload, metadata, "segment_type"),
+        "score": score,
+        "text_snippet": _text_snippet(payload),
+    }
+
+
+def _payload_value(payload: dict[str, Any], metadata: dict[str, Any], key: str) -> Any:
+    value = payload.get(key)
+    if value is not None:
+        return value
+    return metadata.get(key)
+
+
+def _text_snippet(payload: dict[str, Any]) -> str | None:
+    text = payload.get("text")
+    if text is None:
+        text = payload.get("content")
+    if text is None:
+        return None
+    normalized = " ".join(str(text).split())
+    if len(normalized) <= 240:
+        return normalized
+    return normalized[:237].rstrip() + "..."
+
+
+def _retrieval_explanation(score: Any, citation: dict[str, Any]) -> str:
+    parts = ["qdrant_vector_match"]
+    if score is not None:
+        parts.append(f"score:{score}")
+    if citation.get("chunk_id"):
+        parts.append(f"chunk:{citation['chunk_id']}")
+    if citation.get("segment_id"):
+        parts.append(f"segment:{citation['segment_id']}")
+    page_start = citation.get("page_start")
+    page_end = citation.get("page_end")
+    if page_start is not None and page_end is not None:
+        parts.append(f"pages:{page_start}-{page_end}")
+    elif page_start is not None:
+        parts.append(f"page:{page_start}")
+    return " | ".join(parts)
 
 
 __all__ = ["QdrantSemanticRetrievalProvider"]

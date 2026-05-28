@@ -978,6 +978,7 @@ Current implementation:
 - `CurrentSemanticRetrievalProvider` wraps the existing local SQLite semantic index and uses the configured embedding provider for query embedding.
 - `providers/retrieval/golden_examples.py` exposes the current SQLite golden-label retrieval provider under the V2 target name.
 - `providers/retrieval/qdrant.py` defines local Qdrant query-time retrieval over the same collection used for vector indexing.
+- Qdrant retrieval normalizes each match into a citation-first row with source path, relative path, chunk ID, segment ID, page range, text snippet, score, and a human-readable retrieval explanation. This keeps tagging evidence traceable back to the parent document and proposed child segment.
 - `providers/reranking/base.py` and `providers/reranking/cortex.py` define the Cortex reranking provider boundary for future reranked semantic examples.
 - `graph/nodes/retrieval.py` owns the `retrieve_labeled_examples` node, separated from chunk embedding and vector indexing.
 - Graph runs write `sample-retrieval-results.jsonl` with provider, status, index path, query count, result count, warnings, and metadata.
