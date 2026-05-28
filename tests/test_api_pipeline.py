@@ -346,6 +346,76 @@ def test_review_items_can_read_postgres_v2_source(monkeypatch) -> None:
     assert facets.json()["review_status"]["accepted"] == 1
 
 
+def test_review_decision_can_write_postgres_v2_source(monkeypatch) -> None:
+    captured = {}
+
+    def fake_record_decision(item_id: str, **kwargs) -> dict:
+        captured["item_id"] = item_id
+        captured.update(kwargs)
+        return {
+            "id": item_id,
+            "run_id": "run-db-id",
+            "run_key": "qa_samples_full-1",
+            "preset_key": "qa_samples_full",
+            "source_path": "/mnt/sunshine/history.pdf",
+            "relative_path": "History/history.pdf",
+            "segment_id": "seg-1",
+            "status": "changed",
+            "review_reason": "needs_segment_review",
+            "proposed_class": "scanned_document",
+            "proposed_tag": "scrapbooks",
+            "proposed_secondary_tags": ["history_archive"],
+            "corrected_class": kwargs["correct_class"],
+            "corrected_tag": kwargs["correct_tag"],
+            "corrected_secondary_tags": kwargs["correct_secondary_tags"],
+            "notes": kwargs["notes"],
+        }
+
+    monkeypatch.setattr("sunshine_api.routers.review.record_postgres_review_decision", fake_record_decision)
+
+    response = TestClient(app).post(
+        "/admin/review/items/review-1/decision",
+        params={"source": "postgres"},
+        json={
+            "decision": "change",
+            "correct_class": "document",
+            "correct_tag": "history_archive_general",
+            "correct_secondary_tags": ["club_history", "scrapbook"],
+            "notes": "reviewed segment",
+            "save_as_golden": False,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "postgres"
+    assert payload["id"] == "review-1"
+    assert payload["status"] == "changed"
+    assert payload["correct_class"] == "document"
+    assert payload["correct_tag"] == "history_archive_general"
+    assert payload["correct_secondary_tags"] == ["club_history", "scrapbook"]
+    assert payload["run_key"] == "qa_samples_full-1"
+    assert payload["segment_id"] == "seg-1"
+    assert captured == {
+        "item_id": "review-1",
+        "decision": "change",
+        "correct_class": "document",
+        "correct_tag": "history_archive_general",
+        "correct_secondary_tags": ["club_history", "scrapbook"],
+        "notes": "reviewed segment",
+    }
+
+
+def test_review_decision_rejects_string_id_for_sqlite_source() -> None:
+    response = TestClient(app).post(
+        "/admin/review/items/review-1/decision",
+        json={"decision": "accept", "save_as_golden": False},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "sqlite review item id must be an integer"
+
+
 def test_provider_benchmark_latest_returns_partial_incremental_artifacts(tmp_path: Path) -> None:
     output_dir = tmp_path / "provider-benchmark"
     output_dir.mkdir()

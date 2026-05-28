@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 
 from sunshine_api.dependencies import review_store
-from sunshine_api.services.imports import list_postgres_review_items
+from sunshine_api.services.imports import list_postgres_review_items, record_postgres_review_decision
 from sunshine_api.schemas import (
     DocumentPipelineRunRequest,
     DocumentPipelineRunResponse,
@@ -393,9 +393,30 @@ def review_item_detail(item_id: int) -> dict[str, Any]:
 
 
 @router.post("/admin/review/items/{item_id}/decision")
-def record_review_decision(item_id: int, request: ReviewDecisionRequest) -> dict[str, Any]:
+def record_review_decision(item_id: str, request: ReviewDecisionRequest, source: str = "sqlite") -> dict[str, Any]:
+    if source == "postgres":
+        try:
+            row = record_postgres_review_decision(
+                item_id,
+                decision=request.decision,
+                correct_class=request.correct_class,
+                correct_tag=request.correct_tag,
+                correct_secondary_tags=request.correct_secondary_tags,
+                notes=request.notes,
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return _postgres_review_row(row)
+    if source != "sqlite":
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
+    try:
+        sqlite_item_id = int(item_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="sqlite review item id must be an integer") from error
     return review_store().record_decision(
-        item_id,
+        sqlite_item_id,
         decision=request.decision,
         correct_class=request.correct_class,
         correct_tag=request.correct_tag,
