@@ -157,9 +157,9 @@ export default function RunsPage() {
                 <tr key={run.id}>
                   <td>
                     {source === "postgres" ? (
-                      <a className="linkButton" href={`/api/admin/system/postgres-runtime/runs/${encodeURIComponent(run.run_key)}/report`} target="_blank">
+                      <Link className="linkButton" href={`/runs/${encodeURIComponent(run.run_key)}/report?source=postgres`}>
                         {run.run_key}
-                      </a>
+                      </Link>
                     ) : (
                       <Link className="linkButton" href={`/runs/${run.id}/report`}>
                         {run.run_key}

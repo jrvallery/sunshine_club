@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { use, useMemo, useState } from "react";
 
 import { PathCell } from "../../../../components/dashboard/PathCell";
@@ -34,24 +34,29 @@ const tabs: Array<{ key: ReportTab; label: string }> = [
 export default function RunReportPage({ params }: { params: Promise<{ runId: string }> }) {
   const { runId: runIdParam } = use(params);
   const runId = Number(runIdParam);
+  const searchParams = useSearchParams();
+  const postgresMode = searchParams.get("source") === "postgres" || Number.isNaN(runId);
   const [activeTab, setActiveTab] = useState<ReportTab>("overview");
   const queryClient = useQueryClient();
   const router = useRouter();
   const report = useQuery({
     queryKey: ["run-report", runId],
+    enabled: !postgresMode,
     queryFn: () => fetchJson<RunReport>(`/api/admin/runs/${runId}/report`),
     refetchInterval: (query) => (isActive(query.state.data?.run.status) ? 1500 : false)
   });
   const data = report.data;
+  const postgresRunKey = postgresMode ? runIdParam : data?.run.run_key;
   const postgresReport = useQuery({
-    queryKey: ["postgres-run-report", data?.run.run_key],
-    enabled: Boolean(data?.run.run_key),
-    queryFn: () => fetchJson<PostgresRunReport>(`/api/admin/system/postgres-runtime/runs/${encodeURIComponent(String(data?.run.run_key))}/report`),
+    queryKey: ["postgres-run-report", postgresRunKey],
+    enabled: Boolean(postgresRunKey),
+    queryFn: () => fetchJson<PostgresRunReport>(`/api/admin/system/postgres-runtime/runs/${encodeURIComponent(String(postgresRunKey))}/report`),
     retry: false,
-    refetchInterval: isActive(data?.run.status) ? 1500 : false
+    refetchInterval: postgresMode ? 5000 : isActive(data?.run.status) ? 1500 : false
   });
   const events = useQuery({
     queryKey: ["run-events", runId],
+    enabled: !postgresMode,
     queryFn: () => fetchJson<PipelineRunEvent[]>(`/api/admin/runs/${runId}/events?limit=300`),
     refetchInterval: isActive(report.data?.run.status) ? 1500 : false
   });
@@ -81,6 +86,34 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
   const postgresData = postgresReport.data;
   const fileRows = useMemo(() => (postgresData?.results?.length ? postgresData.results : data?.files ?? []), [data?.files, postgresData?.results]);
   const logRows = postgresData?.run_events?.length ? postgresData.run_events : events.data ?? [];
+
+  if (postgresMode) {
+    if (postgresReport.isLoading) {
+      return <RunReportLoading />;
+    }
+    if (!postgresData) {
+      return (
+        <main className="pageShell">
+          <header className="pageHeader">
+            <div>
+              <p className="eyebrow">Postgres V2 Run Report</p>
+              <h1>Run Report Not Found</h1>
+              <p className="muted">{runIdParam}</p>
+            </div>
+            <Link className="secondaryButton" href="/runs">Back to Runs</Link>
+          </header>
+          <div className="empty">{postgresReport.error ? postgresReport.error.message : "Postgres V2 run report was not found."}</div>
+        </main>
+      );
+    }
+    return (
+      <PostgresRunReportView
+        report={postgresData}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+      />
+    );
+  }
 
   if (report.isLoading) {
     return <RunReportLoading />;
@@ -211,6 +244,112 @@ function RunReportLoading() {
       </header>
       <div className="empty">Loading run report...</div>
     </main>
+  );
+}
+
+function PostgresRunReportView({
+  report,
+  activeTab,
+  setActiveTab
+}: {
+  report: PostgresRunReport;
+  activeTab: ReportTab;
+  setActiveTab: (tab: ReportTab) => void;
+}) {
+  const runKey = String(report.run.run_key ?? "");
+  const status = String(report.run.status ?? "-");
+  const modelCalls = Number(report.summary.model_call_count ?? 0);
+  const postgresTabs = tabs.filter((tab) => ["overview", "files", "review", "segments", "models", "logs"].includes(tab.key));
+  const activePostgresTab = postgresTabs.some((tab) => tab.key === activeTab) ? activeTab : "overview";
+  return (
+    <main className="pageShell">
+      <header className="pageHeader">
+        <div>
+          <p className="eyebrow">Postgres V2 Run Report</p>
+          <h1>{runKey}</h1>
+          <p className="muted">{String(report.run.input_root ?? "")}</p>
+        </div>
+        <div className="buttonRow">
+          <Link className="secondaryButton" href="/runs">Back to Runs</Link>
+          <a className="secondaryButton" href={`/api/admin/system/postgres-runtime/runs/${encodeURIComponent(runKey)}/report`} target="_blank">
+            Open JSON
+          </a>
+        </div>
+      </header>
+
+      <section className="panel runReportHeader">
+        <div className="runStatusLine">
+          {isActive(status) ? <span className="spinner" aria-hidden="true" /> : null}
+          <StatusBadge value={status} tone={status === "failed" ? "danger" : "default"} />
+        </div>
+        <div className="runMetaGrid">
+          <KeyValue label="Run" value={<RunContextBadge runId={runKey} runKey={runKey} preset={String(report.run.preset_key ?? "-")} />} />
+          <KeyValue label="Preset" value={String(report.run.preset_key ?? "-")} />
+          <KeyValue label="Source" value="Postgres V2" />
+          <KeyValue label="Started" value={String(report.run.started_at ?? "-")} />
+          <KeyValue label="Completed" value={String(report.run.finished_at ?? "-")} />
+          <KeyValue label="Output" value={String(report.run.output_dir ?? "-")} />
+        </div>
+      </section>
+
+      <section className="metrics">
+        <Metric label="Results" value={String(report.summary.result_count ?? 0)} />
+        <Metric label="Review items" value={String(report.summary.review_item_count ?? 0)} />
+        <Metric label="Open review" value={String(report.summary.open_review_item_count ?? 0)} />
+        <Metric label="Segments" value={String(report.summary.document_segment_count ?? 0)} />
+        <Metric label="Segment reviews" value={String(report.summary.segment_review_count ?? 0)} />
+        <Metric label="Model calls" value={String(modelCalls)} />
+        <Metric label="Provider attempts" value={String(report.summary.provider_attempt_count ?? 0)} />
+        <Metric label="Graph events" value={String(report.summary.run_event_count ?? 0)} />
+      </section>
+
+      <nav className="tabBar" aria-label="Postgres run report sections">
+        {postgresTabs.map((tab) => (
+          <button className={activePostgresTab === tab.key ? "tabButton active" : "tabButton"} key={tab.key} onClick={() => setActiveTab(tab.key)}>
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+
+      {activePostgresTab === "overview" ? <PostgresOverviewTab report={report} /> : null}
+      {activePostgresTab === "files" ? <FilesTab rows={report.results ?? []} /> : null}
+      {activePostgresTab === "review" ? <PostgresReviewQueueTab report={report} /> : null}
+      {activePostgresTab === "segments" ? <SegmentsTab postgresReport={report} /> : null}
+      {activePostgresTab === "models" ? <JsonTable title="Model Calls" rows={report.model_usage ?? []} /> : null}
+      {activePostgresTab === "logs" ? <LogsTab events={report.run_events ?? []} postgresBacked /> : null}
+    </main>
+  );
+}
+
+function PostgresOverviewTab({ report }: { report: PostgresRunReport }) {
+  return (
+    <section className="panel">
+      <div className="reportGrid">
+        <Breakdown title="Routes" values={report.summary.route_status ?? {}} />
+        <Breakdown title="Quality" values={report.summary.quality ?? {}} />
+        <Breakdown title="Primary Tags" values={report.summary.primary_tag ?? {}} />
+        <Breakdown title="Segment Types" values={report.summary.segment_type ?? {}} />
+        <Breakdown title="Provider Attempts" values={report.summary.provider_attempt_status ?? {}} />
+        <Breakdown title="Graph Events" values={report.summary.run_event_status ?? {}} />
+      </div>
+    </section>
+  );
+}
+
+function PostgresReviewQueueTab({ report }: { report: PostgresRunReport }) {
+  return (
+    <section className="panel">
+      <div className="sectionHeader">
+        <div>
+          <h2>Review Queue</h2>
+          <span>{report.review_items.length} Postgres V2 review items</span>
+        </div>
+        <Link className="secondaryButton" href={`/review?source=postgres&run_key=${encodeURIComponent(String(report.run.run_key ?? ""))}&status=all`}>
+          Open In Review
+        </Link>
+      </div>
+      <ReviewItemRows runId={String(report.run.run_key ?? "")} rows={report.review_items} />
+    </section>
   );
 }
 
