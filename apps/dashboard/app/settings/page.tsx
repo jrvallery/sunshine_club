@@ -44,6 +44,21 @@ type QdrantRebuildResponse = {
   };
 };
 
+type PostgresRuntime = {
+  ok: boolean;
+  summary: {
+    pipeline_runs: number;
+    pipeline_results: number;
+    review_items: number;
+    model_usage: number;
+    provider_attempts: number;
+    document_segments: number;
+    pipeline_chunks: number;
+    pipeline_chunk_embeddings: number;
+  };
+  runs: Array<Record<string, unknown>>;
+};
+
 export default function SettingsPage() {
   const queryClient = useQueryClient();
   const [rebuildRunKey, setRebuildRunKey] = useState("");
@@ -54,6 +69,11 @@ export default function SettingsPage() {
   const infrastructure = useQuery({
     queryKey: ["local-infrastructure"],
     queryFn: () => fetchJson<LocalInfrastructure>("/api/admin/system/local-infrastructure")
+  });
+  const postgresRuntime = useQuery({
+    queryKey: ["postgres-runtime"],
+    queryFn: () => fetchJson<PostgresRuntime>("/api/admin/system/postgres-runtime?limit=10"),
+    retry: false
   });
   const rebuildQdrant = useMutation({
     mutationFn: () =>
@@ -101,6 +121,56 @@ export default function SettingsPage() {
           <ProviderStatus title="Temporal" status={infrastructure.data?.temporal} />
           <ProviderStatus title="Observability" status={infrastructure.data?.observability} />
         </div>
+      </section>
+      <section className="panel">
+        <div className="sectionHeader">
+          <h2>Postgres Runtime</h2>
+          <StatusBadge value={postgresRuntime.data?.ok ? "connected" : "not connected"} tone={postgresRuntime.data?.ok ? "default" : "danger"} />
+        </div>
+        <div className="settingsGrid">
+          <KeyValue label="Runs" value={String(postgresRuntime.data?.summary.pipeline_runs ?? 0)} />
+          <KeyValue label="Results" value={String(postgresRuntime.data?.summary.pipeline_results ?? 0)} />
+          <KeyValue label="Review items" value={String(postgresRuntime.data?.summary.review_items ?? 0)} />
+          <KeyValue label="Model usage" value={String(postgresRuntime.data?.summary.model_usage ?? 0)} />
+          <KeyValue label="Provider attempts" value={String(postgresRuntime.data?.summary.provider_attempts ?? 0)} />
+          <KeyValue label="Segments" value={String(postgresRuntime.data?.summary.document_segments ?? 0)} />
+          <KeyValue label="Chunks" value={String(postgresRuntime.data?.summary.pipeline_chunks ?? 0)} />
+          <KeyValue label="Embeddings" value={String(postgresRuntime.data?.summary.pipeline_chunk_embeddings ?? 0)} />
+        </div>
+        {postgresRuntime.error ? <p className="dangerText">{String(postgresRuntime.error.message)}</p> : null}
+        {postgresRuntime.data?.runs.length ? (
+          <div className="tableWrap reportTable">
+            <table>
+              <thead>
+                <tr>
+                  <th>Run</th>
+                  <th>Status</th>
+                  <th>Results</th>
+                  <th>Review</th>
+                  <th>Models</th>
+                  <th>Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {postgresRuntime.data.runs.map((run) => (
+                  <tr key={String(run.id)}>
+                    <td>
+                      <div className="cellStack">
+                        <strong>{String(run.run_key ?? "-")}</strong>
+                        <span>{String(run.output_dir ?? "-")}</span>
+                      </div>
+                    </td>
+                    <td>{String(run.status ?? "-")}</td>
+                    <td>{String(run.result_count ?? 0)}</td>
+                    <td>{String(run.review_required_count ?? 0)}</td>
+                    <td>{String(run.model_usage_count ?? 0)}</td>
+                    <td>{String(run.updated_at ?? run.created_at ?? "-")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
       </section>
       <section className="panel">
         <div className="sectionHeader">
