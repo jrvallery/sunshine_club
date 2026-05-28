@@ -3,10 +3,21 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 
 
 HOSTED_PROVIDER_NAMES = {"openai", "gemini", "anthropic", "cohere", "mistral"}
 LOCAL_EXTRACTION_PROVIDER_NAMES = {"current", "docling", "mineru", "ragflow_deepdoc", "unstructured"}
+PROVIDER_ENV_KEYS = {
+    "SUNSHINE_EMBEDDING_PROVIDER": "embedding provider",
+    "SUNSHINE_LLM_TAG_PROVIDER": "LLM tag provider",
+    "SUNSHINE_OCR_FALLBACK_PROVIDER": "OCR fallback provider",
+    "SUNSHINE_OCR_PARSER_PROVIDER": "OCR parser provider",
+    "SUNSHINE_TEXT_PARSER_PROVIDER": "text parser provider",
+    "SUNSHINE_DEFAULT_PARSER_PROVIDER": "default parser provider",
+    "SUNSHINE_RETRIEVAL_PROVIDER": "retrieval provider",
+    "SUNSHINE_VECTOR_STORE": "vector store provider",
+}
 
 
 def is_hosted_provider_name(provider_name: str | None) -> bool:
@@ -17,6 +28,23 @@ def is_hosted_provider_name(provider_name: str | None) -> bool:
 def assert_local_provider(provider_name: str | None, *, purpose: str) -> None:
     if is_hosted_provider_name(provider_name):
         raise ValueError(f"Hosted provider '{provider_name}' is not allowed for {purpose}; Sunshine V2 is local-only.")
+
+
+def assert_production_local_only_environment(env: dict[str, Any] | None = None) -> None:
+    """Fail closed when production env provider settings name hosted APIs."""
+
+    active_env = env or os.environ
+    mode = _runtime_mode(active_env)
+    if mode != "production":
+        return
+    violations = []
+    for key, purpose in sorted(PROVIDER_ENV_KEYS.items()):
+        value = str(active_env.get(key) or "").strip().lower()
+        if is_hosted_provider_name(value):
+            violations.append(f"{key}={value} ({purpose})")
+    if violations:
+        joined = ", ".join(violations)
+        raise ValueError(f"Production Sunshine V2 runs are local-only; hosted provider settings are blocked: {joined}")
 
 
 def parser_provider_for_strategy(strategy: str, *, default: str = "current") -> str:
@@ -44,3 +72,10 @@ def normalize_local_extraction_provider(provider_name: str | None, *, purpose: s
             "expected current, docling, mineru, ragflow_deepdoc, or unstructured."
         )
     return normalized
+
+
+def _runtime_mode(env: dict[str, Any]) -> str:
+    value = str(env.get("SUNSHINE_RUNTIME_MODE") or env.get("SUNSHINE_ENV") or "development").strip().lower()
+    if value in {"prod", "production", "v2-production"}:
+        return "production"
+    return "development"

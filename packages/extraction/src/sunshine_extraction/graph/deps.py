@@ -24,6 +24,7 @@ from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, 
 from sunshine_extraction.services.cache import SQLiteModelCallCache, model_call_cache_from_env
 from sunshine_extraction.services.extraction import OcrExecutor, ocr_executor_from_env
 from sunshine_extraction.services.imports import RunResultsImporter, run_results_importer_from_env
+from sunshine_extraction.services.provider_policy import assert_production_local_only_environment
 from sunshine_extraction.services.tagging import LLMTagInspector, llm_tag_inspector_from_env
 from sunshine_extraction.services.vector_policy import vector_store_policy_from_env
 
@@ -48,6 +49,7 @@ def _resolve_deps(
     semantic_index_path: str | Path | None | object = SEMANTIC_INDEX_FROM_ENV,
     semantic_retrieval_filter: dict[str, Any] | None = None,
 ) -> DocumentPipelineDeps:
+    assert_production_local_only_environment()
     if embedding_provider is None:
         try:
             embedding_provider = provider_from_env()

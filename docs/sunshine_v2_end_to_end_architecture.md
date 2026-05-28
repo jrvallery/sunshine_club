@@ -1670,6 +1670,7 @@ Important missing V2 dependencies:
 - Provider benchmark runs now also emit `sample-parser-results.jsonl`, a normalized parser artifact containing provider, status, quality, text snippet, page count, review flag, dependency status, and provider-attempt metadata. The benchmark API and dashboard expose those rows so parser outputs can be compared against the same V2 artifact contract used by graph runs.
 - The local-infrastructure API and Settings dashboard expose parser candidate dependency status for Docling, MinerU, RAGFlow DeepDoc, and Unstructured, so missing local packages are visible before running provider benchmarks.
 - Parser promotion is configurable through local-only provider policy: `SUNSHINE_OCR_PARSER_PROVIDER`, `SUNSHINE_TEXT_PARSER_PROVIDER`, and `SUNSHINE_DEFAULT_PARSER_PROVIDER` may select `current`, `docling`, `mineru`, `ragflow_deepdoc`, or `unstructured`. Hosted providers are rejected by policy, unavailable promoted parsers fall back to the configured provider, and the provider-selection artifact records the preferred provider, selected provider, skipped providers, and reason.
+- Production graph dependency resolution now calls `assert_production_local_only_environment()` before provider construction. If `SUNSHINE_RUNTIME_MODE=production` names a hosted provider such as OpenAI, Gemini, Anthropic, Cohere, or Mistral in embedding, LLM tagging, OCR fallback, parser, retrieval, or vector-store env settings, the graph fails closed before any provider can be called.
 - Provider benchmarks can now run from a JSON sample manifest, and `docs/provider_benchmark_canonical_samples.example.json` defines the intended canonical local sample categories.
 - Provider benchmark manifests can now be generated from private QA sample indexes with `python -m sunshine_extraction.provider_benchmark --generate-manifest-from-qa-root ...`; generated manifests live under `.local/` and are ignored by git so real customer paths are reproducible locally without being committed.
 - Provider benchmarks support safe slicing with `--sample-categories` and `--sample-limit`, and write result/parser JSONL rows incrementally while the run is in progress. This matters for slow local providers such as Docling on CPU because partial evidence survives even if a long scrapbook or financial packet run is stopped.
@@ -1710,6 +1711,12 @@ V2 production deployment therefore requires:
 - Self-hosted observability only.
 
 Hosted OpenAI/Gemini/Anthropic or other third-party APIs must not be called by production graph nodes. If legacy adapters remain in the codebase during migration, they must be disabled by default, excluded from production provider registries, and blocked by tests that assert local-only policy.
+
+Current implementation:
+
+- Hosted provider names are blocked by `assert_production_local_only_environment()` during graph dependency resolution.
+- Provider registry validation fails if any hosted provider is enabled or any enabled provider is not local-only.
+- Tests prove production graph dependency resolution fails before provider construction when hosted provider env settings are present.
 
 ## Open-Source Dashboard Evaluation
 

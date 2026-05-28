@@ -45,7 +45,7 @@ from sunshine_extraction.services.artifacts.review_queue import build_review_que
 from sunshine_extraction.services.artifact_manifest import build_artifact_manifest
 from sunshine_extraction.services.cache import SQLiteModelCallCache
 from sunshine_extraction.services.classification.extraction_plan import provider_hints
-from sunshine_extraction.services.provider_policy import assert_local_provider
+from sunshine_extraction.services.provider_policy import assert_local_provider, assert_production_local_only_environment
 from sunshine_extraction.services.confidence import calibrate_confidence, confidence_calibration_row
 from sunshine_extraction.services.extraction import ocr_executor_from_env
 from sunshine_extraction.services.quality import extraction_quality_gate, quality_gate_row, validate_extracted_text, validation_row, with_text_validation
@@ -1205,6 +1205,26 @@ def test_native_probe_detects_image_only_pdf_likelihood(tmp_path: Path) -> None:
 def test_hosted_provider_policy_blocks_openai() -> None:
     with pytest.raises(ValueError):
         assert_local_provider("openai", purpose="ocr")
+
+
+def test_production_provider_policy_blocks_hosted_env_names() -> None:
+    env = {
+        "SUNSHINE_RUNTIME_MODE": "production",
+        "SUNSHINE_EMBEDDING_PROVIDER": "cortex",
+        "SUNSHINE_LLM_TAG_PROVIDER": "gemini",
+        "SUNSHINE_OCR_FALLBACK_PROVIDER": "cortex",
+    }
+
+    with pytest.raises(ValueError, match="SUNSHINE_LLM_TAG_PROVIDER=gemini"):
+        assert_production_local_only_environment(env)
+
+
+def test_graph_dependency_resolution_fails_closed_for_hosted_production_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SUNSHINE_RUNTIME_MODE", "production")
+    monkeypatch.setenv("SUNSHINE_LLM_TAG_PROVIDER", "openai")
+
+    with pytest.raises(ValueError, match="hosted provider settings are blocked"):
+        _resolve_deps()
 
 
 def test_env_provider_selection_does_not_return_hosted_openai(monkeypatch: pytest.MonkeyPatch) -> None:
