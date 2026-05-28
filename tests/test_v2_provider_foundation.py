@@ -7,6 +7,8 @@ import pytest
 from pypdf import PdfWriter
 
 from sunshine_extraction.embeddings import PlaceholderEmbeddingProvider
+from sunshine_extraction.domain.chunks import chunk_row
+from sunshine_extraction.domain.model_usage import ModelUsageRow, cost_basis
 from sunshine_extraction.providers.probe import NativeFileProbeProvider
 from sunshine_extraction.providers.chunking import CurrentChunkingProvider
 from sunshine_extraction.providers.chunking.legacy import chunk_content as legacy_chunk_content
@@ -148,6 +150,57 @@ def test_legacy_chunker_preserves_metadata_fallback(tmp_path: Path) -> None:
     assert chunks[0]["chunk_kind"] == "metadata"
     assert chunks[0]["chunk_id"] == "test:1:1"
     assert "OCR deferred" in chunks[0]["text"]
+
+
+def test_chunk_domain_contract_writes_compatible_rows(tmp_path: Path) -> None:
+    source = tmp_path / "minutes.txt"
+    source.write_text("Meeting minutes text", encoding="utf-8")
+    extraction = ExtractionResult(
+        sample=_sample(source),
+        plan={"strategy": "text_extraction"},
+        extraction_status="extracted",
+        text="Meeting minutes text",
+        metadata={},
+        page_count=1,
+        warnings=[],
+    )
+
+    row = chunk_row(extraction, 2, "text", "minutes", {"char_start": 8, "char_end": 15})
+
+    assert row == {
+        "source_path": f"/source/{source.name}",
+        "relative_path": "Sunshine shared folders/file.pdf",
+        "sample_path": str(source),
+        "chunk_id": "test:1:2",
+        "chunk_index": 2,
+        "chunk_kind": "text",
+        "text": "minutes",
+        "metadata": {"char_start": 8, "char_end": 15},
+    }
+
+
+def test_model_usage_domain_contract_tracks_cost_basis() -> None:
+    row = ModelUsageRow(
+        source_path="/source/file.pdf",
+        relative_path="file.pdf",
+        node="embed_chunks",
+        purpose="chunk_embedding",
+        provider="cortex",
+        model="local-model",
+        status="ok",
+        runtime_ms=12,
+        input_tokens=None,
+        output_tokens=None,
+        total_tokens=None,
+        estimated_cost_usd=None,
+        cost_basis=cost_basis("cortex"),
+        error=None,
+        metadata={"call_count": 1},
+    ).as_row()
+
+    assert row["cost_basis"] == "local"
+    assert cost_basis("openai") == "external"
+    assert cost_basis("placeholder") == "placeholder"
 
 
 def test_current_chunk_embedding_provider_wraps_existing_behavior() -> None:

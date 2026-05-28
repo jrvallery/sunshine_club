@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from sunshine_extraction.domain.model_usage import ModelUsageRow, cost_basis as provider_cost_basis
 from sunshine_extraction.embeddings import EmbeddingProvider
 from sunshine_extraction.graph.node_utils import _llm_inspection_warnings
 from sunshine_extraction.graph.state import DocumentPipelineState
@@ -37,7 +38,7 @@ def _ocr_model_usage_rows(state: DocumentPipelineState, pages: list[dict[str, An
                 model=model,
                 status="ok" if page.get("ocr_status") == "ok" else str(page.get("ocr_status") or "unknown"),
                 runtime_ms=_seconds_to_ms(page.get("seconds")),
-                cost_basis=_cost_basis(provider),
+                cost_basis=provider_cost_basis(provider),
                 metadata={
                     "page_number": page.get("page_number"),
                     "page_count": page.get("page_count"),
@@ -73,7 +74,7 @@ def _embedding_model_usage_row(
         status=status,
         runtime_ms=round((time.monotonic() - started) * 1000),
         error=error,
-        cost_basis=_cost_basis(provider_name),
+        cost_basis=provider_cost_basis(provider_name),
         metadata={
             "call_count": call_count,
             "embedding_dimensions": getattr(provider, "dimensions", None),
@@ -100,7 +101,7 @@ def _llm_tag_model_usage_row(state: DocumentPipelineState, inspection: dict[str,
         total_tokens=_optional_int(inspection.get("total_tokens")),
         estimated_cost_usd=_optional_float(inspection.get("estimated_cost_usd")),
         error=";".join(warnings) or None,
-        cost_basis=_cost_basis(provider),
+        cost_basis=provider_cost_basis(provider),
         metadata={"cost_estimate": "unavailable"},
     )
 
@@ -121,7 +122,7 @@ def _model_usage_row(
     cost_basis: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    row = {
         "source_path": state.get("source_path"),
         "relative_path": state.get("relative_path"),
         "node": node,
@@ -134,10 +135,11 @@ def _model_usage_row(
         "output_tokens": output_tokens,
         "total_tokens": total_tokens,
         "estimated_cost_usd": estimated_cost_usd,
-        "cost_basis": cost_basis or _cost_basis(provider),
+        "cost_basis": cost_basis or provider_cost_basis(provider),
         "error": error,
         "metadata": metadata or {},
     }
+    return ModelUsageRow(**row).as_row()
 
 def _first_warning_with_prefix(warnings: Any, prefix: str) -> str | None:
     if isinstance(warnings, str):
@@ -156,10 +158,7 @@ def _provider_model_from_engine(engine: str) -> tuple[str, str]:
     return provider or "unknown", model or "unknown"
 
 def _cost_basis(provider: str) -> str:
-    normalized = provider.lower()
-    if normalized in {"placeholder", "local-placeholder"}:
-        return "placeholder"
-    return "external" if normalized in {"openai", "gemini", "google", "anthropic"} else "local"
+    return provider_cost_basis(provider)
 
 def _seconds_to_ms(value: Any) -> int | None:
     if not isinstance(value, int | float):

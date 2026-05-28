@@ -799,6 +799,7 @@ Success criteria:
 
 Current implementation:
 
+- `domain/chunks.py` defines the normalized chunk row contract used by chunking providers and embedding/indexing artifacts.
 - `providers/chunking/base.py` defines the swappable chunking provider contract.
 - `providers/chunking/legacy.py` owns the backward-compatible fixed-size/metadata chunker, and `CurrentChunkingProvider` wraps it without importing from the legacy sample pipeline.
 - Graph runs write `sample-chunking-results.jsonl` with provider, status, strategy, chunk count, warnings, and local-only metadata.
@@ -1224,6 +1225,7 @@ Success criteria:
 Current implementation:
 
 - Graph single-file runs and batch runs write `artifact-manifest.json`.
+- `domain/model_usage.py` defines the normalized model-usage row contract and local/external/placeholder cost-basis classification used by graph audit rows.
 - Manifest rows include artifact path, kind, existence, size, modified time, JSONL row count, and SHA-256 for non-manifest artifacts.
 - `artifact-manifest.json` includes itself with `sha256: null` and `note: self_referential_manifest` because a file cannot truthfully hash itself while embedding that hash.
 - The manifest makes review-critical rows such as `sample-document-segments.jsonl`, `sample-route-decisions.jsonl`, `sample-quality-gates.jsonl`, and `sample-model-usage.jsonl` discoverable from one place.
