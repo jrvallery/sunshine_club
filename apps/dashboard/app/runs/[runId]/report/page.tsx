@@ -53,10 +53,10 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
   const postgresRunKey = postgresMode ? runIdParam : data?.run.run_key;
   const postgresReport = useQuery({
     queryKey: ["postgres-run-report", postgresRunKey],
-    enabled: Boolean(postgresRunKey),
+    enabled: postgresMode && Boolean(postgresRunKey),
     queryFn: () => fetchJson<PostgresRunReport>(`/api/admin/system/postgres-runtime/runs/${encodeURIComponent(String(postgresRunKey))}/report`),
     retry: false,
-    refetchInterval: postgresMode ? 5000 : isActive(data?.run.status) ? 1500 : false
+    refetchInterval: postgresMode ? 5000 : false
   });
   const events = useQuery({
     queryKey: ["run-events", runId],
