@@ -57,6 +57,7 @@ type PostgresRuntime = {
     review_items: number;
     model_usage: number;
     provider_attempts: number;
+    pipeline_parser_results?: number;
     document_segments: number;
     pipeline_chunks: number;
     pipeline_chunk_embeddings: number;
@@ -229,6 +230,7 @@ export default function SettingsPage() {
           <KeyValue label="Review items" value={String(postgresRuntime.data?.summary.review_items ?? 0)} />
           <KeyValue label="Model usage" value={String(postgresRuntime.data?.summary.model_usage ?? 0)} />
           <KeyValue label="Provider attempts" value={String(postgresRuntime.data?.summary.provider_attempts ?? 0)} />
+          <KeyValue label="Run parser results" value={String(postgresRuntime.data?.summary.pipeline_parser_results ?? 0)} />
           <KeyValue label="Segments" value={String(postgresRuntime.data?.summary.document_segments ?? 0)} />
           <KeyValue label="Chunks" value={String(postgresRuntime.data?.summary.pipeline_chunks ?? 0)} />
           <KeyValue label="Embeddings" value={String(postgresRuntime.data?.summary.pipeline_chunk_embeddings ?? 0)} />

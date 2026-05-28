@@ -366,6 +366,8 @@ export type PostgresRunReport = {
     local_model_call_count: number;
     nonlocal_model_call_count: number;
     provider_attempt_count: number;
+    parser_result_count?: number;
+    parser_review_required_count?: number;
     run_event_count: number;
     failed_run_event_count: number;
     document_segment_count: number;
@@ -375,6 +377,9 @@ export type PostgresRunReport = {
     primary_tag: Record<string, number>;
     segment_type: Record<string, number>;
     provider_attempt_status: Record<string, number>;
+    parser_status?: Record<string, number>;
+    parser_quality?: Record<string, number>;
+    parser_provider?: Record<string, number>;
     run_event_status: Record<string, number>;
     model_provider: Record<string, number>;
   };
@@ -382,6 +387,7 @@ export type PostgresRunReport = {
   review_items: Array<Record<string, unknown>>;
   model_usage: Array<Record<string, unknown>>;
   provider_attempts: Array<Record<string, unknown>>;
+  parser_results?: Array<Record<string, unknown>>;
   document_segments: Array<Record<string, unknown>>;
   run_events: Array<Record<string, unknown>>;
 };

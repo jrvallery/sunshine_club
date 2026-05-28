@@ -259,7 +259,7 @@ function PostgresRunReportView({
   const runKey = String(report.run.run_key ?? "");
   const status = String(report.run.status ?? "-");
   const modelCalls = Number(report.summary.model_call_count ?? 0);
-  const postgresTabs = tabs.filter((tab) => ["overview", "files", "review", "segments", "models", "logs"].includes(tab.key));
+  const postgresTabs = tabs.filter((tab) => ["overview", "files", "review", "segments", "ocr", "models", "logs"].includes(tab.key));
   const activePostgresTab = postgresTabs.some((tab) => tab.key === activeTab) ? activeTab : "overview";
   return (
     <main className="pageShell">
@@ -298,6 +298,8 @@ function PostgresRunReportView({
         <Metric label="Open review" value={String(report.summary.open_review_item_count ?? 0)} />
         <Metric label="Segments" value={String(report.summary.document_segment_count ?? 0)} />
         <Metric label="Segment reviews" value={String(report.summary.segment_review_count ?? 0)} />
+        <Metric label="Parser results" value={String(report.summary.parser_result_count ?? report.parser_results?.length ?? 0)} />
+        <Metric label="Parser review" value={String(report.summary.parser_review_required_count ?? 0)} />
         <Metric label="Model calls" value={String(modelCalls)} />
         <Metric label="Provider attempts" value={String(report.summary.provider_attempt_count ?? 0)} />
         <Metric label="Graph events" value={String(report.summary.run_event_count ?? 0)} />
@@ -315,6 +317,7 @@ function PostgresRunReportView({
       {activePostgresTab === "files" ? <FilesTab rows={report.results ?? []} /> : null}
       {activePostgresTab === "review" ? <PostgresReviewQueueTab report={report} /> : null}
       {activePostgresTab === "segments" ? <SegmentsTab postgresReport={report} /> : null}
+      {activePostgresTab === "ocr" ? <PostgresParserTab report={report} /> : null}
       {activePostgresTab === "models" ? <JsonTable title="Model Calls" rows={report.model_usage ?? []} /> : null}
       {activePostgresTab === "logs" ? <LogsTab events={report.run_events ?? []} postgresBacked /> : null}
     </main>
@@ -330,8 +333,34 @@ function PostgresOverviewTab({ report }: { report: PostgresRunReport }) {
         <Breakdown title="Primary Tags" values={report.summary.primary_tag ?? {}} />
         <Breakdown title="Segment Types" values={report.summary.segment_type ?? {}} />
         <Breakdown title="Provider Attempts" values={report.summary.provider_attempt_status ?? {}} />
+        <Breakdown title="Parser Quality" values={report.summary.parser_quality ?? {}} />
+        <Breakdown title="Parser Providers" values={report.summary.parser_provider ?? {}} />
         <Breakdown title="Graph Events" values={report.summary.run_event_status ?? {}} />
       </div>
+    </section>
+  );
+}
+
+function PostgresParserTab({ report }: { report: PostgresRunReport }) {
+  const rows = report.parser_results ?? [];
+  return (
+    <section className="panel">
+      <div className="sectionHeader">
+        <div>
+          <h2>Parser Results</h2>
+          <span>{rows.length} parser/OCR rows imported for this run</span>
+        </div>
+      </div>
+      <div className="metrics compactMetrics">
+        <Metric label="Rows" value={String(report.summary.parser_result_count ?? rows.length)} />
+        <Metric label="Needs review" value={String(report.summary.parser_review_required_count ?? 0)} />
+      </div>
+      <div className="reportGrid">
+        <Breakdown title="Parser Status" values={report.summary.parser_status ?? {}} />
+        <Breakdown title="Parser Quality" values={report.summary.parser_quality ?? {}} />
+        <Breakdown title="Parser Provider" values={report.summary.parser_provider ?? {}} />
+      </div>
+      <JsonTable title="Parser Rows" rows={rows} />
     </section>
   );
 }
