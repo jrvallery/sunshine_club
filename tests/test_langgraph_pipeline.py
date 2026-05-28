@@ -314,6 +314,8 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert llm_result_rows[0]["metadata"]["primary_tag"] == "annual_spring_tea"
     assert segment_rows[0]["segment_type"] == "single_document"
     assert segment_rows[0]["requires_segment_review"] is False
+    assert segment_rows[0]["metadata"]["parent_content_sha256"] == source_identity_rows[0]["content_sha256"]
+    assert segment_rows[0]["metadata"]["parent_source_path"] == "/source/tea.txt"
     assert chunking_rows[0]["provider"] == "current"
     assert chunking_rows[0]["status"] == "chunked"
     assert chunking_rows[0]["chunk_count"] == 1

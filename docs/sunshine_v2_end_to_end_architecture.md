@@ -782,6 +782,7 @@ Current implementation:
 
 - `domain/document_segments.py` defines logical child-document segment rows that preserve parent source path and page range.
 - `services/segmentation/page_grouping.py` emits review-only candidate page segments for multi-page scrapbook/newspaper inputs, separator-based groups when blank pages are detected, and fixed page windows for very large files.
+- Segment metadata now preserves immutable parent provenance, including parent file ID, content SHA-256, size, modified timestamp, source path, and relative path. This makes later reviewed child-document export auditable without mutating the source packet.
 - Generic long scanned PDFs can also become `mixed_collection_page_group` proposals when OCR page text contains multiple collection signals such as scrapbook/photo, newspaper/article, page-layout, or historical-context evidence.
 - `providers/extraction/docling_provider.py` now exports provider page rows when Docling exposes page text, and `services/structure.py` preserves provider/OCR page snippets for downstream segmentation.
 - Docling/MinerU/RAGFlow layout outputs should feed this node as boundary evidence through normalized structure; they should not create child documents outside the segment-review contract.

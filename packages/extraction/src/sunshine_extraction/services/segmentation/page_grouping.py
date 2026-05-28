@@ -14,6 +14,7 @@ def propose_document_segments(
     extraction: ExtractionResult,
     *,
     file_id: str | None = None,
+    source_identity: dict[str, Any] | None = None,
     content_class: dict[str, Any] | None = None,
     ocr_pages: list[dict[str, Any]] | None = None,
     document_structure: dict[str, Any] | None = None,
@@ -26,6 +27,7 @@ def propose_document_segments(
         split_segments = _candidate_split_segments(
             extraction,
             file_id=file_id,
+            source_identity=source_identity,
             segment_type=segment_type,
             evidence=evidence,
             page_count=page_count,
@@ -54,6 +56,7 @@ def propose_document_segments(
             "text_length": len(extraction.text or ""),
             "content_class": (content_class or {}).get("final_class"),
             "future_split_candidate": requires_review,
+            **_source_provenance_metadata(extraction, source_identity),
         },
     )
     return [segment.as_row()]
@@ -195,6 +198,7 @@ def _candidate_split_segments(
     extraction: ExtractionResult,
     *,
     file_id: str | None,
+    source_identity: dict[str, Any] | None,
     segment_type: str,
     evidence: list[str],
     page_count: int,
@@ -250,10 +254,23 @@ def _candidate_split_segments(
                 "page_word_count": group.get("word_count", 0),
                 "text_snippet": group.get("text_snippet", ""),
                 "source_segment_type": segment_type,
+                **_source_provenance_metadata(extraction, source_identity),
             },
         )
         for index, group in enumerate(groups, start=1)
     ]
+
+
+def _source_provenance_metadata(extraction: ExtractionResult, source_identity: dict[str, Any] | None) -> dict[str, Any]:
+    identity = source_identity or {}
+    return {
+        "parent_file_id": identity.get("file_id"),
+        "parent_content_sha256": identity.get("content_sha256"),
+        "parent_size_bytes": identity.get("size_bytes"),
+        "parent_modified_at_ns": identity.get("modified_at_ns"),
+        "parent_source_path": identity.get("source_path") or extraction.sample.source_path,
+        "parent_relative_path": identity.get("relative_path") or extraction.sample.relative_path,
+    }
 
 
 def _normalized_pages(pages: list[dict[str, Any]], page_count: int) -> list[dict[str, Any]]:

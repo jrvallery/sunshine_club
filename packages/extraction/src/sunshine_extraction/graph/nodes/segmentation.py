@@ -23,6 +23,7 @@ def _propose_document_segments_node(state: DocumentPipelineState) -> dict[str, A
     segments = propose_document_segments(
         state["extraction_result"],
         file_id=state.get("file_id"),
+        source_identity=state.get("source_identity"),
         content_class=state.get("content_class"),
         ocr_pages=state.get("ocr_pages", []),
         document_structure=state.get("document_structure"),

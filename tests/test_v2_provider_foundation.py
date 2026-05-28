@@ -1519,7 +1519,18 @@ def test_segmentation_marks_long_scrapbook_pdf_for_segment_review(tmp_path: Path
         warnings=[],
     )
 
-    segments = propose_document_segments(extraction, file_id="file-1")
+    segments = propose_document_segments(
+        extraction,
+        file_id="file-1",
+        source_identity={
+            "file_id": "file-1",
+            "content_sha256": "a" * 64,
+            "size_bytes": 4,
+            "modified_at_ns": 123,
+            "source_path": sample.source_path,
+            "relative_path": sample.relative_path,
+        },
+    )
 
     assert len(segments) == 12
     assert segments[0]["parent_file_id"] == "file-1"
@@ -1530,6 +1541,8 @@ def test_segmentation_marks_long_scrapbook_pdf_for_segment_review(tmp_path: Path
     assert segments[0]["page_end"] == 1
     assert segments[0]["requires_segment_review"] is True
     assert segments[0]["metadata"]["policy"] == "page_level_review_candidates"
+    assert segments[0]["metadata"]["parent_content_sha256"] == "a" * 64
+    assert segments[0]["metadata"]["parent_source_path"] == sample.source_path
 
 
 def test_segmentation_uses_blank_pages_as_review_boundaries(tmp_path: Path) -> None:
