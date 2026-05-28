@@ -154,7 +154,18 @@ def file_preview(file_id: int) -> FileResponse:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except FileNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
-    return FileResponse(path, filename=path.name)
+    return FileResponse(path, filename=path.name, content_disposition_type="inline")
+
+
+@router.get("/admin/files/{file_id}/download")
+def file_download(file_id: int) -> FileResponse:
+    try:
+        path = review_store().file_path_for_file(file_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    return FileResponse(path, filename=path.name, content_disposition_type="attachment")
 
 
 @router.get("/admin/files/{file_id}/text")
@@ -210,4 +221,3 @@ def run_file_from_browser(file_id: int, request: FileRunRequest) -> dict[str, An
         thread = threading.Thread(target=_execute_run, args=(run["id"], command, output_dir, request.import_on_success), daemon=True)
         thread.start()
     return run
-

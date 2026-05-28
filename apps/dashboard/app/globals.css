@@ -457,10 +457,102 @@ h2 {
   overflow: auto;
 }
 
+.fileBrowserTable {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.fileBrowserTable table {
+  border-collapse: separate;
+  border-spacing: 0 10px;
+  min-width: 820px;
+}
+
+.fileBrowserTable th,
+.fileBrowserTable td {
+  min-width: 0;
+}
+
+.fileBrowserTable th:first-child,
+.fileBrowserTable td:first-child {
+  min-width: 300px;
+  width: 44%;
+}
+
+.fileBrowserTable th:nth-child(2),
+.fileBrowserTable td:nth-child(2) {
+  min-width: 210px;
+  width: 26%;
+}
+
+.fileBrowserTable th:nth-child(3),
+.fileBrowserTable td:nth-child(3) {
+  min-width: 190px;
+  width: 22%;
+}
+
+.fileBrowserTable th:nth-child(4),
+.fileBrowserTable td:nth-child(4) {
+  min-width: 130px;
+  width: 130px;
+}
+
+.fileBrowserTable thead th {
+  border-bottom: 0;
+  padding-bottom: 8px;
+}
+
+.fileBrowserTable tbody td {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+  padding: 13px 14px;
+}
+
+.fileBrowserTable tbody td:first-child {
+  border-left: 1px solid var(--border);
+  border-radius: 8px 0 0 8px;
+}
+
+.fileBrowserTable tbody td:last-child {
+  border-radius: 0 8px 8px 0;
+  border-right: 1px solid var(--border);
+}
+
+.fileBrowserTable tbody tr:hover td {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+
+.fileMetaStack {
+  display: grid;
+  gap: 4px;
+  grid-template-rows: repeat(4, minmax(18px, auto));
+}
+
+.fileMetaLine {
+  color: var(--muted);
+  display: block;
+  font-size: 12px;
+  line-height: 18px;
+  min-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.fileMetaLine.primary {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.fileMetaLine.spacer {
+  visibility: hidden;
+}
+
 .virtualTable {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   overflow: auto;
 }
 
@@ -471,14 +563,16 @@ h2 {
 
 .virtualHeader {
   background: var(--surface-2);
-  border-bottom: 1px solid var(--border-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px 8px 0 0;
+  border-bottom: 0;
 }
 
 .virtualHeaderCell,
 .virtualCell {
   min-width: 0;
   overflow-wrap: anywhere;
-  padding: 12px;
+  padding: 10px 12px;
 }
 
 .virtualHeaderCell {
@@ -489,6 +583,9 @@ h2 {
 }
 
 .virtualScroll {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0 0 8px 8px;
   height: min(68vh, 720px);
   overflow: auto;
   position: relative;
@@ -499,12 +596,22 @@ h2 {
 }
 
 .virtualRow {
-  border-bottom: 1px solid var(--border-soft);
-  left: 0;
-  min-height: 64px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 1px 0 var(--shadow);
+  height: 76px;
+  left: 10px;
+  min-height: 76px;
   position: absolute;
-  right: 0;
   top: 0;
+  transition: background 120ms ease, border-color 120ms ease;
+  width: calc(100% - 20px) !important;
+}
+
+.virtualRow:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
 }
 
 .virtualCell {
@@ -703,7 +810,7 @@ td:first-child {
 
 .qualityBadge.good {
   background: var(--accent-soft);
-  border-color: var(--accent);
+  border-color: var(--accent-border);
 }
 
 .qualityBadge.danger {
@@ -754,8 +861,90 @@ td:first-child {
   align-items: start;
   display: grid;
   gap: 14px;
-  grid-template-columns: 260px minmax(620px, 1fr) 420px;
+  grid-template-columns: 260px minmax(0, 1fr);
   margin-top: 14px;
+}
+
+.fileViewerPage {
+  display: grid;
+  gap: 16px;
+  padding: 28px;
+}
+
+.fileViewerHeader {
+  align-items: flex-start;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding-bottom: 16px;
+}
+
+.fileViewerHeader h1 {
+  font-size: clamp(24px, 3vw, 38px);
+  max-width: 920px;
+  overflow-wrap: anywhere;
+}
+
+.fileViewerPreview,
+.fileViewerText {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.fileViewerPreview .embeddedPreview {
+  height: clamp(420px, 76vh, 920px);
+}
+
+.fileViewerPreview .imagePreview {
+  max-height: min(76vh, 920px);
+}
+
+.fileViewerDetailsGrid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.fileViewerDetailsGrid .drawerSection {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.fileViewerDetailsGrid .drawerSection h2 {
+  font-size: 18px;
+  margin: 0 0 12px;
+}
+
+.fileViewerText {
+  display: grid;
+  gap: 12px;
+}
+
+.fileViewerReadableText {
+  font-size: 18px;
+  line-height: 1.8;
+  max-height: none;
+  min-height: 132px;
+}
+
+.textMetaRow {
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 13px;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.fileExplorerMain {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
 }
 
 .reviewToolbar {
@@ -786,8 +975,14 @@ td:first-child {
   align-items: start;
   display: grid;
   gap: 14px;
-  grid-template-columns: 260px minmax(0, 1fr) minmax(300px, 430px);
+  grid-template-columns: 260px minmax(0, 1fr);
   margin-top: 14px;
+}
+
+.evidenceGrid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .reviewResultsPanel {
@@ -856,6 +1051,37 @@ td:first-child {
 
 .fileResultsPanel {
   min-width: 0;
+}
+
+.fileDetailPanel {
+  max-height: none;
+  padding: 18px;
+  position: static;
+}
+
+.fileDetailGrid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 16px;
+}
+
+.fileDetailGrid .drawerSection,
+.fileDetailGrid .lazyDrawerSection {
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.fileDetailGrid h3,
+.fileDetailGrid summary {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0 0 12px;
+}
+
+.fileDetailGrid summary {
+  cursor: pointer;
 }
 
 .facetGroup {
@@ -1052,11 +1278,11 @@ td:first-child {
   border-radius: 7px;
   color: var(--text);
   font-family: Arial, Helvetica, sans-serif;
-  font-size: 13px;
-  line-height: 1.45;
-  max-height: 320px;
+  font-size: 15px;
+  line-height: 1.65;
+  max-height: 520px;
   overflow: auto;
-  padding: 11px;
+  padding: 16px;
   white-space: pre-wrap;
 }
 
@@ -1082,12 +1308,22 @@ td:first-child {
 }
 
 .embeddedPreview {
-  height: min(68vh, 720px);
+  height: min(78vh, 880px);
 }
 
 .previewFrameShell {
   display: grid;
   gap: 8px;
+}
+
+.previewPlaceholder {
+  align-items: start;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  display: grid;
+  gap: 10px;
+  padding: 16px;
 }
 
 .previewLoading {
@@ -1097,7 +1333,7 @@ td:first-child {
 }
 
 .imagePreview {
-  max-height: min(68vh, 720px);
+  max-height: min(78vh, 880px);
   object-fit: contain;
   transform-origin: center center;
 }
@@ -1110,11 +1346,24 @@ td:first-child {
   gap: 10px;
   justify-items: center;
   overflow: auto;
-  padding: 10px;
+  padding: 12px;
 }
 
 .imagePreviewShell .buttonRow {
   justify-self: stretch;
+}
+
+.audioPreviewShell {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+}
+
+.audioPreview {
+  width: 100%;
 }
 
 .unsupportedPreview {
@@ -1299,6 +1548,10 @@ td:first-child {
 }
 
 @media (max-width: 1100px) {
+  .fileViewerDetailsGrid {
+    grid-template-columns: 1fr;
+  }
+
   .reviewWorkspace {
     grid-template-columns: 1fr;
   }
@@ -1554,6 +1807,8 @@ td:first-child {
   .settingsGrid,
   .presetGrid,
   .drawerGrid,
+  .fileDetailGrid,
+  .fileViewerDetailsGrid,
   .fileExplorerLayout,
   .reviewWorkspace {
     grid-template-columns: 1fr;
@@ -1564,6 +1819,14 @@ td:first-child {
   .reviewInspector {
     max-height: none;
     position: static;
+  }
+
+  .fileViewerPage {
+    padding: 18px;
+  }
+
+  .fileViewerHeader {
+    flex-direction: column;
   }
 
   .actionPanel {
