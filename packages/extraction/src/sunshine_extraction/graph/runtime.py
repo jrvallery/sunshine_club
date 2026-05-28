@@ -8,13 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from sunshine_extraction.embeddings import EmbeddingProvider
+from sunshine_extraction.config import DEFAULT_OUTPUT_DIR, DEFAULT_TAXONOMY_PATH
 from sunshine_extraction.graph.state import DocumentPipelineState
-from sunshine_extraction.sample_pipeline import (
-    DEFAULT_OUTPUT_DIR,
-    DEFAULT_TAXONOMY_PATH,
-    LLMTagInspector,
-    OcrExecutor,
-)
 
 from sunshine_extraction.graph.build import build_document_graph
 from sunshine_extraction.graph.deps import SEMANTIC_INDEX_FROM_ENV, _resolve_deps
@@ -22,7 +17,9 @@ from sunshine_extraction.graph.utils import _json_safe, _write_jsonl
 from sunshine_extraction.providers.chunking import ChunkingProvider
 from sunshine_extraction.providers.extraction import ExtractionProvider
 from sunshine_extraction.providers.vectorstores import VectorStoreProvider
+from sunshine_extraction.services.extraction import OcrExecutor
 from sunshine_extraction.services.imports import RunResultsImporter
+from sunshine_extraction.services.tagging import LLMTagInspector
 
 def run_document_graph(
     input_file: str | Path,

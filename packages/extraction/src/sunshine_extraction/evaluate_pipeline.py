@@ -20,18 +20,13 @@ from sunshine_extraction.embeddings import (
     PlaceholderEmbeddingProvider,
     provider_from_env,
 )
+from sunshine_extraction.config import DEFAULT_TAXONOMY_PATH
 from sunshine_extraction.graph.runtime import run_document_graph
 from sunshine_extraction.providers.extraction import extraction_provider_from_env
-from sunshine_extraction.sample_pipeline import (
-    DEFAULT_TAXONOMY_PATH,
-    LLMTagInspector,
-    OcrExecutor,
-    load_pipeline_env,
-    load_taxonomy_options,
-    llm_tag_inspector_from_env,
-    ocr_executor_from_env,
-)
 from sunshine_extraction.semantic_index import DEFAULT_INDEX_DB, DEFAULT_LABELS_DB
+from sunshine_extraction.services.env import load_pipeline_env
+from sunshine_extraction.services.extraction import OcrExecutor, ocr_executor_from_env
+from sunshine_extraction.services.tagging import LLMTagInspector, load_taxonomy_options, llm_tag_inspector_from_env
 
 
 DEFAULT_EVAL_OUTPUT_DIR = ".local/pipeline-eval"

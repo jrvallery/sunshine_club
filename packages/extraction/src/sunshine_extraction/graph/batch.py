@@ -10,15 +10,15 @@ from pathlib import Path
 from typing import Any
 
 from sunshine_extraction.embeddings import EmbeddingProvider
-from sunshine_extraction.sample_pipeline import (
-    DEFAULT_OUTPUT_DIR,
+from sunshine_extraction.config import (
     DEFAULT_CORRECTED_PATH,
     DEFAULT_INPUT_ROOT,
+    DEFAULT_OUTPUT_DIR,
     DEFAULT_PLAN_PATH,
     DEFAULT_TAXONOMY_PATH,
     EXPECTED_STRATEGIES,
-    LLMTagInspector,
-    OcrExecutor,
+)
+from sunshine_extraction.sample_pipeline import (
     build_ocr_summary,
     load_existing_content_class,
     load_existing_extraction_plan,
@@ -31,7 +31,9 @@ from sunshine_extraction.providers.chunking import ChunkingProvider
 from sunshine_extraction.providers.extraction import ExtractionProvider
 from sunshine_extraction.services.artifacts import extraction_result_row, sample_input_row
 from sunshine_extraction.services.artifact_manifest import write_artifact_manifest
-from sunshine_extraction.services.tagging import llm_inspection_row
+from sunshine_extraction.services.extraction import OcrExecutor
+from sunshine_extraction.services.tagging import LLMTagInspector, llm_inspection_row
+
 
 def run_document_batch(
     input_root: str | Path = DEFAULT_INPUT_ROOT,

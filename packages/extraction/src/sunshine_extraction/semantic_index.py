@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from sunshine_extraction.embeddings import EmbeddingProvider, embed_texts, provider_from_env
-from sunshine_extraction.sample_pipeline import load_pipeline_env
+from sunshine_extraction.services.env import load_pipeline_env
 
 
 DEFAULT_LABELS_DB = ".local/sunshine-review.sqlite"

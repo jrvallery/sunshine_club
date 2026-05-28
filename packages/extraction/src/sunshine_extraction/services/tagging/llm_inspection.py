@@ -6,8 +6,8 @@ import json
 import os
 from typing import Any
 
+from sunshine_extraction.domain.extraction import ExtractionResult
 from sunshine_extraction.services.content import SampleFile
-from sunshine_extraction.services.extraction import ExtractionResult
 from sunshine_extraction.services.tagging.taxonomy import TaxonomyOptions
 
 DEFAULT_CORTEX_BASE_URL = "https://cortex.vallery.net"

@@ -1221,6 +1221,8 @@ Current implementation:
 - The default importer is no-op and writes `sample-import-results.jsonl` with `import_status=skipped`, so CLI/test runs remain side-effect free.
 - An opt-in SQLite review-store importer can be enabled through `SUNSHINE_GRAPH_IMPORT_RESULTS=sqlite` or injected graph deps.
 - Run reports expose import status rows, while the existing dashboard runner can continue importing completed subprocess output with its known dashboard run ID.
+- `config.py` owns shared default paths/provider constants while the target `config/` package is built out.
+- `services/env.py` owns `.env` loading and Cortex environment alias normalization, so graph/eval/semantic-index entry points no longer import environment setup from the legacy sample runner.
 
 ## Target Folder Structure
 

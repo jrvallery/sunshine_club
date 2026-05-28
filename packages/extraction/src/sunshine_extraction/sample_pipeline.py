@@ -27,6 +27,20 @@ from typing import Any, Iterable, TextIO
 from PIL import ExifTags, Image
 from pypdf import PdfReader
 
+from sunshine_extraction.config import (
+    DEFAULT_CORRECTED_PATH,
+    DEFAULT_CORTEX_BASE_URL,
+    DEFAULT_CORTEX_MODEL,
+    DEFAULT_CORTEX_OCR_MODEL,
+    DEFAULT_INPUT_ROOT,
+    DEFAULT_MANIFEST_ROOT,
+    DEFAULT_OPENAI_OCR_MODEL,
+    DEFAULT_OPENAI_TAG_MODEL,
+    DEFAULT_OUTPUT_DIR,
+    DEFAULT_PLAN_PATH,
+    DEFAULT_TAXONOMY_PATH,
+    EXPECTED_STRATEGIES,
+)
 from sunshine_extraction.cortex import CortexClient
 from sunshine_extraction.embeddings import (
     EmbeddingConfigurationError,
@@ -38,20 +52,10 @@ from sunshine_extraction.embeddings import (
 )
 from sunshine_extraction.domain.documents import IMAGE_EXTENSIONS, SPREADSHEET_EXTENSIONS, TEXT_EXTENSIONS, SampleFile
 from sunshine_extraction.domain.extraction import ExtractionResult, OcrArtifacts, OcrDocumentResult, OcrExecutor, OcrPageResult
+from sunshine_extraction.services.env import load_pipeline_env
 from sunshine_extraction.placement import resolve_tag_placement
 
 
-DEFAULT_MANIFEST_ROOT = Path("/mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25")
-DEFAULT_INPUT_ROOT = DEFAULT_MANIFEST_ROOT / "qa samples"
-DEFAULT_OUTPUT_DIR = DEFAULT_MANIFEST_ROOT / "sample-pipeline"
-DEFAULT_CORRECTED_PATH = DEFAULT_MANIFEST_ROOT / "corrected-content-classes.jsonl"
-DEFAULT_PLAN_PATH = DEFAULT_MANIFEST_ROOT / "extraction-plan.jsonl"
-DEFAULT_TAXONOMY_PATH = Path("docs/Sunshine_Taxonomy_Seed_v0.1_2026-05-25.json")
-DEFAULT_CORTEX_BASE_URL = "https://cortex.vallery.net"
-DEFAULT_CORTEX_MODEL = "gemma4-26b"
-DEFAULT_CORTEX_OCR_MODEL = "paddleocr-ppocr-cpu"
-DEFAULT_OPENAI_TAG_MODEL = "disabled-hosted-openai"
-DEFAULT_OPENAI_OCR_MODEL = "disabled-hosted-openai"
 OCR_OK_CONFIDENCE_THRESHOLD = 75.0
 OCR_MIN_TEXT_LENGTH = 100
 OCR_MAX_FAILED_PAGE_RATE = 0.2
@@ -64,15 +68,6 @@ INITIAL_SAMPLE_LIMITS = {
     "changed-document-to-scanned_document-pdf_image_only_or_empty_text": 5,
     "changed-binary_or_unknown-to-spreadsheet-macro_enabled_spreadsheet_review": 1,
 }
-EXPECTED_STRATEGIES = {
-    "ocr_page_level",
-    "photo_metadata",
-    "text_extraction",
-    "spreadsheet_table_extraction",
-    "deferred_technical",
-}
-
-
 class LocalTesseractOcrExecutor(OcrExecutor):
     def dependency_status(self) -> dict[str, Any]:
         tesseract_binary = _configure_tesseract_runtime()
@@ -948,22 +943,6 @@ def embed_chunks_with_fallback(chunks: list[dict[str, Any]], provider: Embedding
         return embed_chunks(chunks, provider), []
     except (EmbeddingConfigurationError, EmbeddingProviderError):
         return embed_chunks(chunks, PlaceholderEmbeddingProvider()), ["embedding_provider_failed_fell_back_to_placeholder"]
-
-
-def load_pipeline_env(env_path: str | Path | None = ".env") -> None:
-    try:
-        from dotenv import load_dotenv
-
-        load_dotenv(env_path)
-    except Exception:  # noqa: BLE001 - .env support is best-effort for CLI convenience.
-        pass
-
-    cortex_api = os.environ.get("CORTEX_API_KEY")
-    if cortex_api and not os.environ.get("CORTEX_OPENAI_API_KEY"):
-        os.environ["CORTEX_OPENAI_API_KEY"] = cortex_api
-    cortex_base = os.environ.get("CORTEX_BASE_URL")
-    if cortex_base and not os.environ.get("CORTEX_OPENAI_BASE_URL"):
-        os.environ["CORTEX_OPENAI_BASE_URL"] = _cortex_openai_base_url(cortex_base)
 
 
 def llm_tag_inspector_from_env(*, enabled: bool = True, provider_override: str | None = None) -> LLMTagInspector:
