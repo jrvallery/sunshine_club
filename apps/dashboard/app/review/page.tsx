@@ -179,7 +179,7 @@ export default function ReviewPage() {
           <PathCell
             title={row.original.relative_path}
             subtitle={row.original.source_path}
-            onClick={row.original.source === "postgres" ? undefined : () => router.push(reviewDetailHref(row.original.id))}
+            onClick={() => router.push(reviewDetailHref(row.original.id))}
           />
         )
       },

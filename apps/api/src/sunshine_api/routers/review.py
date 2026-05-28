@@ -474,9 +474,15 @@ def assign_review_item(item_id: int, request: ReviewAssignRequest) -> dict[str, 
 
 
 @router.get("/admin/review/items/{item_id}/file")
-def review_item_file(item_id: int) -> FileResponse:
+def review_item_file(item_id: str, source: str = "sqlite") -> FileResponse:
+    if source == "postgres":
+        return _postgres_review_file_response(item_id, content_disposition_type="inline")
+    if source != "sqlite":
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
     try:
-        path = review_store().file_path_for_review_item(item_id)
+        path = review_store().file_path_for_review_item(int(item_id))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="sqlite review item id must be an integer") from error
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except FileNotFoundError as error:
@@ -485,9 +491,15 @@ def review_item_file(item_id: int) -> FileResponse:
 
 
 @router.get("/admin/review/items/{item_id}/download")
-def review_item_download(item_id: int) -> FileResponse:
+def review_item_download(item_id: str, source: str = "sqlite") -> FileResponse:
+    if source == "postgres":
+        return _postgres_review_file_response(item_id, content_disposition_type="attachment")
+    if source != "sqlite":
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
     try:
-        path = review_store().file_path_for_review_item(item_id)
+        path = review_store().file_path_for_review_item(int(item_id))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="sqlite review item id must be an integer") from error
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except FileNotFoundError as error:
@@ -496,9 +508,20 @@ def review_item_download(item_id: int) -> FileResponse:
 
 
 @router.get("/admin/review/items/{item_id}/text")
-def review_item_text(item_id: int) -> PlainTextResponse:
+def review_item_text(item_id: str, source: str = "sqlite") -> PlainTextResponse:
+    if source == "postgres":
+        try:
+            return PlainTextResponse(_postgres_review_text(get_postgres_review_item(item_id)))
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+    if source != "sqlite":
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
     try:
-        item = review_store().get_review_item(item_id)
+        item = review_store().get_review_item(int(item_id))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="sqlite review item id must be an integer") from error
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     return PlainTextResponse(str(item.get("extraction_text_snippet") or ""))
@@ -543,6 +566,9 @@ def _postgres_review_rows(
 def _postgres_review_row(row: dict[str, Any]) -> dict[str, Any]:
     secondary_tags = row.get("proposed_secondary_tags") if isinstance(row.get("proposed_secondary_tags"), list) else []
     corrected_secondary = row.get("corrected_secondary_tags") if isinstance(row.get("corrected_secondary_tags"), list) else []
+    result = row.get("result") if isinstance(row.get("result"), dict) else {}
+    warnings = result.get("warnings") if isinstance(result.get("warnings"), list) else []
+    text_snippet = result.get("extraction_text_snippet") or result.get("text_snippet")
     return {
         "id": row.get("id"),
         "source": "postgres",
@@ -554,10 +580,10 @@ def _postgres_review_row(row: dict[str, Any]) -> dict[str, Any]:
         "proposed_class": row.get("proposed_class"),
         "proposed_tag": row.get("proposed_tag"),
         "secondary_tags": secondary_tags,
-        "extraction_text_snippet": None,
-        "confidence": None,
-        "warnings": [],
-        "display_warnings": [],
+        "extraction_text_snippet": text_snippet,
+        "confidence": row.get("tag_confidence") or result.get("tag_confidence"),
+        "warnings": warnings,
+        "display_warnings": warnings,
         "run_id": row.get("run_id"),
         "run_key": row.get("run_key"),
         "run_preset_key": row.get("preset_key"),
@@ -570,6 +596,7 @@ def _postgres_review_row(row: dict[str, Any]) -> dict[str, Any]:
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at"),
         "result": {
+            **result,
             "source_path": row.get("source_path"),
             "relative_path": row.get("relative_path"),
             "final_class": row.get("proposed_class"),
@@ -577,11 +604,34 @@ def _postgres_review_row(row: dict[str, Any]) -> dict[str, Any]:
             "secondary_tags": secondary_tags,
             "route_status": "review_required",
             "review_reason": row.get("review_reason"),
-            "placement_status": "needs_review",
-            "quality": None,
-            "warnings": [],
+            "placement_status": result.get("placement_status") or "needs_review",
+            "quality": row.get("quality") or result.get("quality"),
+            "warnings": warnings,
         },
     }
+
+
+def _postgres_review_file_response(item_id: str, *, content_disposition_type: str) -> FileResponse:
+    try:
+        row = get_postgres_review_item(item_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    path_value = row.get("sample_path") or row.get("source_path")
+    if not path_value:
+        raise HTTPException(status_code=404, detail=f"Postgres review item has no file path: {item_id}")
+    path = Path(str(path_value))
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail=f"Review item file not found: {path}")
+    return FileResponse(path, filename=path.name, content_disposition_type=content_disposition_type)
+
+
+def _postgres_review_text(row: dict[str, Any]) -> str:
+    result = row.get("result") if isinstance(row.get("result"), dict) else {}
+    for key in ("extraction_text_snippet", "text", "text_snippet"):
+        value = result.get(key)
+        if value:
+            return str(value)
+    return ""
 
 
 def _postgres_review_facets(rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:

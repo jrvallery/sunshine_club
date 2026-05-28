@@ -13,7 +13,7 @@ import { Button } from "../../../components/ui/Button";
 import { CheckboxField, SelectInput, TextArea, TextInput } from "../../../components/ui/FormControls";
 import { KeyValue } from "../../../components/ui/KeyValue";
 import { MultiTagPicker, TagPicker } from "../../../components/ui/TagPicker";
-import { fetchJson, postJson } from "../../../lib/api";
+import { fetchJson, postJson, queryString } from "../../../lib/api";
 import { contentClassOptions, ocrQualityOptions, primaryTagOptions, privacyOptions, secondaryTagOptions } from "../../../lib/taxonomy";
 import type { ReviewItem } from "../../../lib/types";
 
@@ -43,22 +43,22 @@ function ReviewItemPageContent() {
   const params = useParams<{ reviewId: string }>();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
-  const reviewId = Number(params.reviewId);
+  const reviewId = params.reviewId;
+  const source = searchParams.get("source") === "postgres" ? "postgres" : "sqlite";
+  const sourceQuery = queryString({ source });
   const backHref = useMemo(() => {
     const filters = new URLSearchParams(searchParams);
     return `/review${filters.toString() ? `?${filters.toString()}` : ""}`;
   }, [searchParams]);
 
   const itemQuery = useQuery({
-    queryKey: ["review-item", reviewId],
-    enabled: Number.isFinite(reviewId),
-    queryFn: () => fetchJson<ReviewItem>(`/api/admin/review/items/${reviewId}`)
+    queryKey: ["review-item", source, reviewId],
+    queryFn: () => fetchJson<ReviewItem>(`/api/admin/review/items/${reviewId}${sourceQuery}`)
   });
   const textQuery = useQuery({
-    queryKey: ["review-item-text", reviewId],
-    enabled: Number.isFinite(reviewId),
+    queryKey: ["review-item-text", source, reviewId],
     queryFn: async () => {
-      const response = await fetch(`/api/admin/review/items/${reviewId}/text`, { cache: "no-store" });
+      const response = await fetch(`/api/admin/review/items/${reviewId}/text${sourceQuery}`, { cache: "no-store" });
       if (!response.ok) {
         throw new Error(`${response.status} ${response.statusText}`);
       }
@@ -66,10 +66,10 @@ function ReviewItemPageContent() {
     }
   });
   const decisionMutation = useMutation({
-    mutationFn: (body: Record<string, unknown>) => postJson<ReviewItem>(`/api/admin/review/items/${reviewId}/decision`, body),
+    mutationFn: (body: Record<string, unknown>) => postJson<ReviewItem>(`/api/admin/review/items/${reviewId}/decision${sourceQuery}`, body),
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["review-item", reviewId] }),
+        queryClient.invalidateQueries({ queryKey: ["review-item", source, reviewId] }),
         queryClient.invalidateQueries({ queryKey: ["review-items"] }),
         queryClient.invalidateQueries({ queryKey: ["review-summary"] })
       ]);
@@ -79,7 +79,7 @@ function ReviewItemPageContent() {
     mutationFn: (body: Record<string, unknown>) => postJson<ReviewItem>(`/api/admin/review/items/${reviewId}/assign`, body),
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["review-item", reviewId] }),
+        queryClient.invalidateQueries({ queryKey: ["review-item", source, reviewId] }),
         queryClient.invalidateQueries({ queryKey: ["review-items"] })
       ]);
     }
@@ -88,7 +88,7 @@ function ReviewItemPageContent() {
     mutationFn: (body: Record<string, unknown>) => postJson<ReviewItem>(`/api/admin/review/items/${reviewId}/ocr-quality`, body),
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["review-item", reviewId] }),
+        queryClient.invalidateQueries({ queryKey: ["review-item", source, reviewId] }),
         queryClient.invalidateQueries({ queryKey: ["review-items"] }),
         queryClient.invalidateQueries({ queryKey: ["review-facets"] })
       ]);
@@ -126,8 +126,8 @@ function ReviewItemPageContent() {
         </div>
         <div className="buttonRow">
           <Link className="secondaryButton" href={backHref}>Back to Review</Link>
-          <a className="secondaryButton" href={`/api/admin/review/items/${item.id}/download`} download>Download File</a>
-          {item.run_id ? <Link className="secondaryButton" href={`/runs/${item.run_id}/report`}>Run Report</Link> : null}
+          <a className="secondaryButton" href={`/api/admin/review/items/${item.id}/download${sourceQuery}`} download>Download File</a>
+          {typeof item.run_id === "number" ? <Link className="secondaryButton" href={`/runs/${item.run_id}/report`}>Run Report</Link> : null}
         </div>
       </header>
 
@@ -144,7 +144,7 @@ function ReviewItemPageContent() {
       </section>
 
       <section className="fileViewerPreview">
-        <EmbeddedPreview previewUrl={`/api/admin/review/items/${item.id}/file`} filename={item.relative_path || item.source_path} autoLoad />
+        <EmbeddedPreview previewUrl={`/api/admin/review/items/${item.id}/file${sourceQuery}`} filename={item.relative_path || item.source_path} autoLoad />
       </section>
 
       <section className="fileViewerDetailsGrid">
@@ -181,6 +181,8 @@ function ReviewItemPageContent() {
           item={item}
           saving={decisionMutation.isPending}
           assigning={assignmentMutation.isPending || ocrQualityMutation.isPending}
+          supportsAssignment={source === "sqlite"}
+          supportsOcrQuality={source === "sqlite"}
           onSubmit={(body) => decisionMutation.mutate(body)}
           onAssign={(body) => assignmentMutation.mutate(body)}
           onMarkOcrPoor={(body) => ocrQualityMutation.mutate(body)}
@@ -219,6 +221,8 @@ function ReviewDecisionPanel({
   item,
   saving,
   assigning,
+  supportsAssignment,
+  supportsOcrQuality,
   onSubmit,
   onAssign,
   onMarkOcrPoor
@@ -226,6 +230,8 @@ function ReviewDecisionPanel({
   item: ReviewItem;
   saving: boolean;
   assigning: boolean;
+  supportsAssignment: boolean;
+  supportsOcrQuality: boolean;
   onSubmit: (body: Record<string, unknown>) => void;
   onAssign: (body: Record<string, unknown>) => void;
   onMarkOcrPoor: (body: Record<string, unknown>) => void;
@@ -298,7 +304,7 @@ function ReviewDecisionPanel({
         <TextInput label="Reviewer" value={reviewer} onChange={(event) => setReviewer(event.target.value)} />
         <TextArea label="Notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} />
         <Button
-          disabled={assigning}
+          disabled={assigning || !supportsOcrQuality}
           onClick={() => {
             setOcrQuality("poor");
             setExpectedReviewRequired(true);
@@ -313,7 +319,7 @@ function ReviewDecisionPanel({
           Mark OCR Poor
         </Button>
         <Button
-          disabled={assigning}
+          disabled={assigning || !supportsAssignment}
           onClick={() =>
             onAssign({
               assigned_reviewer: assignedReviewer || null,

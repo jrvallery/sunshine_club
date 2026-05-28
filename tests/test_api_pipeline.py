@@ -444,6 +444,42 @@ def test_review_detail_can_read_postgres_v2_source(monkeypatch) -> None:
     assert captured == {"item_id": "review-1"}
 
 
+def test_review_text_can_read_postgres_v2_result(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "sunshine_api.routers.review.get_postgres_review_item",
+        lambda item_id: {
+            "id": item_id,
+            "source_path": "/mnt/sunshine/history.pdf",
+            "relative_path": "History/history.pdf",
+            "result": {"extraction_text_snippet": "Founders of Sunshine Club extracted text."},
+        },
+    )
+
+    response = TestClient(app).get("/admin/review/items/review-1/text", params={"source": "postgres"})
+
+    assert response.status_code == 200
+    assert response.text == "Founders of Sunshine Club extracted text."
+
+
+def test_review_file_can_read_postgres_v2_source_file(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "history.txt"
+    source.write_text("source file contents", encoding="utf-8")
+    monkeypatch.setattr(
+        "sunshine_api.routers.review.get_postgres_review_item",
+        lambda item_id: {
+            "id": item_id,
+            "sample_path": str(source),
+            "source_path": "/mnt/sunshine/history.txt",
+            "relative_path": "History/history.txt",
+        },
+    )
+
+    response = TestClient(app).get("/admin/review/items/review-1/file", params={"source": "postgres"})
+
+    assert response.status_code == 200
+    assert response.text == "source file contents"
+
+
 def test_review_decision_rejects_string_id_for_sqlite_source() -> None:
     response = TestClient(app).post(
         "/admin/review/items/review-1/decision",

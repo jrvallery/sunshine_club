@@ -213,10 +213,22 @@ class PostgresPipelineStore:
                     ri.corrected_tag,
                     ri.corrected_secondary_tags,
                     ri.notes,
+                    pr.sample_path,
+                    pr.result,
+                    pr.tag_confidence,
+                    pr.quality,
                     ri.created_at,
                     ri.updated_at
                 from review_items_v2 ri
                 left join pipeline_runs r on r.id = ri.run_id
+                left join lateral (
+                    select pr.sample_path, pr.result, pr.tag_confidence, pr.quality
+                    from pipeline_results pr
+                    where pr.run_id = ri.run_id
+                      and (pr.source_path = ri.source_path or pr.relative_path = ri.relative_path)
+                    order by pr.created_at asc
+                    limit 1
+                ) pr on true
                 where ri.id = %s
                 """,
                 (item_id,),
