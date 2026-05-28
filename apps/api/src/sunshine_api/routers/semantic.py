@@ -27,6 +27,7 @@ from sunshine_api.schemas import (
     PipelineEvalImportRequest,
     PipelineEvalRequest,
     ProviderBenchmarkRequest,
+    QdrantRebuildRequest,
     SemanticEvalRequest,
     SemanticIndexBuildRequest,
 )
@@ -35,6 +36,7 @@ router = APIRouter()
 
 
 from sunshine_api.services.semantic import _semantic_index_status
+from sunshine_api.services.vector_index import rebuild_qdrant_from_postgres
 from sunshine_extraction.evaluate_pipeline import DEFAULT_EVAL_OUTPUT_DIR, run_golden_pipeline_evaluation
 from sunshine_extraction.evals.provider_benchmark import benchmark_extraction_providers
 from sunshine_extraction.sample_pipeline import load_pipeline_env
@@ -55,6 +57,14 @@ def semantic_index_build(request: SemanticIndexBuildRequest) -> dict[str, Any]:
     output_db = request.output_db or DEFAULT_INDEX_DB
     summary = build_semantic_index(labels_db, output_db, limit=request.limit)
     return {"ok": True, "status": _semantic_index_status(output_db), **summary}
+
+
+@router.post("/admin/vector-index/qdrant/rebuild")
+def qdrant_rebuild(request: QdrantRebuildRequest) -> dict[str, Any]:
+    try:
+        return rebuild_qdrant_from_postgres(run_key=request.run_key, limit=request.limit)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @router.get("/admin/semantic-eval/latest")

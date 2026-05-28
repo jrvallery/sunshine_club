@@ -904,6 +904,8 @@ Current implementation:
 - `QdrantVectorStoreProvider.dependency_status()` reports client availability, local server reachability, collection existence/provisioning, expected vector size, and best-effort collection counts.
 - `providers/vectorstores/sqlite_golden.py` exposes the existing SQLite golden-label semantic-index path as an explicit provider boundary.
 - Postgres migration `0003_pipeline_chunks_embeddings.sql` creates run-owned chunk and embedding tables backed by pgvector for V2 artifact imports.
+- `apps/api/services/vector_index.py` can rebuild the configured local Qdrant collection from semantic-quality Postgres chunk embeddings by run key or across imported runs.
+- `POST /admin/vector-index/qdrant/rebuild` exposes the rebuild operation for production maintenance/dashboard controls.
 - `graph/nodes/indexing.py` owns the `index_chunks` node, separated from embedding so vector-store writes are auditable as their own graph phase.
 - Graph writes `sample-indexing.jsonl` with provider status, chunk counts, embedding counts, placeholder counts, and warnings.
 
@@ -1551,7 +1553,7 @@ Important missing V2 dependencies:
 - MinerU, RAGFlow DeepDoc, and Unstructured have local provider boundaries for benchmarking, but are not declared as installed dependencies yet.
 - Qdrant client, Compose service, and readiness metadata exist; the dashboard still needs a provider health/provisioning surface for rebuilding or inspecting collections.
 - Postgres client and Compose service exist; V2 migrations now include run/results/model/provider/segment/chunk/embedding tables, but dashboard runtime still needs to move from SQLite to Postgres as the authoritative store.
-- Local embedding/vector indexing stack is wired through providers and optional Qdrant indexing; production still needs a reviewed canonical collection and rebuild workflow.
+- Local embedding/vector indexing stack is wired through providers, optional Qdrant indexing, and a Postgres-to-Qdrant rebuild service; production still needs a reviewed canonical collection policy.
 - Provider benchmark tooling exists for extraction providers and emits promotion recommendations; dashboard benchmark review and real Docling/MinerU/RAGFlow dependency benchmarking still need to be finished.
 - The provider benchmark API returns summary, result rows, and promotion recommendations from benchmark artifacts so the dashboard can present provider-comparison decisions without re-deriving them client-side.
 

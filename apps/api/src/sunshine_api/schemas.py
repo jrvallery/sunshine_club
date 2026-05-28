@@ -113,6 +113,11 @@ class SemanticIndexBuildRequest(BaseModel):
     limit: int | None = Field(default=None, ge=1)
 
 
+class QdrantRebuildRequest(BaseModel):
+    run_key: str | None = None
+    limit: int | None = Field(default=None, ge=1)
+
+
 class SemanticEvalRequest(BaseModel):
     labels_db: str | None = None
     output_dir: str | None = None

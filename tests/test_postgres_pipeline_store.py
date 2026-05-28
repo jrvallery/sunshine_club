@@ -6,14 +6,20 @@ from typing import Any
 
 from sunshine_api.postgres_pipeline_store import PostgresPipelineStore
 from sunshine_api.services.imports import import_langgraph_output_to_postgres
+from sunshine_api.services.vector_index import rebuild_qdrant_from_postgres
+from sunshine_extraction.providers.vectorstores.base import VectorStoreUpsertResult
 
 
 class _Cursor:
-    def __init__(self, row: Any = None) -> None:
+    def __init__(self, row: Any = None, rows: list[Any] | None = None) -> None:
         self._row = row
+        self._rows = rows or []
 
     def fetchone(self) -> Any:
         return self._row
+
+    def fetchall(self) -> list[Any]:
+        return self._rows
 
 
 class _FakeConnection:
@@ -83,6 +89,85 @@ def test_postgres_import_service_wraps_store(tmp_path: Path) -> None:
     assert result["run_key"] == "service-run"
     assert result["imported"]["pipeline_chunk_embeddings"] == 1
     assert connection.committed is True
+
+
+def test_rebuild_qdrant_from_postgres_replays_semantic_embeddings() -> None:
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.closed = False
+            self.executed: list[tuple[str, tuple[Any, ...]]] = []
+
+        def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
+            self.executed.append((query, params))
+            return _Cursor(
+                rows=[
+                    {
+                        "run_key": "run-1",
+                        "source_path": "/source/a.pdf",
+                        "relative_path": "Sunshine/a.pdf",
+                        "sample_path": "/sample/a.pdf",
+                        "chunk_id": "chunk-1",
+                        "chunk_index": 1,
+                        "chunk_kind": "text",
+                        "content": "Meeting minutes",
+                        "chunk_metadata": {"segment_id": "segment-1"},
+                        "embedding_provider": "cortex",
+                        "embedding_model": "local-embed",
+                        "embedding_dimensions": 3,
+                        "embedding_status": "embedded",
+                        "semantic_quality": True,
+                        "embedding": "[0.1,0.2,0.3]",
+                    }
+                ]
+            )
+
+        def close(self) -> None:
+            self.closed = True
+
+    class FakeVectorStore:
+        provider_name = "qdrant"
+
+        def __init__(self) -> None:
+            self.chunks: list[dict[str, Any]] = []
+            self.embeddings: list[dict[str, Any]] = []
+
+        def dependency_status(self) -> dict[str, Any]:
+            return {"provider": "qdrant", "local_only": True}
+
+        def upsert_embeddings(self, chunks: list[dict[str, Any]], embeddings: list[dict[str, Any]]) -> VectorStoreUpsertResult:
+            self.chunks = chunks
+            self.embeddings = embeddings
+            return VectorStoreUpsertResult(
+                provider="qdrant",
+                collection="sunshine-test",
+                status="indexed",
+                indexed_count=len(embeddings),
+                skipped_count=0,
+                indexed_chunk_ids=[str(row["chunk_id"]) for row in embeddings],
+                skipped_chunk_ids=[],
+                warnings=[],
+                metadata={"local_only": True},
+            )
+
+    connection = FakeConnection()
+    vector_store = FakeVectorStore()
+
+    result = rebuild_qdrant_from_postgres(
+        database_url="postgresql://local/test",
+        run_key="run-1",
+        limit=10,
+        connect_factory=lambda _url: connection,
+        vector_store=vector_store,
+    )
+
+    assert result["ok"] is True
+    assert result["source_row_count"] == 1
+    assert result["vector_store"]["indexed_count"] == 1
+    assert vector_store.chunks[0]["text"] == "Meeting minutes"
+    assert vector_store.chunks[0]["metadata"]["segment_id"] == "segment-1"
+    assert vector_store.embeddings[0]["embedding"] == [0.1, 0.2, 0.3]
+    assert connection.executed[0][1] == ("run-1", 10)
+    assert connection.closed is True
 
 
 def _postgres_import_artifacts(tmp_path: Path) -> Path:
