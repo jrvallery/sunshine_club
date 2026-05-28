@@ -480,7 +480,9 @@ Current implementation:
 
 - `domain/extraction.py` owns provider-neutral `ExtractionResult`, OCR page/document rows, `OcrArtifacts`, and the `OcrExecutor` interface.
 - `sample_pipeline.py` imports those contracts for legacy compatibility instead of redefining them.
-- `services/extraction.py` still re-exports legacy extraction functions while extraction behavior is migrated into provider-specific modules.
+- `services/extraction.py` owns native text, metadata, spreadsheet metadata, OCR-page extraction dispatch, and text-validation repair/escalation behavior.
+- `providers/ocr.py` owns local Tesseract and Cortex OCR executor implementations used by graph extraction and repair nodes.
+- Production graph/provider code no longer imports `sample_pipeline.py`; that module remains a legacy CLI compatibility runner and test target.
 
 ### 8. `validate_extraction`
 

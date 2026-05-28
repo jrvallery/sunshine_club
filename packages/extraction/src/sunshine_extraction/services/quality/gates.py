@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from sunshine_extraction.domain.extraction import ExtractionResult
 from sunshine_extraction.services.content import SampleFile
-from sunshine_extraction.services.extraction import ExtractionResult
 
 
 def extraction_quality_gate(extraction: ExtractionResult) -> dict[str, Any]:

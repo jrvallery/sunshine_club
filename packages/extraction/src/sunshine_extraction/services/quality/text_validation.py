@@ -5,8 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from sunshine_extraction.domain.extraction import ExtractionResult
 from sunshine_extraction.services.content import SampleFile
-from sunshine_extraction.services.extraction import ExtractionResult
 
 OCR_MIN_TEXT_LENGTH = 100
 
