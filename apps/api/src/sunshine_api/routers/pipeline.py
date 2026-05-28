@@ -20,6 +20,7 @@ from sunshine_api.schemas import (
     FileReviewRequest,
     FileRunRequest,
     GoldenLabelUpdateRequest,
+    PostgresImportRequest,
     ReviewAssignRequest,
     ReviewDecisionRequest,
     ReviewImportRequest,
@@ -32,6 +33,7 @@ router = APIRouter()
 
 
 from sunshine_extraction.langgraph_pipeline import run_document_graph
+from sunshine_api.services.imports import import_langgraph_output_to_postgres
 from sunshine_extraction.services.env import load_pipeline_env
 from sunshine_extraction.services.tagging import llm_tag_inspector_from_env
 
@@ -70,3 +72,18 @@ def import_langgraph_output(request: ReviewImportRequest) -> dict[str, Any]:
         sample_routed_per_bucket=request.sample_routed_per_bucket,
         sample_seed=request.sample_seed,
     )
+
+
+@router.post("/admin/review/import-langgraph-output-postgres")
+def import_langgraph_output_postgres(request: PostgresImportRequest) -> dict[str, Any]:
+    try:
+        return {
+            "ok": True,
+            "import_result": import_langgraph_output_to_postgres(
+                request.output_dir,
+                run_key=request.run_key,
+                preset_key=request.preset_key,
+            ),
+        }
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error

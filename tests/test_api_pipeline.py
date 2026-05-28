@@ -41,6 +41,27 @@ def test_api_pipeline_run_file_processes_one_file(tmp_path: Path, monkeypatch) -
     assert checkpoint_path.exists()
 
 
+def test_import_langgraph_output_postgres_endpoint_wraps_service(tmp_path: Path, monkeypatch) -> None:
+    captured = {}
+
+    def fake_import(output_dir: str, *, run_key: str, preset_key: str | None = None) -> dict:
+        captured["output_dir"] = output_dir
+        captured["run_key"] = run_key
+        captured["preset_key"] = preset_key
+        return {"run_id": "postgres-run-id", "imported": {"pipeline_results": 1}}
+
+    monkeypatch.setattr("sunshine_api.routers.pipeline.import_langgraph_output_to_postgres", fake_import)
+
+    response = TestClient(app).post(
+        "/admin/review/import-langgraph-output-postgres",
+        json={"output_dir": str(tmp_path), "run_key": "run-1", "preset_key": "qa"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["import_result"]["run_id"] == "postgres-run-id"
+    assert captured == {"output_dir": str(tmp_path), "run_key": "run-1", "preset_key": "qa"}
+
+
 def test_local_infrastructure_status_is_local_only(monkeypatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://sunshine:local@localhost:5432/sunshine_club")
     monkeypatch.setenv("SUNSHINE_QDRANT_URL", "http://127.0.0.1:6333")

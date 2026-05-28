@@ -1296,6 +1296,7 @@ Current implementation:
 - An opt-in SQLite review-store importer can be enabled through `SUNSHINE_GRAPH_IMPORT_RESULTS=sqlite` or injected graph deps.
 - Run reports expose import status rows, while the existing dashboard runner can continue importing completed subprocess output with its known dashboard run ID.
 - `apps/api/src/sunshine_api/services/imports.py` exposes the Postgres artifact import service facade so API routes can call a service boundary instead of the raw store class.
+- `POST /admin/review/import-langgraph-output-postgres` imports completed graph artifacts into the V2 Postgres runtime schema by explicit run key.
 - `GET /admin/system/postgres-runtime` returns Postgres runtime counts and recent imported runs for dashboard readiness checks.
 - `config/defaults.py` owns shared default paths/provider constants and `config/__init__.py` preserves the existing `sunshine_extraction.config` import API.
 - `config/models.py` and `config/provider_registry.py` define provider capabilities, local-only/hosted policy flags, package hints, and validation that blocks enabled hosted providers and checks required capability coverage.

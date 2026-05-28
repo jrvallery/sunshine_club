@@ -35,6 +35,12 @@ class ReviewImportRequest(BaseModel):
     sample_seed: int = 20260526
 
 
+class PostgresImportRequest(BaseModel):
+    output_dir: str
+    run_key: str
+    preset_key: str | None = None
+
+
 class ReviewDecisionRequest(BaseModel):
     decision: str
     correct_class: str | None = None
