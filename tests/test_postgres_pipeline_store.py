@@ -322,6 +322,73 @@ def test_postgres_pipeline_store_gets_provider_benchmark_detail() -> None:
     assert connection.closed is True
 
 
+def test_postgres_pipeline_store_builds_provider_benchmark_promotion_plan() -> None:
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
+            normalized = " ".join(query.lower().split())
+            if "from provider_benchmark_runs pbr" in normalized:
+                return _Cursor(
+                    {
+                        "id": "benchmark-id",
+                        "benchmark_key": params[0],
+                        "output_dir": "/tmp/provider-benchmark",
+                        "status": "completed",
+                        "partial": False,
+                        "summary": {"result_count": 1},
+                        "artifact_manifest": {"artifacts": []},
+                        "background_error": {},
+                        "created_at": None,
+                        "updated_at": None,
+                        "result_count": 1,
+                        "parser_result_count": 1,
+                        "recommendation_count": 1,
+                    }
+                )
+            if "from provider_benchmark_results" in normalized:
+                return _Cursor(rows=[])
+            if "from provider_benchmark_parser_results" in normalized:
+                return _Cursor(rows=[])
+            if "from provider_benchmark_recommendations" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "recommendation-id",
+                            "benchmark_run_id": "benchmark-id",
+                            "provider": "docling",
+                            "recommendation": "candidate",
+                            "status": "candidate",
+                            "average_seconds": 12.5,
+                            "result": {
+                                "promotion_status": "candidate",
+                                "promotion_reason": "local quality gate passed",
+                                "local_only": True,
+                            },
+                            "created_at": None,
+                        }
+                    ]
+                )
+            return _Cursor()
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+    store = PostgresPipelineStore("postgresql://local/test", connect_factory=lambda _url: connection)
+
+    plan = store.provider_benchmark_promotion_plan(benchmark_key="benchmark-1")
+
+    assert plan["status"] == "candidate"
+    assert plan["selected_provider"] == "docling"
+    assert plan["local_only"] is True
+    assert plan["recommended_env"]["SUNSHINE_OCR_PARSER_PROVIDER"] == "docling"
+    assert plan["recommended_env"]["SUNSHINE_TEXT_PARSER_PROVIDER"] == "docling"
+    assert "export SUNSHINE_OCR_PARSER_PROVIDER=docling" in plan["shell_exports"]
+    assert connection.closed is True
+
+
 def test_postgres_pipeline_store_reports_runtime_summary() -> None:
     class FakeConnection:
         def __init__(self) -> None:

@@ -497,6 +497,54 @@ class PostgresPipelineStore:
         finally:
             connection.close()
 
+    def provider_benchmark_promotion_plan(self, *, benchmark_key: str) -> dict[str, Any]:
+        detail = self.get_provider_benchmark_run(benchmark_key=benchmark_key, result_limit=1, parser_result_limit=1)
+        run = detail["run"]
+        recommendations = detail["recommendations"]
+        candidates = [
+            row
+            for row in recommendations
+            if _provider_benchmark_recommendation_status(row) == "candidate" and str(row.get("provider") or "") not in {"", "current", "unknown"}
+        ]
+        selected = candidates[0] if candidates else None
+        blockers = [
+            {
+                "provider": row.get("provider"),
+                "status": _provider_benchmark_recommendation_status(row),
+                "reason": _provider_benchmark_recommendation_reason(row),
+            }
+            for row in recommendations
+            if _provider_benchmark_recommendation_status(row) != "candidate"
+        ]
+        if run.get("partial") or run.get("status") != "completed":
+            blockers.insert(
+                0,
+                {
+                    "provider": None,
+                    "status": "blocked_incomplete_benchmark",
+                    "reason": "benchmark run must be completed before provider promotion",
+                },
+            )
+            selected = None
+        provider = str(selected.get("provider")) if selected else None
+        env = {
+            "SUNSHINE_OCR_PARSER_PROVIDER": provider,
+            "SUNSHINE_TEXT_PARSER_PROVIDER": provider,
+            "SUNSHINE_DEFAULT_PARSER_PROVIDER": provider,
+        } if provider else {}
+        return {
+            "benchmark_key": benchmark_key,
+            "benchmark_run": run,
+            "status": "candidate" if provider else "blocked_or_review_required",
+            "selected_provider": provider,
+            "local_only": bool(_provider_benchmark_recommendation_result(selected).get("local_only")) if selected else False,
+            "recommended_env": env,
+            "shell_exports": [f"export {key}={value}" for key, value in env.items() if value],
+            "recommended_next_steps": _provider_benchmark_next_steps(provider=provider, blockers=blockers),
+            "blockers": blockers,
+            "recommendations": recommendations,
+        }
+
     def list_review_items(self, *, run_key: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
         connection = self._connect_factory(self.database_url)
         try:
@@ -2108,6 +2156,38 @@ def _provider_benchmark_detail_summary(
         "recommendations": _count_values(recommendation_rows, "recommendation"),
         "review_required_count": sum(1 for row in result_rows + parser_result_rows if row.get("requires_review") is True),
     }
+
+
+def _provider_benchmark_recommendation_result(row: dict[str, Any] | None) -> dict[str, Any]:
+    if not row:
+        return {}
+    result = row.get("result")
+    return result if isinstance(result, dict) else {}
+
+
+def _provider_benchmark_recommendation_status(row: dict[str, Any]) -> str:
+    result = _provider_benchmark_recommendation_result(row)
+    return str(row.get("promotion_status") or row.get("status") or row.get("recommendation") or result.get("promotion_status") or "needs_review")
+
+
+def _provider_benchmark_recommendation_reason(row: dict[str, Any]) -> str:
+    result = _provider_benchmark_recommendation_result(row)
+    return str(row.get("promotion_reason") or row.get("reason") or result.get("promotion_reason") or result.get("reason") or "")
+
+
+def _provider_benchmark_next_steps(*, provider: str | None, blockers: list[dict[str, Any]]) -> list[str]:
+    if provider:
+        return [
+            f"Set SUNSHINE_OCR_PARSER_PROVIDER={provider} in the local runtime environment.",
+            f"Set SUNSHINE_TEXT_PARSER_PROVIDER={provider} only after born-digital/text-heavy samples are benchmarked.",
+            "Rerun golden-label evals and a sliced QA batch before promoting the provider for broad production runs.",
+        ]
+    if blockers:
+        return [
+            "Resolve blocker rows or review benchmark output before changing parser provider configuration.",
+            "Rerun provider benchmarks with representative scrapbook, newspaper, financial, and normal document samples.",
+        ]
+    return ["Import provider benchmark recommendations before changing parser provider configuration."]
 
 
 def _provider_summary(model_usage_rows: list[dict[str, Any]], provider_attempt_rows: list[dict[str, Any]], indexing_rows: list[dict[str, Any]]) -> dict[str, Any]:

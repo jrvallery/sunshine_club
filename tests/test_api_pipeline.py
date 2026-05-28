@@ -491,9 +491,20 @@ def test_provider_benchmark_postgres_import_and_list_wrap_services(monkeypatch) 
             "recommendations": [{"provider": "docling", "recommendation": "candidate"}],
         }
 
+    def fake_promotion_plan(*, benchmark_key: str) -> dict[str, Any]:
+        captured["promotion_plan"] = {"benchmark_key": benchmark_key}
+        return {
+            "benchmark_key": benchmark_key,
+            "status": "candidate",
+            "selected_provider": "docling",
+            "recommended_env": {"SUNSHINE_OCR_PARSER_PROVIDER": "docling"},
+            "shell_exports": ["export SUNSHINE_OCR_PARSER_PROVIDER=docling"],
+        }
+
     monkeypatch.setattr("sunshine_api.routers.semantic.import_provider_benchmark_output_to_postgres", fake_import)
     monkeypatch.setattr("sunshine_api.routers.semantic.list_postgres_provider_benchmark_runs", fake_list)
     monkeypatch.setattr("sunshine_api.routers.semantic.get_postgres_provider_benchmark_run", fake_get)
+    monkeypatch.setattr("sunshine_api.routers.semantic.get_postgres_provider_benchmark_promotion_plan", fake_promotion_plan)
 
     imported = TestClient(app).post(
         "/admin/provider-benchmarks/import-postgres",
@@ -501,6 +512,7 @@ def test_provider_benchmark_postgres_import_and_list_wrap_services(monkeypatch) 
     )
     listed = TestClient(app).get("/admin/provider-benchmarks/postgres?limit=7")
     detail = TestClient(app).get("/admin/provider-benchmarks/postgres/benchmark-1?result_limit=9&parser_result_limit=11")
+    promotion_plan = TestClient(app).get("/admin/provider-benchmarks/postgres/benchmark-1/promotion-plan")
 
     assert imported.status_code == 200
     assert imported.json()["benchmark_run_id"] == "benchmark-id"
@@ -509,11 +521,14 @@ def test_provider_benchmark_postgres_import_and_list_wrap_services(monkeypatch) 
     assert detail.status_code == 200
     assert detail.json()["run"]["benchmark_key"] == "benchmark-1"
     assert detail.json()["recommendations"][0]["recommendation"] == "candidate"
+    assert promotion_plan.status_code == 200
+    assert promotion_plan.json()["selected_provider"] == "docling"
     assert captured == {
         "output_dir": "/tmp/provider-benchmark",
         "benchmark_key": "benchmark-1",
         "limit": 7,
         "detail": {"benchmark_key": "benchmark-1", "result_limit": 9, "parser_result_limit": 11},
+        "promotion_plan": {"benchmark_key": "benchmark-1"},
     }
 
 

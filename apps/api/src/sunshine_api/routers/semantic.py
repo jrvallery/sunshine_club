@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from sunshine_api.dependencies import review_store
 from sunshine_api.services.imports import (
     export_postgres_golden_labels_sqlite,
+    get_postgres_provider_benchmark_promotion_plan,
     get_postgres_provider_benchmark_run,
     import_provider_benchmark_output_to_postgres,
     import_provider_benchmark_output_to_postgres_if_configured,
@@ -343,6 +344,17 @@ def provider_benchmark_postgres_runs(limit: int = 50) -> dict[str, Any]:
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     return {"ok": True, "count": len(runs), "runs": runs}
+
+
+@router.get("/admin/provider-benchmarks/postgres/{benchmark_key}/promotion-plan")
+def provider_benchmark_postgres_promotion_plan(benchmark_key: str) -> dict[str, Any]:
+    try:
+        result = get_postgres_provider_benchmark_promotion_plan(benchmark_key=benchmark_key)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"ok": True, **result}
 
 
 @router.get("/admin/provider-benchmarks/postgres/{benchmark_key}")

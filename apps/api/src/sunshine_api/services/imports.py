@@ -162,6 +162,16 @@ def get_postgres_provider_benchmark_run(
     )
 
 
+def get_postgres_provider_benchmark_promotion_plan(
+    *,
+    benchmark_key: str,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> dict[str, Any]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.provider_benchmark_promotion_plan(benchmark_key=benchmark_key)
+
+
 def postgres_runtime_summary(
     *,
     database_url: str | None = None,
@@ -515,6 +525,7 @@ __all__ = [
     "get_postgres_golden_label",
     "get_postgres_pipeline_run",
     "get_postgres_provider_benchmark_run",
+    "get_postgres_provider_benchmark_promotion_plan",
     "get_postgres_review_item",
     "get_postgres_run_report",
     "list_postgres_golden_labels",

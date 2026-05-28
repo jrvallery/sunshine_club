@@ -56,6 +56,17 @@ type ProviderBenchmarkPostgresDetail = {
   recommendations: Array<Record<string, unknown>>;
 };
 
+type ProviderBenchmarkPromotionPlan = {
+  ok: boolean;
+  status: string;
+  selected_provider?: string | null;
+  local_only?: boolean;
+  recommended_env?: Record<string, string | null>;
+  shell_exports?: string[];
+  recommended_next_steps?: string[];
+  blockers?: Array<Record<string, unknown>>;
+};
+
 const EXTRACTION_PROVIDERS: ExtractionProviderName[] = ["current", "docling", "mineru", "ragflow_deepdoc", "unstructured"];
 
 export default function PipelineEvalPage() {
@@ -122,6 +133,14 @@ export default function PipelineEvalPage() {
     queryFn: () =>
       fetchJson<ProviderBenchmarkPostgresDetail>(
         `/api/admin/provider-benchmarks/postgres/${encodeURIComponent(String(selectedPostgresBenchmark))}${queryString({ result_limit: 100, parser_result_limit: 100 })}`
+      )
+  });
+  const postgresBenchmarkPromotionPlan = useQuery({
+    queryKey: ["provider-benchmark-promotion-plan", selectedPostgresBenchmark],
+    enabled: Boolean(selectedPostgresBenchmark),
+    queryFn: () =>
+      fetchJson<ProviderBenchmarkPromotionPlan>(
+        `/api/admin/provider-benchmarks/postgres/${encodeURIComponent(String(selectedPostgresBenchmark))}/promotion-plan`
       )
   });
   const runEval = useMutation({
@@ -387,6 +406,28 @@ export default function PipelineEvalPage() {
                     <KeyValue key={`${String(row.provider ?? index)}-${index}`} label={String(row.provider ?? `row ${index + 1}`)} value={recommendationValue(row)} />
                   ))}
                   {!postgresBenchmarkDetail.data.recommendations.length ? <p className="muted">No recommendations imported.</p> : null}
+                </section>
+                <section>
+                  <h4>Promotion Plan</h4>
+                  {postgresBenchmarkPromotionPlan.data ? (
+                    <>
+                      <KeyValue label="Status" value={<StatusBadge value={postgresBenchmarkPromotionPlan.data.status} />} />
+                      <KeyValue label="Selected provider" value={postgresBenchmarkPromotionPlan.data.selected_provider ?? "-"} />
+                      <KeyValue label="Local only" value={postgresBenchmarkPromotionPlan.data.local_only ? "yes" : "no"} />
+                      <KeyValue label="Env" value={envSummary(postgresBenchmarkPromotionPlan.data.recommended_env)} />
+                      {postgresBenchmarkPromotionPlan.data.shell_exports?.length ? (
+                        <pre className="jsonPreview">{postgresBenchmarkPromotionPlan.data.shell_exports.join("\n")}</pre>
+                      ) : null}
+                      <SimpleList title="Next steps" rows={postgresBenchmarkPromotionPlan.data.recommended_next_steps ?? []} />
+                      <SimpleList title="Blockers" rows={(postgresBenchmarkPromotionPlan.data.blockers ?? []).map((row) => blockerSummary(row))} />
+                    </>
+                  ) : (
+                    <p className="muted">
+                      {postgresBenchmarkPromotionPlan.isError
+                        ? `Promotion plan failed: ${postgresBenchmarkPromotionPlan.error.message}`
+                        : "Select an imported benchmark to see read-only promotion guidance."}
+                    </p>
+                  )}
                 </section>
                 <section className="wideSection">
                   <h4>Imported Results</h4>
@@ -916,6 +957,35 @@ function providerList(summary: Record<string, unknown> | undefined) {
 function recommendedProvider(recommendations: Array<Record<string, unknown>> | undefined) {
   const first = recommendations?.find((row) => row.recommended_provider || row.provider);
   return String(first?.recommended_provider ?? first?.provider ?? "-");
+}
+
+function SimpleList({ title, rows }: { title: string; rows: string[] }) {
+  if (!rows.length) {
+    return null;
+  }
+  return (
+    <div className="cellStack">
+      <strong>{title}</strong>
+      {rows.map((row, index) => (
+        <span key={`${title}-${index}`}>{row}</span>
+      ))}
+    </div>
+  );
+}
+
+function envSummary(env: Record<string, string | null> | undefined) {
+  if (!env || !Object.keys(env).length) {
+    return "-";
+  }
+  return Object.entries(env)
+    .map(([key, value]) => `${key}=${value ?? ""}`)
+    .join("; ");
+}
+
+function blockerSummary(row: Record<string, unknown>) {
+  return [row.provider ? String(row.provider) : "benchmark", row.status ? String(row.status) : "", row.reason ? String(row.reason) : ""]
+    .filter(Boolean)
+    .join(": ");
 }
 
 function benchmarkFilter(summary: Record<string, unknown> | undefined) {
