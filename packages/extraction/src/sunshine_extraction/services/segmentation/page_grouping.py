@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +34,7 @@ def propose_document_segments(
             return [segment.as_row() for segment in split_segments]
     requires_review = _requires_segment_review(extraction, page_count, segment_type)
     segment = DocumentSegment(
-        segment_id=_segment_id(extraction, 1),
+        segment_id=_segment_id(extraction, 1, file_id=file_id, page_start=1 if page_count else None, page_end=page_count or None),
         parent_file_id=file_id,
         source_path=extraction.sample.source_path,
         relative_path=extraction.sample.relative_path,
@@ -134,7 +135,13 @@ def _candidate_split_segments(
 
     return [
         DocumentSegment(
-            segment_id=_segment_id(extraction, index),
+            segment_id=_segment_id(
+                extraction,
+                index,
+                file_id=file_id,
+                page_start=group["page_start"],
+                page_end=group["page_end"],
+            ),
             parent_file_id=file_id,
             source_path=extraction.sample.source_path,
             relative_path=extraction.sample.relative_path,
@@ -249,6 +256,27 @@ def _segment_title(extraction: ExtractionResult, page_start: int, page_end: int)
     return f"{filename} pp{page_start}-{page_end}"
 
 
-def _segment_id(extraction: ExtractionResult, segment_index: int) -> str:
-    base = f"{extraction.sample.sample_group}:{extraction.sample.sample_number or 0}"
-    return f"{base}:segment-{segment_index:03d}"
+def _segment_id(
+    extraction: ExtractionResult,
+    segment_index: int,
+    *,
+    file_id: str | None = None,
+    page_start: int | None = None,
+    page_end: int | None = None,
+) -> str:
+    parent_id = file_id or _fallback_parent_id(extraction)
+    start = page_start if page_start is not None else 0
+    end = page_end if page_end is not None else start
+    return f"{parent_id}:pages-{start:05d}-{end:05d}:segment-{segment_index:03d}"
+
+
+def _fallback_parent_id(extraction: ExtractionResult) -> str:
+    identity = "|".join(
+        [
+            extraction.sample.source_path,
+            extraction.sample.relative_path,
+            str(extraction.sample.sample_path),
+        ]
+    )
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
+    return f"source-{digest}"

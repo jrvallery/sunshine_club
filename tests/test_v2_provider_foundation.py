@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -164,6 +165,8 @@ def test_segmentation_marks_long_scrapbook_pdf_for_segment_review(tmp_path: Path
 
     assert len(segments) == 12
     assert segments[0]["parent_file_id"] == "file-1"
+    assert segments[0]["segment_id"] == "file-1:pages-00001-00001:segment-001"
+    assert segments[-1]["segment_id"] == "file-1:pages-00012-00012:segment-012"
     assert segments[0]["segment_type"] == "scrapbook_page"
     assert segments[0]["page_start"] == 1
     assert segments[0]["page_end"] == 1
@@ -198,6 +201,32 @@ def test_segmentation_uses_blank_pages_as_review_boundaries(tmp_path: Path) -> N
     )
 
     assert [(segment["page_start"], segment["page_end"]) for segment in segments] == [(1, 1), (3, 4)]
+    assert [segment["segment_id"] for segment in segments] == [
+        "file-1:pages-00001-00001:segment-001",
+        "file-1:pages-00003-00004:segment-002",
+    ]
     assert all(segment["requires_segment_review"] for segment in segments)
     assert segments[1]["segment_type"] == "scrapbook_page_group"
     assert segments[1]["metadata"]["policy"] == "separator_page_groups"
+
+
+def test_segmentation_ids_are_stable_without_qa_sample_number(tmp_path: Path) -> None:
+    source = tmp_path / "scrapbook.pdf"
+    source.write_text("fake", encoding="utf-8")
+    sample = _sample(source, relative_path="Sunshine shared folders/Scrapbooks/Green scrapbook.pdf")
+    extraction = ExtractionResult(
+        sample=sample,
+        plan={"strategy": "ocr_page_level", "document_subtype": "scrapbook"},
+        extraction_status="extracted",
+        text="Scrapbook page text",
+        metadata={},
+        page_count=2,
+        warnings=[],
+    )
+
+    first_segments = propose_document_segments(extraction)
+    changed_extraction = replace(extraction, sample=replace(sample, sample_number=99))
+    second_segments = propose_document_segments(changed_extraction)
+
+    assert [segment["segment_id"] for segment in first_segments] == [segment["segment_id"] for segment in second_segments]
+    assert first_segments[0]["segment_id"].startswith("source-")
