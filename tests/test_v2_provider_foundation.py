@@ -9,6 +9,7 @@ from pypdf import PdfWriter
 from sunshine_extraction.embeddings import PlaceholderEmbeddingProvider
 from sunshine_extraction.providers.probe import NativeFileProbeProvider
 from sunshine_extraction.providers.chunking import CurrentChunkingProvider
+from sunshine_extraction.providers.chunking.legacy import chunk_content as legacy_chunk_content
 from sunshine_extraction.providers.embeddings import CurrentChunkEmbeddingProvider
 from sunshine_extraction.providers.extraction import CurrentExtractionProvider, DoclingExtractionProvider, extraction_provider_from_env
 from sunshine_extraction.providers.llm import CurrentLLMTagInspectionProvider
@@ -118,6 +119,26 @@ def test_current_chunking_provider_wraps_existing_behavior(tmp_path: Path) -> No
     assert attempt.provider == "current"
     assert attempt.status == "chunked"
     assert attempt.metadata["local_only"] is True
+
+
+def test_legacy_chunker_preserves_metadata_fallback(tmp_path: Path) -> None:
+    source = tmp_path / "scan.jpg"
+    source.write_bytes(b"fake")
+    extraction = ExtractionResult(
+        sample=_sample(source),
+        plan={"strategy": "ocr_page_level"},
+        extraction_status="deferred_extractor",
+        text="",
+        metadata={"reason": "ocr_executor_not_installed"},
+        page_count=1,
+        warnings=[],
+    )
+
+    chunks = legacy_chunk_content(extraction, {"can_chunk": True})
+
+    assert chunks[0]["chunk_kind"] == "metadata"
+    assert chunks[0]["chunk_id"] == "test:1:1"
+    assert "OCR deferred" in chunks[0]["text"]
 
 
 def test_current_chunk_embedding_provider_wraps_existing_behavior() -> None:

@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from sunshine_extraction.providers.chunking.base import ChunkingProviderAttempt
+from sunshine_extraction.providers.chunking.legacy import chunk_content
 from sunshine_extraction.services.extraction import ExtractionResult
-from sunshine_extraction.sample_pipeline import chunk_content
 
 
 class CurrentChunkingProvider:

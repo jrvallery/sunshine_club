@@ -756,7 +756,7 @@ Success criteria:
 Current implementation:
 
 - `providers/chunking/base.py` defines the swappable chunking provider contract.
-- `CurrentChunkingProvider` wraps the existing fixed-size/metadata chunking behavior without changing downstream chunk compatibility.
+- `providers/chunking/legacy.py` owns the backward-compatible fixed-size/metadata chunker, and `CurrentChunkingProvider` wraps it without importing from the legacy sample pipeline.
 - Graph runs write `sample-chunking-results.jsonl` with provider, status, strategy, chunk count, warnings, and local-only metadata.
 
 ### 14. `embed_chunks`
