@@ -543,6 +543,48 @@ def test_file_review_enqueue_can_use_postgres_v2_source(monkeypatch) -> None:
     assert captured == {"result_id": "result-1", "review_reason": "manual_quality_check"}
 
 
+def test_file_run_can_use_postgres_v2_source(tmp_path: Path, monkeypatch) -> None:
+    source_file = tmp_path / "history.pdf"
+    source_file.write_text("source pdf bytes", encoding="utf-8")
+    monkeypatch.setenv("SUNSHINE_REVIEW_DB_PATH", str(tmp_path / "review.sqlite"))
+
+    def fake_detail(result_id: str) -> dict[str, Any]:
+        return {
+            "id": result_id,
+            "source": "postgres",
+            "filename": "history.pdf",
+            "source_path": "/mnt/sunshine/history.pdf",
+            "relative_path": "Sunshine/history.pdf",
+        }
+
+    monkeypatch.setattr("sunshine_api.routers.files.get_postgres_file_result", fake_detail)
+    monkeypatch.setattr("sunshine_api.routers.files.file_path_for_postgres_file_result", lambda _result_id: source_file)
+
+    response = TestClient(app).post(
+        "/admin/files/result-1/run",
+        params={"source": "postgres"},
+        json={
+            "output_dir": str(tmp_path / "single-file-postgres-run"),
+            "start": False,
+            "embedding_provider": "cortex",
+            "enable_llm_tags": True,
+            "llm_tag_provider": "cortex",
+            "ocr_fallback_provider": "cortex",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["preset_key"] == "single_file_debug"
+    assert payload["input_root"] == str(source_file)
+    assert "--input-file" in payload["command"]
+    assert str(source_file) in payload["command"]
+    assert "--source-path" in payload["command"]
+    assert "/mnt/sunshine/history.pdf" in payload["command"]
+    assert "--relative-path" in payload["command"]
+    assert "Sunshine/history.pdf" in payload["command"]
+
+
 def test_golden_labels_can_read_postgres_v2_source(monkeypatch) -> None:
     monkeypatch.setattr(
         "sunshine_api.routers.review.list_postgres_golden_labels",

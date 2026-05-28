@@ -64,7 +64,7 @@ function FileViewerPageContent() {
   });
   const runFile = useMutation({
     mutationFn: () =>
-      postJson<PipelineRun>(`/api/admin/files/${fileId}/run`, {
+      postJson<PipelineRun>(`/api/admin/files/${fileId}/run${queryString({ source })}`, {
         start: true,
         embedding_provider: embeddingProvider,
         enable_llm_tags: true,
@@ -149,9 +149,7 @@ function FileViewerPageContent() {
           <div className="buttonRow">
             <button className="secondaryButton" onClick={() => copyText(file.source_path)}>Copy Path</button>
             <button className="secondaryButton" disabled={addReview.isPending} onClick={() => addReview.mutate()}>Add To Review</button>
-            <button className="secondaryButton" disabled={source === "postgres" || runFile.isPending} onClick={() => runFile.mutate()}>
-              {source === "postgres" ? "Run File: legacy only" : "Run File"}
-            </button>
+            <button className="secondaryButton" disabled={runFile.isPending} onClick={() => runFile.mutate()}>Run File</button>
           </div>
         </section>
 

@@ -299,16 +299,30 @@ def add_file_to_review(file_id: str, request: FileReviewRequest, source: str = "
 
 
 @router.post("/admin/files/{file_id}/run")
-def run_file_from_browser(file_id: int, request: FileRunRequest) -> dict[str, Any]:
+def run_file_from_browser(file_id: str, request: FileRunRequest, source: str = "sqlite") -> dict[str, Any]:
     store = review_store()
-    try:
-        file_record = store.get_file(file_id)
-        input_file = store.file_path_for_file(file_id)
-    except KeyError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-    except FileNotFoundError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-    output_dir = request.output_dir or str(Path(".local/dashboard-runs") / f"single_file_{file_id}")
+    if source == "postgres":
+        try:
+            file_record = get_postgres_file_result(file_id)
+            input_file = file_path_for_postgres_file_result(file_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except FileNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        default_output_name = f"single_file_postgres_{_safe_path_slug(file_id)}"
+    elif source == "sqlite":
+        try:
+            sqlite_file_id = _sqlite_file_id(file_id)
+            file_record = store.get_file(sqlite_file_id)
+            input_file = store.file_path_for_file(sqlite_file_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except FileNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        default_output_name = f"single_file_{file_id}"
+    else:
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
+    output_dir = request.output_dir or str(Path(".local/dashboard-runs") / default_output_name)
     command = _single_file_command(
         input_file=str(input_file),
         source_path=str(file_record["source_path"]),
@@ -353,3 +367,7 @@ def _postgres_file_response(result_id: str, *, content_disposition_type: str) ->
     except FileNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     return FileResponse(path, filename=path.name, content_disposition_type=content_disposition_type)
+
+
+def _safe_path_slug(value: str) -> str:
+    return "".join(character if character.isalnum() else "_" for character in value).strip("_")[:80] or "file"
