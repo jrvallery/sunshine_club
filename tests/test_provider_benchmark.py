@@ -176,6 +176,40 @@ def test_provider_benchmark_recommendations_require_runtime_review_when_too_slow
     assert recommendation["max_average_seconds"] == 30.0
 
 
+def test_provider_benchmark_records_provider_exceptions_and_continues(tmp_path: Path) -> None:
+    class ExplodingProvider:
+        provider_name = "exploding_local"
+
+        def dependency_status(self) -> dict[str, object]:
+            return {"provider": self.provider_name, "available": True, "local_only": True}
+
+        def extract(self, sample, plan, *, ocr_executor=None, ocr_artifacts=None):
+            raise RuntimeError("parser crashed")
+
+    source = tmp_path / "minutes.txt"
+    source.write_text("Meeting minutes and Sunshine Club notes.", encoding="utf-8")
+    output_dir = tmp_path / "benchmark"
+
+    result = benchmark_extraction_providers(
+        [source],
+        provider_names=[],
+        output_dir=output_dir,
+        _provider_instances=[ExplodingProvider()],
+    )
+
+    assert result["summary"]["result_count"] == 1
+    assert result["results"][0]["provider"] == "exploding_local"
+    assert result["results"][0]["status"] == "failed"
+    assert result["results"][0]["requires_review"] is True
+    assert result["results"][0]["warnings"] == ["provider_exception:RuntimeError"]
+    assert result["parser_results"][0]["review_reason"] == "provider_exception"
+    assert result["recommendations"][0]["promotion_status"] == "needs_review"
+    rows = [json.loads(line) for line in (output_dir / "provider-benchmark-results.jsonl").read_text(encoding="utf-8").splitlines()]
+    parser_rows = [json.loads(line) for line in (output_dir / "sample-parser-results.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert rows[0]["metadata"]["error"] == "parser crashed"
+    assert parser_rows[0]["provider_attempt"]["metadata"]["error_type"] == "RuntimeError"
+
+
 def test_generate_provider_benchmark_manifest_from_qa_indexes(tmp_path: Path) -> None:
     qa_root = tmp_path / "qa samples"
     document_group = qa_root / "changed-scanned_document-to-document-pdf_extractable_text_detected"

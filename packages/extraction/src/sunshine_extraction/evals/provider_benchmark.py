@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import time
 from typing import Any
 
 from sunshine_extraction.providers.extraction import (
@@ -70,9 +71,24 @@ def benchmark_extraction_providers(
 
 
 def _benchmark_one(sample: SampleFile, plan: dict[str, Any], provider: ExtractionProvider, *, sample_spec: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-    status = provider.dependency_status()
+    started = time.perf_counter()
+    try:
+        status = provider.dependency_status()
+    except Exception as error:
+        status = _failed_dependency_status(provider, error)
     ocr_artifacts = OcrArtifacts(pages=[], documents=[])
-    extraction, attempt = provider.extract(sample, plan, ocr_executor=ocr_executor_from_env(), ocr_artifacts=ocr_artifacts)
+    try:
+        extraction, attempt = provider.extract(sample, plan, ocr_executor=ocr_executor_from_env(), ocr_artifacts=ocr_artifacts)
+    except Exception as error:
+        return _failed_provider_rows(
+            sample=sample,
+            plan=plan,
+            sample_spec=sample_spec,
+            provider=provider,
+            provider_status=status,
+            error=error,
+            seconds=round(time.perf_counter() - started, 4),
+        )
     quality = extraction_quality_gate(extraction)
     benchmark_row = {
         "source_path": sample.source_path,
@@ -107,6 +123,83 @@ def _benchmark_one(sample: SampleFile, plan: dict[str, Any], provider: Extractio
         attempt=attempt.as_row(),
         quality=quality,
         warnings=benchmark_row["warnings"],
+    )
+    return benchmark_row, parser_row
+
+
+def _failed_dependency_status(provider: ExtractionProvider, error: Exception) -> dict[str, Any]:
+    return {
+        "provider": getattr(provider, "provider_name", provider.__class__.__name__),
+        "available": False,
+        "local_only": True,
+        "error_type": error.__class__.__name__,
+        "error": str(error),
+    }
+
+
+def _failed_provider_rows(
+    *,
+    sample: SampleFile,
+    plan: dict[str, Any],
+    sample_spec: dict[str, Any],
+    provider: ExtractionProvider,
+    provider_status: dict[str, Any],
+    error: Exception,
+    seconds: float,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    provider_name = str(provider_status.get("provider") or getattr(provider, "provider_name", provider.__class__.__name__))
+    warnings = [f"provider_exception:{error.__class__.__name__}"]
+    attempt = {
+        "provider": provider_name,
+        "status": "failed",
+        "strategy": plan.get("strategy"),
+        "seconds": seconds,
+        "warnings": warnings,
+        "metadata": {
+            "error_type": error.__class__.__name__,
+            "error": str(error),
+            "local_only": bool(provider_status.get("local_only", True)),
+        },
+    }
+    quality = {
+        "quality": "failed",
+        "can_chunk": False,
+        "requires_review": True,
+        "reason": "provider_exception",
+    }
+    benchmark_row = {
+        "source_path": sample.source_path,
+        "relative_path": sample.relative_path,
+        "sample_path": str(sample.sample_path),
+        "sample_category": sample_spec.get("category") or "uncategorized",
+        "sample_label": sample_spec.get("label") or sample.sample_path.name,
+        "provider": provider_name,
+        "provider_available": bool(provider_status.get("available", False)),
+        "local_only": bool(provider_status.get("local_only", True)),
+        "strategy": plan.get("strategy"),
+        "status": "failed",
+        "quality": "failed",
+        "can_chunk": False,
+        "requires_review": True,
+        "text_length": 0,
+        "page_count": None,
+        "seconds": seconds,
+        "warnings": warnings,
+        "dependency_status": provider_status,
+        "metadata": attempt["metadata"],
+    }
+    parser_row = _parser_result_row(
+        sample=sample,
+        plan=plan,
+        sample_spec=sample_spec,
+        provider_status=provider_status,
+        extraction_status="failed",
+        extraction_text="",
+        extraction_metadata={"provider": provider_name, "error_type": error.__class__.__name__, "error": str(error)},
+        extraction_page_count=None,
+        attempt=attempt,
+        quality=quality,
+        warnings=warnings,
     )
     return benchmark_row, parser_row
 
