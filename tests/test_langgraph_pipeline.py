@@ -11,7 +11,8 @@ from sunshine_extraction.providers.extraction import CurrentExtractionProvider
 from sunshine_extraction.semantic_index import build_semantic_index
 from sunshine_extraction.langgraph_pipeline import run_document_batch, run_document_graph
 from sunshine_extraction.domain.documents import SampleFile
-from sunshine_extraction.sample_pipeline import LLMTagInspector, OcrDocumentResult, OcrExecutor, OcrPageResult
+from sunshine_extraction.domain.extraction import OcrDocumentResult, OcrExecutor, OcrPageResult
+from sunshine_extraction.sample_pipeline import LLMTagInspector
 
 
 class _KeywordEmbeddingProvider:

@@ -476,6 +476,12 @@ Success criteria:
 - Scanned/image-only documents improve.
 - Provider failures are captured, not thrown away.
 
+Current implementation:
+
+- `domain/extraction.py` owns provider-neutral `ExtractionResult`, OCR page/document rows, `OcrArtifacts`, and the `OcrExecutor` interface.
+- `sample_pipeline.py` imports those contracts for legacy compatibility instead of redefining them.
+- `services/extraction.py` still re-exports legacy extraction functions while extraction behavior is migrated into provider-specific modules.
+
 ### 8. `validate_extraction`
 
 Purpose:
