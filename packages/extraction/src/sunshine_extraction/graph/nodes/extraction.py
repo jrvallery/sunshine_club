@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sunshine_extraction.graph.model_usage import _ocr_model_usage_rows
+from sunshine_extraction.graph.model_usage import _extraction_provider_model_usage_row, _ocr_model_usage_rows
 from sunshine_extraction.graph.state import DocumentPipelineDeps, DocumentPipelineState
 from sunshine_extraction.providers.extraction.factory import extraction_provider_from_name
 from sunshine_extraction.providers.extraction.router import select_extraction_provider
@@ -61,6 +61,9 @@ def _extract_content_node(state: DocumentPipelineState, deps: DocumentPipelineDe
     if ocr_artifacts.documents:
         updates["ocr_document"] = ocr_artifacts.documents[0]
     usage_rows = _ocr_model_usage_rows(state, ocr_artifacts.pages, node="extract_content")
+    parser_usage_row = _extraction_provider_model_usage_row(state, provider_attempt_row, node="extract_content")
+    if parser_usage_row:
+        usage_rows.append(parser_usage_row)
     if usage_rows:
         updates["model_usage"] = [*state.get("model_usage", []), *usage_rows]
     return updates

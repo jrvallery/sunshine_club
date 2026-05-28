@@ -696,9 +696,11 @@ def test_langgraph_writes_raw_provider_artifact_reference_for_non_current_extrac
     raw_rows = [json.loads(line) for line in (output_dir / "sample-raw-provider-artifacts.jsonl").read_text().splitlines()]
     provider_attempts = [json.loads(line) for line in (output_dir / "sample-provider-attempts.jsonl").read_text().splitlines()]
     extraction_rows = [json.loads(line) for line in (output_dir / "sample-extraction-results.jsonl").read_text().splitlines()]
+    model_usage_rows = [json.loads(line) for line in (output_dir / "sample-model-usage.jsonl").read_text().splitlines()]
     manifest = json.loads((output_dir / "artifact-manifest.json").read_text())
     raw_artifact = raw_rows[0]
     raw_payload = json.loads(Path(raw_artifact["path"]).read_text(encoding="utf-8"))
+    parser_usage = next(row for row in model_usage_rows if row["purpose"] == "parser_extraction")
 
     assert result["extraction_result"].metadata["raw_provider_artifact"]["sha256"] == raw_artifact["sha256"]
     assert raw_artifact["kind"] == "raw_provider_snapshot"
@@ -708,6 +710,10 @@ def test_langgraph_writes_raw_provider_artifact_reference_for_non_current_extrac
     assert raw_payload["raw_artifact"]["full_sha256"]
     assert provider_attempts[0]["metadata"]["raw_provider_artifact"]["sha256"] == raw_artifact["sha256"]
     assert extraction_rows[0]["metadata"]["raw_provider_artifact"]["path"] == raw_artifact["path"]
+    assert parser_usage["provider"] == "docling"
+    assert parser_usage["status"] == "ok"
+    assert parser_usage["cost_basis"] == "local"
+    assert parser_usage["metadata"]["call_count"] == 1
     assert any(artifact["name"] == "sample-raw-provider-artifacts.jsonl" and artifact["row_count"] == 1 for artifact in manifest["artifacts"])
 
 

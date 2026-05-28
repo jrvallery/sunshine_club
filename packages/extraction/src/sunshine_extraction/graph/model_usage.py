@@ -52,6 +52,38 @@ def _ocr_model_usage_rows(state: DocumentPipelineState, pages: list[dict[str, An
         )
     return rows
 
+
+def _extraction_provider_model_usage_row(
+    state: DocumentPipelineState,
+    provider_attempt: dict[str, Any],
+    *,
+    node: str,
+) -> dict[str, Any] | None:
+    provider = str(provider_attempt.get("provider") or "").strip().lower()
+    if not provider or provider in {"current", "tesseract", "cortex", "cortex_ocr"}:
+        return None
+    metadata = provider_attempt.get("metadata") if isinstance(provider_attempt.get("metadata"), dict) else {}
+    warnings = provider_attempt.get("warnings") if isinstance(provider_attempt.get("warnings"), list) else []
+    return _model_usage_row(
+        state,
+        node=node,
+        purpose="parser_extraction",
+        provider=provider,
+        model=str(metadata.get("model") or metadata.get("parser_model") or provider),
+        host=_provider_host(provider),
+        status="ok" if provider_attempt.get("status") == "extracted" else str(provider_attempt.get("status") or "unknown"),
+        runtime_ms=_seconds_to_ms(provider_attempt.get("seconds")),
+        cost_basis=provider_cost_basis(provider),
+        error=";".join(str(warning) for warning in warnings) or None,
+        metadata={
+            "call_count": 1,
+            "strategy": provider_attempt.get("strategy"),
+            "local_only": metadata.get("local_only", True),
+            "cost_estimate": "unavailable",
+        },
+    )
+
+
 def _embedding_model_usage_row(
     state: DocumentPipelineState,
     provider: EmbeddingProvider,
