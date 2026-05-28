@@ -1274,6 +1274,7 @@ Current implementation:
 - `PostgresPipelineStore` exposes read-only runtime summary and recent-run listing methods so dashboard/API migration can inspect V2 Postgres state without using SQLite.
 - `PostgresPipelineStore` exposes a read-only review-item listing by run key; `GET /admin/system/postgres-runtime/review-items` and the Settings dashboard can inspect imported V2 review queues directly from Postgres.
 - The existing review API can now opt into V2 Postgres review rows with `source=postgres`, preserving the legacy SQLite default while providing a migration path for the main Review dashboard table and facets.
+- The Review dashboard exposes a source selector for the legacy SQLite review store versus V2 Postgres runtime review items; Postgres rows are displayed read-only in the table while detailed edit workflows remain on the legacy item-detail route until the V2 write path is promoted.
 - `PostgresPipelineStore.record_review_decision` updates `review_items_v2` statuses and corrected class/tag fields, and `POST /admin/system/postgres-runtime/review-items/{item_id}/decision` exposes that V2 write path without touching the legacy SQLite review table.
 - Settings can accept or defer imported Postgres review items as an interim dashboard control while the main Review page migrates from SQLite to Postgres.
 - `GET /admin/system/postgres-runtime/runs/{run_key}` exposes imported Postgres run detail by run key, including the run summary.

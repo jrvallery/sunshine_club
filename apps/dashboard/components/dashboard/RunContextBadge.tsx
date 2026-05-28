@@ -14,6 +14,14 @@ export function RunContextBadge({
   if (!runId) {
     return <span className="muted">Manual / legacy</span>;
   }
+  if (typeof runId === "string" && !/^\d+$/.test(runId)) {
+    return (
+      <div className="runContextBadge">
+        <span>{runKey || runId}</span>
+        {preset ? <span>{preset}</span> : null}
+      </div>
+    );
+  }
   return (
     <div className="runContextBadge">
       <Link className="viewLink" href={`/runs/${runId}/report`}>

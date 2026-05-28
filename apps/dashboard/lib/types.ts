@@ -13,7 +13,8 @@ export type ReviewSummary = {
 export type ReviewFacets = Record<string, Record<string, number>>;
 
 export type ReviewItem = {
-  id: number;
+  id: number | string;
+  source?: "sqlite" | "postgres";
   source_path: string;
   relative_path: string;
   route_status: string;

@@ -28,6 +28,7 @@ import { primaryTagOptions, secondaryTagOptions } from "../../lib/taxonomy";
 import type { ReviewFacets, ReviewItem, ReviewSummary } from "../../lib/types";
 
 type Filters = {
+  source: string;
   status: string;
   q: string;
   route_status: string;
@@ -50,6 +51,7 @@ type Filters = {
 };
 
 const initialFilters: Filters = {
+  source: "sqlite",
   status: "open",
   q: "",
   route_status: "",
@@ -142,7 +144,7 @@ export default function ReviewPage() {
     updateFilters(initialFilters);
   }
 
-  function reviewDetailHref(itemId: number) {
+  function reviewDetailHref(itemId: number | string) {
     const params = new URLSearchParams();
     for (const key of filterKeys) {
       const value = filters[key];
@@ -174,7 +176,11 @@ export default function ReviewPage() {
         accessorKey: "relative_path",
         header: "File",
         cell: ({ row }) => (
-          <PathCell title={row.original.relative_path} subtitle={row.original.source_path} onClick={() => router.push(reviewDetailHref(row.original.id))} />
+          <PathCell
+            title={row.original.relative_path}
+            subtitle={row.original.source_path}
+            onClick={row.original.source === "postgres" ? undefined : () => router.push(reviewDetailHref(row.original.id))}
+          />
         )
       },
       {
@@ -261,13 +267,17 @@ export default function ReviewPage() {
       </header>
 
       <DashboardSearchToolbar searchPlaceholder="Search path or OCR snippet" searchValue={filters.q} onSearchChange={(value) => updateFilters({ q: value })}>
+        <select aria-label="Review source" value={filters.source} onChange={(event) => updateFilters({ source: event.target.value })}>
+          <option value="sqlite">SQLite review store</option>
+          <option value="postgres">V2 Postgres runtime</option>
+        </select>
         <select
           aria-label="Saved review queues"
           value=""
           onChange={(event) => {
             const queue = savedReviewQueues.find((item) => item.label === event.target.value);
             if (queue) {
-              updateFilters({ ...initialFilters, ...queue.filters, run_id: filters.run_id });
+              updateFilters({ ...initialFilters, source: filters.source, ...queue.filters, run_id: filters.run_id });
             }
           }}
         >
