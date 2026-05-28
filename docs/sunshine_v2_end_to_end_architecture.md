@@ -1022,9 +1022,10 @@ Success criteria:
 Current implementation:
 
 - `services/tagging/rules.py` owns the deterministic rule-tagging policy while preserving existing rule behavior.
+- Deterministic rule definitions now live in packaged JSON config at `sunshine_extraction/config/tag_rules.json`, with optional `SUNSHINE_TAG_RULES_PATH` override for experiments. The rule service validates the config and attaches `rule_id` plus matched terms to candidate metadata/evidence.
 - `services/tagging/taxonomy.py` owns taxonomy loading for primary/secondary tag options.
 - `domain/taxonomy.py` defines taxonomy option contracts, and `domain/tags.py` defines normalized tag candidate rows shared by deterministic, semantic, and LLM evidence paths.
-- The graph writes deterministic and final tag candidates through `sample-tag-candidates.jsonl`; the next hardening step is moving the rule table itself out of Python into data/config.
+- The graph writes deterministic and final tag candidates through `sample-tag-candidates.jsonl`.
 
 ### 18. `inspect_tags_with_llm`
 

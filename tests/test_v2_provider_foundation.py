@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import types
 from dataclasses import replace
@@ -52,7 +53,7 @@ from sunshine_extraction.services.routing import resolve_route_decision
 from sunshine_extraction.services.segmentation import attach_segment_ids_to_chunks, propose_document_segments
 from sunshine_extraction.services.tagging.evidence import combine_tag_candidates
 from sunshine_extraction.services.tagging.llm_inspection import llm_tag_inspector_from_env
-from sunshine_extraction.services.tagging.rules import assign_tag_candidates
+from sunshine_extraction.services.tagging.rules import assign_tag_candidates, load_deterministic_tag_rules
 from sunshine_extraction.services.tagging.taxonomy import DEFAULT_TAXONOMY_PATH
 from sunshine_extraction.services.vectorization import embed_chunks, embed_chunks_with_fallback
 from sunshine_extraction.services.vector_policy import vector_store_policy_from_env
@@ -789,6 +790,62 @@ def test_tagging_package_exposes_v2_boundaries() -> None:
     assert callable(assign_tag_candidates)
     assert callable(combine_tag_candidates)
     assert str(DEFAULT_TAXONOMY_PATH).endswith(".json")
+
+
+def test_deterministic_tag_rules_load_from_package_config() -> None:
+    rules = load_deterministic_tag_rules()
+
+    assert rules
+    assert rules[0].rule_id == "history.club_summary.v1"
+    assert rules[0].tag == "history_archive_general"
+    assert rules[0].needles
+
+
+def test_deterministic_tag_candidates_include_rule_metadata(tmp_path: Path) -> None:
+    source = tmp_path / "minutes.txt"
+    source.write_text("Meeting minutes", encoding="utf-8")
+    sample = _sample(source, relative_path="Minutes/minutes.txt")
+    extraction = ExtractionResult(
+        sample=sample,
+        plan={"strategy": "text_extraction"},
+        extraction_status="extracted",
+        text="Meeting minutes and agenda.",
+        metadata={},
+        page_count=1,
+        warnings=[],
+    )
+
+    candidates = assign_tag_candidates(sample, {"review_notes": None}, {"strategy": "text_extraction"}, extraction)
+
+    assert candidates[0]["tag"] == "meeting_records"
+    assert candidates[0]["metadata"]["rule_id"] == "governance.meeting_records.v1"
+    assert "rule:governance.meeting_records.v1" in candidates[0]["evidence"]
+    assert "minutes" in candidates[0]["metadata"]["matched_terms"]
+
+
+def test_deterministic_tag_rules_can_be_overridden_from_json_file(tmp_path: Path) -> None:
+    rules_path = tmp_path / "rules.json"
+    rules_path.write_text(
+        json.dumps(
+            [
+                {
+                    "rule_id": "custom.rule",
+                    "tag": "custom_tag",
+                    "confidence": 0.5,
+                    "needles": ["custom"],
+                    "explanation": "custom evidence",
+                    "secondary_tags": ["custom_secondary"],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    rules = load_deterministic_tag_rules(rules_path)
+
+    assert len(rules) == 1
+    assert rules[0].rule_id == "custom.rule"
+    assert rules[0].needles == ("custom",)
 
 
 def test_quality_services_write_validation_and_gate_rows(tmp_path: Path) -> None:

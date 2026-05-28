@@ -43,3 +43,8 @@ where = [
   "packages/extraction/src",
   "packages/workflows/src"
 ]
+
+[tool.setuptools.package-data]
+sunshine_extraction = [
+  "config/*.json"
+]

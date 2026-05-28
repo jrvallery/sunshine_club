@@ -1,0 +1,88 @@
+[
+  {
+    "rule_id": "history.club_summary.v1",
+    "tag": "history_archive_general",
+    "confidence": 0.93,
+    "needles": [
+      "founders of sunshine club",
+      "organized in 1902",
+      "purpose of the sunshine club",
+      "membership has grown",
+      "charitable projects"
+    ],
+    "explanation": "historical club summary evidence",
+    "secondary_tags": ["history_archive", "programs_mission"]
+  },
+  {
+    "rule_id": "history.scrapbook.v1",
+    "tag": "scrapbooks",
+    "confidence": 0.92,
+    "needles": ["scrapbook"],
+    "explanation": "scrapbook evidence",
+    "secondary_tags": []
+  },
+  {
+    "rule_id": "history.press_publications.v1",
+    "tag": "press_publications",
+    "confidence": 0.9,
+    "needles": ["newspaper", "article", "profile", "ledger", "clipping", "obituary"],
+    "explanation": "press/profile evidence",
+    "secondary_tags": []
+  },
+  {
+    "rule_id": "events.annual_spring_tea.v1",
+    "tag": "annual_spring_tea",
+    "confidence": 0.88,
+    "needles": ["sunshine tea invitation", "tea guest list", "tea program", "/teas/", "teas/", "_tea", "guest list"],
+    "explanation": "tea/guest-list evidence",
+    "secondary_tags": []
+  },
+  {
+    "rule_id": "governance.meeting_records.v1",
+    "tag": "meeting_records",
+    "confidence": 0.87,
+    "needles": ["meeting", "minutes", "agenda"],
+    "explanation": "meeting/minutes evidence",
+    "secondary_tags": []
+  },
+  {
+    "rule_id": "programs.dental.v1",
+    "tag": "dental_program",
+    "confidence": 0.87,
+    "needles": ["dental", "dentist", "clinic"],
+    "explanation": "dental evidence",
+    "secondary_tags": []
+  },
+  {
+    "rule_id": "finance.treasurer.v1",
+    "tag": "finance_treasurer_records",
+    "confidence": 0.86,
+    "needles": ["treasurer", "paypal", "receipt", "budget", "financial"],
+    "explanation": "finance evidence",
+    "secondary_tags": []
+  },
+  {
+    "rule_id": "operations.legal_insurance.v1",
+    "tag": "legal_insurance_compliance",
+    "confidence": 0.86,
+    "needles": ["incorporation", "legal", "insurance", "policy", "501c3"],
+    "explanation": "legal/insurance evidence",
+    "secondary_tags": []
+  },
+  {
+    "rule_id": "history.photos.v1",
+    "tag": "historical_photos",
+    "confidence": 0.8,
+    "needles": ["photo", "photograph", "img_", "fastfoto", ".jpg", ".jpeg", ".png"],
+    "explanation": "photo/history evidence",
+    "secondary_tags": []
+  },
+  {
+    "rule_id": "history.archive_fallback.v1",
+    "tag": "history_archive_general",
+    "confidence": 0.65,
+    "needles": ["history", "archive", "sunshine"],
+    "explanation": "history/archive fallback evidence",
+    "secondary_tags": []
+  }
+]

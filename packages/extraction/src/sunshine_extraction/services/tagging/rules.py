@@ -3,11 +3,25 @@
 from __future__ import annotations
 
 import json
+import os
+from dataclasses import dataclass
+from importlib import resources
+from pathlib import Path
 from typing import Any
 
 from sunshine_extraction.domain.tags import tag_candidate_row
 from sunshine_extraction.services.content import SampleFile
 from sunshine_extraction.services.extraction import ExtractionResult
+
+
+@dataclass(frozen=True)
+class DeterministicTagRule:
+    rule_id: str
+    tag: str
+    confidence: float
+    needles: tuple[str, ...]
+    explanation: str
+    secondary_tags: tuple[str, ...]
 
 
 def assign_tag_candidates(sample: SampleFile, corrected: dict[str, Any], plan: dict[str, Any], extraction: ExtractionResult) -> list[dict[str, Any]]:
@@ -24,37 +38,20 @@ def assign_tag_candidates(sample: SampleFile, corrected: dict[str, Any], plan: d
             str(corrected.get("review_notes") or ""),
         ]
     ).lower()
-    rules = [
-        (
-            "history_archive_general",
-            0.93,
-            ["founders of sunshine club", "organized in 1902", "purpose of the sunshine club", "membership has grown", "charitable projects"],
-            "historical club summary evidence",
-            ["history_archive", "programs_mission"],
-        ),
-        ("scrapbooks", 0.92, ["scrapbook"], "scrapbook evidence", []),
-        ("press_publications", 0.9, ["newspaper", "article", "profile", "ledger", "clipping", "obituary"], "press/profile evidence", []),
-        ("annual_spring_tea", 0.88, ["sunshine tea invitation", "tea guest list", "tea program", "/teas/", "teas/", "_tea", "guest list"], "tea/guest-list evidence", []),
-        ("meeting_records", 0.87, ["meeting", "minutes", "agenda"], "meeting/minutes evidence", []),
-        ("dental_program", 0.87, ["dental", "dentist", "clinic"], "dental evidence", []),
-        ("finance_treasurer_records", 0.86, ["treasurer", "paypal", "receipt", "budget", "financial"], "finance evidence", []),
-        ("legal_insurance_compliance", 0.86, ["incorporation", "legal", "insurance", "policy", "501c3"], "legal/insurance evidence", []),
-        ("historical_photos", 0.8, ["photo", "photograph", "img_", "fastfoto", ".jpg", ".jpeg", ".png"], "photo/history evidence", []),
-        ("history_archive_general", 0.65, ["history", "archive", "sunshine"], "history/archive fallback evidence", []),
-    ]
     candidates = []
-    for tag, confidence, needles, explanation, secondary_tags in rules:
-        matches = [needle for needle in needles if needle in haystack]
+    for rule in load_deterministic_tag_rules():
+        matches = [needle for needle in rule.needles if needle in haystack]
         if matches:
             candidates.append(
                 tag_candidate_row(
                     source_path=sample.source_path,
                     relative_path=sample.relative_path,
-                    tag=tag,
-                    confidence=confidence,
-                    evidence=[explanation, *[f"matched:{match.strip()}" for match in matches[:3]]],
-                    secondary_tags=secondary_tags,
+                    tag=rule.tag,
+                    confidence=rule.confidence,
+                    evidence=[rule.explanation, f"rule:{rule.rule_id}", *[f"matched:{match.strip()}" for match in matches[:3]]],
+                    secondary_tags=list(rule.secondary_tags),
                     assignment_source="deterministic",
+                    metadata={"rule_id": rule.rule_id, "matched_terms": matches[:3]},
                 )
             )
     candidates.sort(key=lambda row: row["confidence"], reverse=True)
@@ -67,4 +64,67 @@ def assign_tag_candidates(sample: SampleFile, corrected: dict[str, Any], plan: d
         seen_tags.add(candidate["tag"])
     return deduped[:5]
 
-__all__ = ["assign_tag_candidates"]
+
+def load_deterministic_tag_rules(path: str | Path | None = None) -> list[DeterministicTagRule]:
+    active_path = path or os.environ.get("SUNSHINE_TAG_RULES_PATH")
+    if active_path:
+        raw_rules = json.loads(Path(active_path).read_text(encoding="utf-8"))
+    else:
+        raw_rules = json.loads(resources.files("sunshine_extraction.config").joinpath("tag_rules.json").read_text(encoding="utf-8"))
+    if not isinstance(raw_rules, list):
+        raise ValueError("deterministic tag rules must be a JSON array")
+    return [_rule_from_row(row, index=index) for index, row in enumerate(raw_rules, start=1)]
+
+
+def _rule_from_row(row: Any, *, index: int) -> DeterministicTagRule:
+    if not isinstance(row, dict):
+        raise ValueError(f"tag rule {index} must be an object")
+    rule_id = _required_string(row, "rule_id", index)
+    tag = _required_string(row, "tag", index)
+    explanation = _required_string(row, "explanation", index)
+    confidence = _confidence(row.get("confidence"), index)
+    needles = _string_list(row.get("needles"), "needles", index)
+    secondary_tags = _string_list(row.get("secondary_tags", []), "secondary_tags", index)
+    if not needles:
+        raise ValueError(f"tag rule {rule_id} must include at least one needle")
+    return DeterministicTagRule(
+        rule_id=rule_id,
+        tag=tag,
+        confidence=confidence,
+        needles=tuple(needle.lower() for needle in needles),
+        explanation=explanation,
+        secondary_tags=tuple(secondary_tags),
+    )
+
+
+def _required_string(row: dict[str, Any], field: str, index: int) -> str:
+    value = row.get(field)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"tag rule {index} field {field} must be a non-empty string")
+    return value.strip()
+
+
+def _confidence(value: Any, index: int) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"tag rule {index} confidence must be numeric")
+    try:
+        confidence = float(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"tag rule {index} confidence must be numeric") from error
+    if confidence < 0 or confidence > 1:
+        raise ValueError(f"tag rule {index} confidence must be between 0 and 1")
+    return confidence
+
+
+def _string_list(value: Any, field: str, index: int) -> list[str]:
+    if not isinstance(value, list):
+        raise ValueError(f"tag rule {index} field {field} must be a list")
+    strings: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(f"tag rule {index} field {field} must contain only non-empty strings")
+        strings.append(item.strip())
+    return strings
+
+
+__all__ = ["DeterministicTagRule", "assign_tag_candidates", "load_deterministic_tag_rules"]
