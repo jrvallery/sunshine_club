@@ -748,8 +748,10 @@ Current implementation:
 
 - `domain/document_segments.py` defines logical child-document segment rows that preserve parent source path and page range.
 - `services/segmentation/page_grouping.py` emits review-only candidate page segments for multi-page scrapbook/newspaper inputs, separator-based groups when blank pages are detected, and fixed page windows for very large files.
-- `graph/nodes/extraction.py` runs segmentation after structure normalization and attaches single-segment IDs to chunks when safe.
+- `graph/nodes/segmentation.py` runs segmentation after structure normalization.
+- `graph/nodes/chunking.py` attaches single-segment IDs to chunks when safe.
 - Segment proposals are artifacts only; no physical source files are split or modified.
+- Long mixed scrapbook PDFs are intentionally handled as proposed page-range child documents first. A later export/promote action can create physical child documents only after review accepts the page ranges.
 
 ### 13. `chunk_document`
 
