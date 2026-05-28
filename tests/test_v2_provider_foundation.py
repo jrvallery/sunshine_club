@@ -11,6 +11,7 @@ from sunshine_extraction.providers.probe import NativeFileProbeProvider
 from sunshine_extraction.providers.chunking import CurrentChunkingProvider
 from sunshine_extraction.providers.embeddings import CurrentChunkEmbeddingProvider
 from sunshine_extraction.providers.extraction import CurrentExtractionProvider, DoclingExtractionProvider, extraction_provider_from_env
+from sunshine_extraction.providers.retrieval import CurrentSemanticRetrievalProvider
 from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider
 from sunshine_extraction.sample_pipeline import SampleFile, llm_tag_inspector_from_env, ocr_executor_from_env
 from sunshine_extraction.services.provider_policy import assert_local_provider
@@ -111,6 +112,22 @@ def test_current_chunk_embedding_provider_wraps_existing_behavior() -> None:
     assert attempt.requested_count == 1
     assert attempt.embedded_count == 1
     assert attempt.semantic_quality is False
+
+
+def test_current_semantic_retrieval_provider_reports_missing_index() -> None:
+    examples, attempt = CurrentSemanticRetrievalProvider(PlaceholderEmbeddingProvider(dimensions=4)).retrieve(
+        index_path=None,
+        query_text="meeting minutes",
+        limit=5,
+    )
+
+    assert examples == []
+    assert attempt.provider == "sqlite_semantic_index"
+    assert attempt.status == "skipped"
+    assert attempt.query_count == 0
+    assert attempt.result_count == 0
+    assert attempt.warnings == ["semantic_index_missing"]
+    assert attempt.metadata["local_only"] is True
 
 
 def test_docling_provider_is_optional_and_local_only() -> None:

@@ -866,6 +866,13 @@ Success criteria:
 - Retrieval rows are explainable.
 - Missing index warns but does not crash.
 
+Current implementation:
+
+- `providers/retrieval/base.py` defines the semantic retrieval provider contract.
+- `CurrentSemanticRetrievalProvider` wraps the existing local SQLite semantic index and uses the configured embedding provider for query embedding.
+- Graph runs write `sample-retrieval-results.jsonl` with provider, status, index path, query count, result count, warnings, and metadata.
+- Missing semantic indexes are explicit skipped retrieval attempts with `semantic_index_missing`, not silent absence.
+
 ### 17. `assign_rule_tags`
 
 Purpose:
@@ -1114,6 +1121,7 @@ Artifacts:
 - `sample-embedding-results.jsonl`
 - `sample-embeddings.jsonl`
 - `sample-indexing.jsonl`
+- `sample-retrieval-results.jsonl`
 - `sample-semantic-examples.jsonl`
 - `sample-llm-tag-inspections.jsonl`
 - `sample-tag-candidates.jsonl`
@@ -1668,6 +1676,7 @@ Required artifacts:
 - `sample-embedding-results.jsonl`
 - `sample-embeddings.jsonl`
 - `sample-indexing.jsonl`
+- `sample-retrieval-results.jsonl`
 - `sample-semantic-examples.jsonl`
 - `sample-llm-tag-inspections.jsonl`
 - `sample-tag-candidates.jsonl`

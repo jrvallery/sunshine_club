@@ -125,6 +125,7 @@ def run_document_batch(
         "sample-embedding-results.jsonl": [],
         "sample-embeddings.jsonl": [],
         "sample-indexing.jsonl": [],
+        "sample-retrieval-results.jsonl": [],
         "sample-semantic-examples.jsonl": [],
         "sample-placement-proposals.jsonl": [],
         "sample-route-decisions.jsonl": [],
@@ -365,6 +366,8 @@ def _append_batch_rows(artifact_rows: dict[str, list[dict[str, Any]]], result: d
     artifact_rows["sample-embeddings.jsonl"].extend(result.get("embeddings", []))
     if result.get("indexing_result"):
         artifact_rows["sample-indexing.jsonl"].append(result["indexing_result"])
+    if result.get("retrieval_result"):
+        artifact_rows["sample-retrieval-results.jsonl"].append(result["retrieval_result"])
     artifact_rows["sample-semantic-examples.jsonl"].extend(result.get("semantic_examples", []))
     if result.get("placement_proposal"):
         artifact_rows["sample-placement-proposals.jsonl"].append(result["placement_proposal"])

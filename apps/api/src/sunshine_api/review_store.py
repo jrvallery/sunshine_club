@@ -2219,6 +2219,7 @@ def _looks_like_dashboard_run_output(output_dir: Path) -> bool:
         "sample-chunking-results.jsonl",
         "sample-embedding-results.jsonl",
         "sample-indexing.jsonl",
+        "sample-retrieval-results.jsonl",
         "sample-placement-proposals.jsonl",
         "sample-route-decisions.jsonl",
         "sample-import-results.jsonl",

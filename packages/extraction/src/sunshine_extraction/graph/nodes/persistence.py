@@ -49,6 +49,7 @@ def _persist_outputs(state: DocumentPipelineState) -> dict[str, Any]:
     artifacts["sample-embedding-results.jsonl"] = [state["embedding_result"]] if state.get("embedding_result") else []
     artifacts["sample-embeddings.jsonl"] = state.get("embeddings", [])
     artifacts["sample-indexing.jsonl"] = [state["indexing_result"]] if state.get("indexing_result") else []
+    artifacts["sample-retrieval-results.jsonl"] = [state["retrieval_result"]] if state.get("retrieval_result") else []
     artifacts["sample-semantic-examples.jsonl"] = state.get("semantic_examples", [])
     artifacts["sample-placement-proposals.jsonl"] = [state["placement_proposal"]] if state.get("placement_proposal") else []
     artifacts["sample-route-decisions.jsonl"] = [state["route_decision"]] if state.get("route_decision") else []
