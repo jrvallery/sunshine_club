@@ -2039,6 +2039,60 @@ def test_delete_run_removes_run_owned_dashboard_rows_and_artifacts(tmp_path: Pat
     assert not output_dir.exists()
 
 
+def test_delete_run_recognizes_current_v2_artifact_only_output_dir(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SUNSHINE_REVIEW_DB_PATH", str(tmp_path / "review.sqlite"))
+    output_dir = tmp_path / "raw-provider-output"
+    output_dir.mkdir()
+    (output_dir / "sample-raw-provider-artifacts.jsonl").write_text(
+        json.dumps(
+            {
+                "provider": "docling",
+                "source_path": "/source/scan.pdf",
+                "source_relative_path": "Archive/scan.pdf",
+                "sample_path": "/samples/scan.pdf",
+                "path": str(output_dir / "raw-providers" / "docling.json"),
+                "relative_path": "raw-providers/docling.json",
+                "artifact_relative_path": "raw-providers/docling.json",
+                "kind": "raw_provider_snapshot",
+                "exists": True,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    client = TestClient(app)
+
+    run = client.post(
+        "/admin/runs",
+        json={"preset_key": "qa_samples_fast", "input_root": str(tmp_path / "input"), "output_dir": str(output_dir), "start": False},
+    )
+    deleted = client.delete(f"/admin/runs/{run.json()['id']}")
+
+    assert deleted.status_code == 200
+    assert deleted.json()["artifacts"]["deleted"] is True
+    assert not output_dir.exists()
+
+
+def test_delete_run_refuses_unrecognized_output_dir(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SUNSHINE_REVIEW_DB_PATH", str(tmp_path / "review.sqlite"))
+    output_dir = tmp_path / "source-looking-folder"
+    output_dir.mkdir()
+    (output_dir / "scan.pdf").write_bytes(b"customer source bytes")
+    client = TestClient(app)
+
+    run = client.post(
+        "/admin/runs",
+        json={"preset_key": "qa_samples_fast", "input_root": str(tmp_path / "input"), "output_dir": str(output_dir), "start": False},
+    )
+    deleted = client.delete(f"/admin/runs/{run.json()['id']}")
+
+    assert deleted.status_code == 200
+    assert deleted.json()["artifacts"]["deleted"] is False
+    assert deleted.json()["artifacts"]["skipped_reason"] == "output_dir_not_recognized_as_dashboard_run_artifacts"
+    assert output_dir.exists()
+    assert (output_dir / "scan.pdf").exists()
+
+
 def test_api_pipeline_run_file_missing_file_returns_review_result(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SUNSHINE_EMBEDDING_PROVIDER", "placeholder")
     output_dir = tmp_path / "api-out"
