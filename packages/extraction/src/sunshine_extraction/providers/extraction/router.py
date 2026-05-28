@@ -6,8 +6,9 @@ from typing import Any
 
 from sunshine_extraction.domain.extraction_provider_selection import ExtractionProviderSelection
 from sunshine_extraction.providers.extraction.base import ExtractionProvider
-from sunshine_extraction.providers.extraction.docling_provider import DoclingExtractionProvider
+from sunshine_extraction.providers.extraction.factory import extraction_provider_from_name
 from sunshine_extraction.services.content import SampleFile
+from sunshine_extraction.services.provider_policy import normalize_local_extraction_provider, parser_provider_for_strategy
 
 
 def select_extraction_provider(
@@ -18,7 +19,10 @@ def select_extraction_provider(
 ) -> dict[str, Any]:
     configured_name = _provider_name(configured_provider)
     hints = plan.get("provider_hints") if isinstance(plan.get("provider_hints"), dict) else {}
-    preferred = str(hints.get("preferred_parser") or _preferred_provider(plan, file_probe))
+    preferred = normalize_local_extraction_provider(
+        str(hints.get("preferred_parser") or _preferred_provider(plan, file_probe)),
+        purpose="preferred extraction provider",
+    )
     chain = _provider_chain(preferred, configured_name, plan)
     skipped: list[dict[str, Any]] = []
 
@@ -27,17 +31,17 @@ def select_extraction_provider(
     if configured_name == preferred:
         selected = configured_name
         reason = "configured_provider_matches_preferred"
-    elif preferred == "docling":
-        docling_status = DoclingExtractionProvider().dependency_status()
-        if docling_status.get("available"):
-            selected = "docling"
-            reason = "preferred_docling_available"
+    elif preferred != "current":
+        preferred_status = extraction_provider_from_name(preferred).dependency_status()
+        if preferred_status.get("available"):
+            selected = preferred
+            reason = f"preferred_{preferred}_available"
         else:
             selected = configured_name
-            reason = "preferred_docling_unavailable_fell_back_to_configured"
-            skipped.append({"provider": "docling", "reason": "dependency_unavailable", "status": docling_status})
+            reason = f"preferred_{preferred}_unavailable_fell_back_to_configured"
+            skipped.append({"provider": preferred, "reason": "dependency_unavailable", "status": preferred_status})
     elif preferred == "current":
-        selected = "current" if configured_name in {"current", "docling"} else configured_name
+        selected = "current" if configured_name != "current" else configured_name
         reason = "preferred_current_for_native_text"
 
     selection = ExtractionProviderSelection(
@@ -69,9 +73,9 @@ def _provider_name(provider: ExtractionProvider) -> str:
 
 def _preferred_provider(plan: dict[str, Any], file_probe: dict[str, Any]) -> str:
     if plan.get("strategy") == "ocr_page_level":
-        return "docling"
+        return parser_provider_for_strategy("ocr_page_level", default="docling")
     if file_probe.get("media_type") == "pdf" and file_probe.get("image_only_pdf_likelihood", 0) >= 0.8:
-        return "docling"
+        return parser_provider_for_strategy("ocr_page_level", default="docling")
     return "current"
 
 

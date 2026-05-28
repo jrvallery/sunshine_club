@@ -6,12 +6,8 @@ from typing import Any
 
 from sunshine_extraction.graph.model_usage import _ocr_model_usage_rows
 from sunshine_extraction.graph.state import DocumentPipelineDeps, DocumentPipelineState
-from sunshine_extraction.providers.extraction.current import CurrentExtractionProvider
-from sunshine_extraction.providers.extraction.docling_provider import DoclingExtractionProvider
-from sunshine_extraction.providers.extraction.mineru_provider import MinerUExtractionProvider
-from sunshine_extraction.providers.extraction.ragflow_deepdoc_provider import RAGFlowDeepDocExtractionProvider
+from sunshine_extraction.providers.extraction.factory import extraction_provider_from_name
 from sunshine_extraction.providers.extraction.router import select_extraction_provider
-from sunshine_extraction.providers.extraction.unstructured_provider import UnstructuredExtractionProvider
 from sunshine_extraction.services.extraction import (
     OcrArtifacts,
 )
@@ -67,14 +63,4 @@ def _provider_for_selection(selection: dict[str, Any], deps: DocumentPipelineDep
     configured_name = str(getattr(configured, "provider_name", "")).lower()
     if not selected or selected == configured_name:
         return configured
-    if selected == "docling":
-        return DoclingExtractionProvider()
-    if selected == "mineru":
-        return MinerUExtractionProvider()
-    if selected == "ragflow_deepdoc":
-        return RAGFlowDeepDocExtractionProvider()
-    if selected == "unstructured":
-        return UnstructuredExtractionProvider()
-    if selected == "current":
-        return CurrentExtractionProvider()
-    return configured
+    return extraction_provider_from_name(selected)

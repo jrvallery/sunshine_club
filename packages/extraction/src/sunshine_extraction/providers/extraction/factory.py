@@ -10,11 +10,20 @@ from sunshine_extraction.providers.extraction.docling_provider import DoclingExt
 from sunshine_extraction.providers.extraction.mineru_provider import MinerUExtractionProvider
 from sunshine_extraction.providers.extraction.ragflow_deepdoc_provider import RAGFlowDeepDocExtractionProvider
 from sunshine_extraction.providers.extraction.unstructured_provider import UnstructuredExtractionProvider
+from sunshine_extraction.services.provider_policy import normalize_local_extraction_provider
 
 
 def extraction_provider_from_env(provider_name_override: str | None = None) -> ExtractionProvider:
-    provider_name = (provider_name_override or os.environ.get("SUNSHINE_EXTRACTION_PROVIDER") or "current").strip().lower()
-    if provider_name in {"", "current", "native", "legacy"}:
+    provider_name = normalize_local_extraction_provider(
+        provider_name_override or os.environ.get("SUNSHINE_EXTRACTION_PROVIDER") or "current",
+        purpose="extraction provider",
+    )
+    return extraction_provider_from_name(provider_name)
+
+
+def extraction_provider_from_name(provider_name: str) -> ExtractionProvider:
+    provider_name = normalize_local_extraction_provider(provider_name, purpose="extraction provider")
+    if provider_name == "current":
         return CurrentExtractionProvider()
     if provider_name == "docling":
         return DoclingExtractionProvider()
@@ -24,7 +33,4 @@ def extraction_provider_from_env(provider_name_override: str | None = None) -> E
         return RAGFlowDeepDocExtractionProvider()
     if provider_name == "unstructured":
         return UnstructuredExtractionProvider()
-    raise ValueError(
-        f"Unsupported SUNSHINE_EXTRACTION_PROVIDER={provider_name!r}; "
-        "expected current, docling, mineru, ragflow_deepdoc, or unstructured"
-    )
+    raise AssertionError(f"Unhandled extraction provider: {provider_name}")

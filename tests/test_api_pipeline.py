@@ -88,6 +88,8 @@ def test_local_infrastructure_status_is_local_only(monkeypatch) -> None:
     assert payload["docling"]["local_only"] is True
     assert set(payload["parser_providers"]) == {"docling", "mineru", "ragflow_deepdoc", "unstructured"}
     assert all(status["local_only"] is True for status in payload["parser_providers"].values())
+    assert payload["parser_policy"]["ocr_parser_provider"] == "docling"
+    assert payload["parser_policy"]["hosted_allowed"] is False
     assert payload["cortex"]["configured"] is True
     assert payload["model_call_cache"]["configured"] is True
     assert payload["model_call_cache"]["local_only"] is True

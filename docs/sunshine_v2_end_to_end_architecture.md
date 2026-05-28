@@ -1562,6 +1562,7 @@ Important missing V2 dependencies:
 - Provider benchmark tooling exists for extraction providers and emits promotion recommendations; real Docling/MinerU/RAGFlow dependency benchmarking still needs to be finished.
 - The provider benchmark API returns summary, result rows, and promotion recommendations from benchmark artifacts, and the Pipeline Quality Eval dashboard now has a Provider Benchmarks panel for running and reviewing those artifacts.
 - The local-infrastructure API and Settings dashboard expose parser candidate dependency status for Docling, MinerU, RAGFlow DeepDoc, and Unstructured, so missing local packages are visible before running provider benchmarks.
+- Parser promotion is configurable through local-only provider policy: `SUNSHINE_OCR_PARSER_PROVIDER`, `SUNSHINE_TEXT_PARSER_PROVIDER`, and `SUNSHINE_DEFAULT_PARSER_PROVIDER` may select `current`, `docling`, `mineru`, `ragflow_deepdoc`, or `unstructured`. Hosted providers are rejected by policy, unavailable promoted parsers fall back to the configured provider, and the provider-selection artifact records the preferred provider, selected provider, skipped providers, and reason.
 - Provider benchmarks can now run from a JSON sample manifest, and `docs/provider_benchmark_canonical_samples.example.json` defines the intended canonical local sample categories.
 
 ## Local-Only Infrastructure Decision
@@ -2045,7 +2046,7 @@ Deliverables:
 - Install and validate the Docling optional dependency locally.
 - Run current vs Docling benchmarks from the dashboard Provider Benchmarks panel.
 - Review benchmark recommendations and result snippets for OCR quality, layout/table handling, provider runtime, and review-required routing.
-- If Docling improves quality without hiding bad text, promote Docling for scanned/image-only/PDF layout plans behind the provider policy.
+- If Docling improves quality without hiding bad text, promote Docling for scanned/image-only/PDF layout plans by setting `SUNSHINE_OCR_PARSER_PROVIDER=docling` and rerunning golden-label evals. The same promotion mechanism can be used later for MinerU, RAGFlow DeepDoc, or Unstructured if benchmarks beat Docling on specific local document classes.
 - Keep scrapbook/newspaper splitting as review-only logical page-range proposals until benchmark evidence proves boundaries are reliable.
 
 This is the first slice that should change the production extraction default. It must be benchmark-driven, local-only, and reversible through provider policy.

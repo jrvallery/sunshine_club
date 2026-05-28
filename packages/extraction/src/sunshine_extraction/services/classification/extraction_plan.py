@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from sunshine_extraction.services.content import TEXT_EXTENSIONS, SampleFile
+from sunshine_extraction.services.provider_policy import parser_provider_for_strategy
 
 
 def plan_extraction(sample: SampleFile, content_class: dict[str, Any], *, file_probe: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -50,16 +51,18 @@ def plan_extraction(sample: SampleFile, content_class: dict[str, Any], *, file_p
 
 def provider_hints(file_probe: dict[str, Any], strategy: str) -> dict[str, Any]:
     if strategy == "ocr_page_level":
+        preferred = parser_provider_for_strategy(strategy, default="docling")
         return {
-            "preferred_parser": "docling",
+            "preferred_parser": preferred,
             "fallback_ocr": "cortex",
             "reason": "ocr_required_or_image_only_pdf",
             "image_only_pdf_likelihood": file_probe.get("image_only_pdf_likelihood"),
         }
     if strategy == "text_extraction":
+        fallback = parser_provider_for_strategy(strategy, default="docling")
         return {
             "preferred_parser": "current",
-            "fallback_parser": "docling",
+            "fallback_parser": fallback,
             "reason": "embedded_text_or_native_text_expected",
             "embedded_text_chars": file_probe.get("embedded_text_chars"),
         }

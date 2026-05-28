@@ -29,6 +29,7 @@ from sunshine_extraction.providers.extraction import (
     UnstructuredExtractionProvider,
     extraction_provider_from_env,
 )
+from sunshine_extraction.providers.extraction.router import select_extraction_provider
 from sunshine_extraction.providers.llm import CortexLLMTagInspector, CurrentLLMTagInspectionProvider, HostedOpenAILLMTagInspector, llm_cache_key
 from sunshine_extraction.providers.observability import LangfuseObservabilityProvider, NoopObservabilityProvider
 from sunshine_extraction.providers.reranking import CortexRerankProvider
@@ -38,6 +39,7 @@ from sunshine_extraction.domain.documents import IMAGE_EXTENSIONS, SPREADSHEET_E
 from sunshine_extraction.services.artifacts.writers import extraction_result_row, sample_input_row, write_pipeline_result
 from sunshine_extraction.services.artifact_manifest import build_artifact_manifest
 from sunshine_extraction.services.cache import SQLiteModelCallCache
+from sunshine_extraction.services.classification.extraction_plan import provider_hints
 from sunshine_extraction.services.provider_policy import assert_local_provider
 from sunshine_extraction.services.confidence import calibrate_confidence, confidence_calibration_row
 from sunshine_extraction.services.extraction import ocr_executor_from_env
@@ -745,6 +747,33 @@ def test_extraction_provider_factory_selects_current_and_docling(monkeypatch: py
     assert isinstance(extraction_provider_from_env("mineru"), MinerUExtractionProvider)
     assert isinstance(extraction_provider_from_env("ragflow_deepdoc"), RAGFlowDeepDocExtractionProvider)
     assert isinstance(extraction_provider_from_env("unstructured"), UnstructuredExtractionProvider)
+
+
+def test_parser_provider_policy_can_promote_local_ocr_parser(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SUNSHINE_OCR_PARSER_PROVIDER", "unstructured")
+
+    hints = provider_hints({"image_only_pdf_likelihood": 0.95}, "ocr_page_level")
+
+    assert hints["preferred_parser"] == "unstructured"
+
+
+def test_extraction_provider_router_falls_back_when_promoted_parser_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SUNSHINE_OCR_PARSER_PROVIDER", "unstructured")
+    source = tmp_path / "scan.pdf"
+    source.write_bytes(b"fake")
+
+    selection = select_extraction_provider(
+        _sample(source),
+        {"strategy": "ocr_page_level", "provider_hints": provider_hints({"image_only_pdf_likelihood": 0.95}, "ocr_page_level")},
+        {"media_type": "pdf", "image_only_pdf_likelihood": 0.95},
+        CurrentExtractionProvider(),
+    )
+
+    assert selection["preferred_provider"] == "unstructured"
+    assert selection["selected_provider"] == "current"
+    assert selection["provider_chain"] == ["unstructured", "cortex_ocr", "current"]
+    assert selection["provider_selection_reason"] == "preferred_unstructured_unavailable_fell_back_to_configured"
+    assert selection["skipped_providers"][0]["provider"] == "unstructured"
 
 
 def test_optional_extraction_provider_boundaries_are_local_only(tmp_path: Path) -> None:

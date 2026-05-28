@@ -43,6 +43,13 @@ def local_infrastructure_status() -> dict[str, Any]:
         "qdrant_retrieval": qdrant_retrieval.dependency_status(),
         "docling": parser_providers["docling"].dependency_status(),
         "parser_providers": {name: provider.dependency_status() for name, provider in parser_providers.items()},
+        "parser_policy": {
+            "ocr_parser_provider": os.environ.get("SUNSHINE_OCR_PARSER_PROVIDER") or os.environ.get("SUNSHINE_DEFAULT_PARSER_PROVIDER") or "docling",
+            "text_parser_provider": os.environ.get("SUNSHINE_TEXT_PARSER_PROVIDER") or os.environ.get("SUNSHINE_DEFAULT_PARSER_PROVIDER") or "docling",
+            "default_parser_provider": os.environ.get("SUNSHINE_DEFAULT_PARSER_PROVIDER"),
+            "allowed": ["current", "docling", "mineru", "ragflow_deepdoc", "unstructured"],
+            "hosted_allowed": False,
+        },
         "cortex": {
             "configured": bool(cortex_base),
             "base_url_present": bool(cortex_base),

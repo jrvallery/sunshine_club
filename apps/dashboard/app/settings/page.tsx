@@ -21,6 +21,7 @@ type LocalInfrastructure = {
   qdrant_retrieval: Record<string, unknown>;
   docling: Record<string, unknown>;
   parser_providers: Record<string, Record<string, unknown>>;
+  parser_policy: Record<string, unknown>;
   cortex: Record<string, unknown>;
   model_call_cache: Record<string, unknown>;
   temporal: Record<string, unknown>;
@@ -127,6 +128,12 @@ export default function SettingsPage() {
         <div className="sectionHeader">
           <h2>Parser Candidate Dependencies</h2>
           <span>{Object.keys(infrastructure.data?.parser_providers ?? {}).length} checked</span>
+        </div>
+        <div className="settingsGrid">
+          <KeyValue label="OCR parser policy" value={String(infrastructure.data?.parser_policy?.ocr_parser_provider ?? "-")} />
+          <KeyValue label="Text fallback parser" value={String(infrastructure.data?.parser_policy?.text_parser_provider ?? "-")} />
+          <KeyValue label="Hosted providers allowed" value={String(infrastructure.data?.parser_policy?.hosted_allowed ?? false)} />
+          <KeyValue label="Allowed parser providers" value={formatList(infrastructure.data?.parser_policy?.allowed)} />
         </div>
         <div className="settingsGrid">
           {Object.entries(infrastructure.data?.parser_providers ?? {}).map(([name, status]) => (
@@ -242,6 +249,10 @@ export default function SettingsPage() {
       </section>
     </main>
   );
+}
+
+function formatList(value: unknown) {
+  return Array.isArray(value) ? value.map(String).join(", ") : "-";
 }
 
 function ProviderStatus({ title, status }: { title: string; status?: Record<string, unknown> }) {
