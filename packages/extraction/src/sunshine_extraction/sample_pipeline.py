@@ -46,15 +46,16 @@ from sunshine_extraction.cortex import CortexClient
 from sunshine_extraction.embeddings import (
     EmbeddingConfigurationError,
     EmbeddingProvider,
-    EmbeddingProviderError,
     PlaceholderEmbeddingProvider,
-    embed_texts,
     provider_from_env,
 )
 from sunshine_extraction.domain.documents import IMAGE_EXTENSIONS, SPREADSHEET_EXTENSIONS, TEXT_EXTENSIONS, SampleFile
 from sunshine_extraction.domain.extraction import ExtractionResult, OcrArtifacts, OcrDocumentResult, OcrExecutor, OcrPageResult
+from sunshine_extraction.providers.chunking.legacy import chunk_content
 from sunshine_extraction.services.env import load_pipeline_env
+from sunshine_extraction.services.extraction import extract_content, validate_and_repair_extraction
 from sunshine_extraction.services.ocr_summary import build_ocr_summary
+from sunshine_extraction.services.quality import extraction_quality_gate, validate_extracted_text
 from sunshine_extraction.services.samples import (
     load_existing_content_class,
     load_existing_extraction_plan,
@@ -62,6 +63,7 @@ from sunshine_extraction.services.samples import (
     rows_by_key,
     select_sample_files,
 )
+from sunshine_extraction.services.vectorization import embed_chunks, embed_chunks_with_fallback
 from sunshine_extraction.placement import resolve_tag_placement
 
 
@@ -719,202 +721,6 @@ def run_sample_pipeline(
     _progress(progress, "sample-pipeline: wrote sample-pipeline-summary.json")
     _progress(progress, "sample-pipeline: complete")
     return summary
-
-
-def extract_content(
-    sample: SampleFile,
-    plan: dict[str, Any],
-    *,
-    ocr_executor: OcrExecutor | None = None,
-    ocr_artifacts: OcrArtifacts | None = None,
-) -> ExtractionResult:
-    if not sample.sample_path.exists():
-        return ExtractionResult(sample, plan, "failed", "", {"missing_sample_path": str(sample.sample_path)}, None, ["sample_file_missing"])
-
-    strategy = plan["strategy"]
-    if strategy == "deferred_technical":
-        return ExtractionResult(
-            sample,
-            plan,
-            "deferred_technical",
-            "",
-            {"defer_reason": plan.get("defer_reason")},
-            None,
-            [f"deferred_technical:{plan.get('defer_reason') or 'unknown'}"],
-        )
-    if strategy == "photo_metadata":
-        return _extract_photo_metadata(sample, plan)
-    if strategy == "text_extraction":
-        return _extract_text(sample, plan)
-    if strategy == "spreadsheet_table_extraction":
-        return _extract_spreadsheet_metadata(sample, plan)
-    if strategy == "ocr_page_level":
-        return _extract_ocr_page_level(sample, plan, ocr_executor=ocr_executor, ocr_artifacts=ocr_artifacts)
-    return ExtractionResult(sample, plan, "failed", "", {}, None, [f"unsupported_strategy:{strategy}"])
-
-
-def extraction_quality_gate(extraction: ExtractionResult) -> dict[str, Any]:
-    if extraction.extraction_status == "failed":
-        return {"quality": "failed", "can_chunk": False, "can_embed": False, "requires_review": True}
-    if extraction.extraction_status in {"deferred_technical", "deferred_extractor"}:
-        return {
-            "quality": "deferred",
-            "can_chunk": extraction.extraction_status == "deferred_extractor",
-            "can_embed": False,
-            "requires_review": True,
-        }
-    text_validation = extraction.metadata.get("text_validation")
-    if isinstance(text_validation, dict) and text_validation.get("status") == "failed":
-        return {"quality": "poor", "can_chunk": True, "can_embed": True, "requires_review": True}
-    ocr_document = extraction.metadata.get("ocr_document")
-    if isinstance(ocr_document, dict) and ocr_document.get("quality") == "poor":
-        return {"quality": "poor", "can_chunk": True, "can_embed": True, "requires_review": True}
-    if isinstance(ocr_document, dict) and ocr_document.get("quality") == "metadata_only":
-        return {"quality": "metadata_only", "can_chunk": True, "can_embed": True, "requires_review": True}
-    if extraction.text.strip():
-        return {"quality": "ok", "can_chunk": True, "can_embed": True, "requires_review": False}
-    if extraction.metadata:
-        return {"quality": "metadata_only", "can_chunk": True, "can_embed": True, "requires_review": False}
-    return {"quality": "empty", "can_chunk": False, "can_embed": False, "requires_review": True}
-
-
-def validate_and_repair_extraction(
-    sample: SampleFile,
-    plan: dict[str, Any],
-    extraction: ExtractionResult,
-    *,
-    ocr_executor: OcrExecutor | None = None,
-    ocr_artifacts: OcrArtifacts | None = None,
-) -> ExtractionResult:
-    validation = validate_extracted_text(extraction)
-    if validation["status"] != "failed":
-        return _with_text_validation(extraction, validation)
-
-    failed_extraction = _with_text_validation(
-        _with_added_warnings(extraction, [f"text_validation_failed:{validation['reason']}"]),
-        validation,
-    )
-    if plan.get("strategy") == "ocr_page_level" or not _can_try_ocr(sample):
-        return failed_extraction
-
-    fallback_plan = {
-        **plan,
-        "strategy": "ocr_page_level",
-        "document_subtype": "scanned_or_image_pdf",
-        "ocr_required": True,
-        "original_strategy": plan.get("strategy"),
-    }
-    if ocr_executor is None:
-        fallback_metadata = {
-            "ocr_required": True,
-            "document_subtype": fallback_plan.get("document_subtype"),
-            "text_validation": {
-                "status": "failed",
-                "reason": validation["reason"],
-                "repair_strategy": "ocr_page_level",
-            },
-            "original_extraction": {
-                "strategy": plan.get("strategy"),
-                "status": extraction.extraction_status,
-                "text_length": len(extraction.text),
-                "text_snippet": _shorten(extraction.text, 360),
-                "warnings": extraction.warnings,
-            },
-        }
-        return ExtractionResult(
-            sample=sample,
-            plan=fallback_plan,
-            extraction_status="deferred_extractor",
-            text="",
-            metadata=fallback_metadata,
-            page_count=extraction.page_count,
-            warnings=[
-                *extraction.warnings,
-                f"text_validation_failed:{validation['reason']}",
-                f"text_extraction_fallback_to_ocr:{plan.get('strategy')}",
-                "ocr_executor_not_provided",
-            ],
-        )
-    fallback = _extract_ocr_page_level(
-        sample,
-        fallback_plan,
-        ocr_executor=ocr_executor,
-        ocr_artifacts=ocr_artifacts,
-    )
-    fallback_metadata = {
-        **fallback.metadata,
-        "text_validation": {"status": "repaired", "reason": validation["reason"], "repair_strategy": "ocr_page_level"},
-        "original_extraction": {
-            "strategy": plan.get("strategy"),
-            "status": extraction.extraction_status,
-            "text_length": len(extraction.text),
-            "text_snippet": _shorten(extraction.text, 360),
-            "warnings": extraction.warnings,
-        },
-    }
-    return ExtractionResult(
-        sample=sample,
-        plan=fallback_plan,
-        extraction_status=fallback.extraction_status,
-        text=fallback.text,
-        metadata=fallback_metadata,
-        page_count=fallback.page_count,
-        warnings=[
-            *extraction.warnings,
-            f"text_validation_failed:{validation['reason']}",
-            f"text_extraction_fallback_to_ocr:{plan.get('strategy')}",
-            *fallback.warnings,
-        ],
-    )
-
-
-def validate_extracted_text(extraction: ExtractionResult) -> dict[str, Any]:
-    text = extraction.text.strip()
-    if extraction.extraction_status != "extracted" or not text:
-        return {"status": "not_applicable", "reason": None}
-    if len(text) < OCR_MIN_TEXT_LENGTH:
-        return {"status": "ok", "reason": None}
-    if _looks_like_table_distortion(text):
-        return {"status": "failed", "reason": "table_distortion_suspected"}
-    if _looks_like_gibberish(text):
-        return {"status": "failed", "reason": "gibberish_suspected"}
-    return {"status": "ok", "reason": None}
-
-
-def chunk_content(extraction: ExtractionResult, quality: dict[str, Any], *, chunk_size: int = 1800) -> list[dict[str, Any]]:
-    if not quality["can_chunk"]:
-        return []
-    if extraction.text.strip():
-        chunks = []
-        text = extraction.text.strip()
-        for index, start in enumerate(range(0, len(text), chunk_size), start=1):
-            chunk_text = text[start : start + chunk_size]
-            chunks.append(_chunk_row(extraction, index, "text", chunk_text, {"char_start": start, "char_end": start + len(chunk_text)}))
-        return chunks
-
-    metadata_text = json.dumps(extraction.metadata, sort_keys=True)
-    if extraction.extraction_status == "deferred_extractor":
-        metadata_text = f"OCR deferred for {extraction.sample.relative_path}. Metadata: {metadata_text}"
-    return [_chunk_row(extraction, 1, "metadata", metadata_text, extraction.metadata)]
-
-
-def embed_chunks(chunks: list[dict[str, Any]], provider: EmbeddingProvider) -> list[dict[str, Any]]:
-    if not chunks:
-        return []
-    results = embed_texts([chunk["text"] for chunk in chunks], provider)
-    rows = []
-    for chunk, result in zip(chunks, results, strict=True):
-        row = result.as_row()
-        row.update({"source_path": chunk["source_path"], "relative_path": chunk["relative_path"], "chunk_id": chunk["chunk_id"]})
-        rows.append(row)
-    return rows
-
-
-def embed_chunks_with_fallback(chunks: list[dict[str, Any]], provider: EmbeddingProvider) -> tuple[list[dict[str, Any]], list[str]]:
-    try:
-        return embed_chunks(chunks, provider), []
-    except (EmbeddingConfigurationError, EmbeddingProviderError):
-        return embed_chunks(chunks, PlaceholderEmbeddingProvider()), ["embedding_provider_failed_fell_back_to_placeholder"]
 
 
 def llm_tag_inspector_from_env(*, enabled: bool = True, provider_override: str | None = None) -> LLMTagInspector:
