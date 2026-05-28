@@ -1272,7 +1272,7 @@ Current implementation:
 - `PostgresPipelineStore.record_review_decision` updates `review_items_v2` statuses and corrected class/tag fields, and `POST /admin/system/postgres-runtime/review-items/{item_id}/decision` exposes that V2 write path without touching the legacy SQLite review table.
 - Settings can accept or defer imported Postgres review items as an interim dashboard control while the main Review page migrates from SQLite to Postgres.
 - `GET /admin/system/postgres-runtime/runs/{run_key}` exposes imported Postgres run detail by run key, including the run summary.
-- `GET /admin/system/postgres-runtime/runs/{run_key}/report` exposes a Postgres-native run report read model with normalized per-file results, review items, model usage, provider attempts, and document segments. This gives the dashboard a single local source for inspecting scrapbook/newspaper page-range split proposals without reading raw JSONL files.
+- `GET /admin/system/postgres-runtime/runs/{run_key}/report` exposes a Postgres-native run report read model with normalized per-file results, review items, model usage, provider attempts, document segments, and summary counts. This gives the dashboard a single local source for inspecting scrapbook/newspaper page-range split proposals without reading raw JSONL files.
 
 ### 24. `import_run_results`
 

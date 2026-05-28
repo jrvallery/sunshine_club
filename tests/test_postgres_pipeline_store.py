@@ -444,6 +444,12 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     report = store.get_run_report(run_key="run-report", limit=10)
 
     assert report["run"]["run_key"] == "run-report"
+    assert report["summary"]["result_count"] == 1
+    assert report["summary"]["open_review_item_count"] == 1
+    assert report["summary"]["model_call_count"] == 1
+    assert report["summary"]["local_model_call_count"] == 1
+    assert report["summary"]["segment_review_count"] == 1
+    assert report["summary"]["segment_type"] == {"scrapbook_page_group": 1}
     assert report["results"][0]["top_tag_candidate"] == "scrapbooks"
     assert report["review_items"][0]["segment_id"] == "scrapbook:segment-001"
     assert report["model_usage"][0]["provider"] == "cortex"

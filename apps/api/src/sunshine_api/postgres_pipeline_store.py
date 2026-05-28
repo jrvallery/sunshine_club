@@ -111,13 +111,25 @@ class PostgresPipelineStore:
             if run is None:
                 raise KeyError(f"Postgres pipeline run not found: {run_key}")
             capped_limit = max(1, min(int(limit), 1000))
+            results = self._list_pipeline_results(connection, run_key=run_key, limit=capped_limit)
+            review_items = self._list_review_items(connection, run_key=run_key, limit=capped_limit)
+            model_usage = self._list_model_usage(connection, run_key=run_key, limit=capped_limit)
+            provider_attempts = self._list_provider_attempts(connection, run_key=run_key, limit=capped_limit)
+            document_segments = self._list_document_segments(connection, run_key=run_key, limit=capped_limit)
             return {
                 "run": run,
-                "results": self._list_pipeline_results(connection, run_key=run_key, limit=capped_limit),
-                "review_items": self._list_review_items(connection, run_key=run_key, limit=capped_limit),
-                "model_usage": self._list_model_usage(connection, run_key=run_key, limit=capped_limit),
-                "provider_attempts": self._list_provider_attempts(connection, run_key=run_key, limit=capped_limit),
-                "document_segments": self._list_document_segments(connection, run_key=run_key, limit=capped_limit),
+                "summary": _run_report_summary(
+                    results=results,
+                    review_items=review_items,
+                    model_usage=model_usage,
+                    provider_attempts=provider_attempts,
+                    document_segments=document_segments,
+                ),
+                "results": results,
+                "review_items": review_items,
+                "model_usage": model_usage,
+                "provider_attempts": provider_attempts,
+                "document_segments": document_segments,
             }
         finally:
             connection.close()
@@ -763,6 +775,42 @@ def _json_safe_row(row: dict[str, Any]) -> dict[str, Any]:
         else:
             safe[key] = value
     return safe
+
+
+def _run_report_summary(
+    *,
+    results: list[dict[str, Any]],
+    review_items: list[dict[str, Any]],
+    model_usage: list[dict[str, Any]],
+    provider_attempts: list[dict[str, Any]],
+    document_segments: list[dict[str, Any]],
+) -> dict[str, Any]:
+    model_call_count = sum(_int_value(row.get("call_count"), default=1) for row in model_usage)
+    return {
+        "result_count": len(results),
+        "review_item_count": len(review_items),
+        "open_review_item_count": sum(1 for row in review_items if row.get("status") == "open"),
+        "model_usage_count": len(model_usage),
+        "model_call_count": model_call_count,
+        "local_model_call_count": sum(_int_value(row.get("call_count"), default=1) for row in model_usage if row.get("local_only") is True),
+        "nonlocal_model_call_count": sum(_int_value(row.get("call_count"), default=1) for row in model_usage if row.get("local_only") is False),
+        "provider_attempt_count": len(provider_attempts),
+        "document_segment_count": len(document_segments),
+        "segment_review_count": sum(1 for row in document_segments if row.get("requires_segment_review") is True),
+        "route_status": _count_values(results, "route_status"),
+        "quality": _count_values(results, "quality"),
+        "primary_tag": _count_values(results, "top_tag_candidate"),
+        "segment_type": _count_values(document_segments, "segment_type"),
+        "provider_attempt_status": _count_values(provider_attempts, "status"),
+        "model_provider": _count_values(model_usage, "provider"),
+    }
+
+
+def _int_value(value: Any, *, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _call_count(row: dict[str, Any]) -> int:

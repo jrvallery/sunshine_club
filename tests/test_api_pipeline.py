@@ -103,6 +103,7 @@ def test_postgres_run_report_endpoint_wraps_service(monkeypatch) -> None:
         captured["limit"] = limit
         return {
             "run": {"run_key": run_key},
+            "summary": {"result_count": 1, "segment_review_count": 1},
             "results": [{"source_path": "/source/scrapbook.pdf"}],
             "review_items": [{"segment_id": "segment-001"}],
             "model_usage": [{"provider": "cortex"}],
@@ -117,6 +118,7 @@ def test_postgres_run_report_endpoint_wraps_service(monkeypatch) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["run"]["run_key"] == "run-1"
+    assert payload["summary"]["segment_review_count"] == 1
     assert payload["document_segments"][0]["segment_type"] == "scrapbook_page_group"
     assert payload["provider_attempts"][0]["provider"] == "docling"
     assert captured == {"run_key": "run-1", "limit": 7}
