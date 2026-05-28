@@ -34,10 +34,13 @@ def benchmark_extraction_providers(
         for provider in providers:
             rows.append(_benchmark_one(sample, plan, provider))
     summary = _summary(rows)
+    recommendations = _provider_recommendations(rows)
+    summary["recommendations"] = recommendations
     if output_path is not None:
         _write_jsonl(output_path / "provider-benchmark-results.jsonl", rows)
+        _write_jsonl(output_path / "provider-benchmark-recommendations.jsonl", recommendations)
         (output_path / "provider-benchmark-summary.json").write_text(_json_dumps(summary), encoding="utf-8")
-    return {"summary": summary, "results": rows}
+    return {"summary": summary, "results": rows, "recommendations": recommendations}
 
 
 def _benchmark_one(sample: SampleFile, plan: dict[str, Any], provider: ExtractionProvider) -> dict[str, Any]:
@@ -167,6 +170,77 @@ def _comparison(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "changed_status_count": changed_status,
         "docling_minus_current_text_length_total": sum(text_length_deltas),
     }
+
+
+def _provider_recommendations(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    recommendations = []
+    for provider, provider_rows in _rows_by_provider(rows).items():
+        result_count = len(provider_rows)
+        extracted_count = sum(1 for row in provider_rows if row.get("status") == "extracted")
+        ok_count = sum(1 for row in provider_rows if row.get("quality") == "ok")
+        review_required_count = sum(1 for row in provider_rows if row.get("requires_review"))
+        available_count = sum(1 for row in provider_rows if row.get("provider_available"))
+        local_only = all(bool(row.get("local_only")) for row in provider_rows)
+        average_text_length = round(sum(int(row.get("text_length") or 0) for row in provider_rows) / result_count, 2) if result_count else 0
+        promotion_status = _promotion_status(
+            result_count=result_count,
+            extracted_count=extracted_count,
+            ok_count=ok_count,
+            review_required_count=review_required_count,
+            available_count=available_count,
+            local_only=local_only,
+        )
+        recommendations.append(
+            {
+                "provider": provider,
+                "result_count": result_count,
+                "available_rate": _rate(available_count, result_count),
+                "extracted_rate": _rate(extracted_count, result_count),
+                "ok_quality_rate": _rate(ok_count, result_count),
+                "review_required_rate": _rate(review_required_count, result_count),
+                "average_text_length": average_text_length,
+                "local_only": local_only,
+                "promotion_status": promotion_status,
+                "promotion_reason": _promotion_reason(promotion_status),
+            }
+        )
+    return sorted(recommendations, key=lambda row: (row["promotion_status"] != "candidate", -row["ok_quality_rate"], -row["extracted_rate"], row["provider"]))
+
+
+def _promotion_status(
+    *,
+    result_count: int,
+    extracted_count: int,
+    ok_count: int,
+    review_required_count: int,
+    available_count: int,
+    local_only: bool,
+) -> str:
+    if result_count == 0:
+        return "insufficient_data"
+    if not local_only:
+        return "blocked_not_local_only"
+    if available_count < result_count:
+        return "blocked_dependency_unavailable"
+    if extracted_count == result_count and ok_count == result_count and review_required_count == 0:
+        return "candidate"
+    return "needs_review"
+
+
+def _promotion_reason(status: str) -> str:
+    return {
+        "candidate": "all benchmarked files extracted with ok quality and no review requirement",
+        "blocked_dependency_unavailable": "provider dependency is unavailable for at least one benchmarked file",
+        "blocked_not_local_only": "provider is not local-only",
+        "needs_review": "benchmark output needs review before provider promotion",
+        "insufficient_data": "no benchmark rows were available",
+    }[status]
+
+
+def _rate(count: int, total: int) -> float:
+    if total <= 0:
+        return 0.0
+    return round(count / total, 4)
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:

@@ -1547,7 +1547,7 @@ Important missing V2 dependencies:
 - Qdrant client is declared; the local Qdrant server/service/provisioning path still needs to be made first-class.
 - Postgres client and Compose service exist; V2 migrations now include run/results/model/provider/segment/chunk/embedding tables, but dashboard runtime still needs to move from SQLite to Postgres as the authoritative store.
 - Local embedding/vector indexing stack is not fully wired yet.
-- Provider benchmark tooling exists for extraction providers; dashboard benchmark review and real Docling/MinerU/RAGFlow dependency benchmarking still need to be finished.
+- Provider benchmark tooling exists for extraction providers and emits promotion recommendations; dashboard benchmark review and real Docling/MinerU/RAGFlow dependency benchmarking still need to be finished.
 
 ## Local-Only Infrastructure Decision
 
@@ -1940,6 +1940,12 @@ API/dashboard:
 - Add benchmark dashboard page.
 - Add Docling provider first.
 - Add mocked provider tests.
+
+Current implementation:
+
+- Extraction provider benchmarks run current, Docling, MinerU, RAGFlow DeepDoc, and Unstructured provider boundaries.
+- Benchmark artifacts include raw rows, summary, and provider-promotion recommendation rows.
+- Promotion recommendations require local-only availability, extracted status, OK quality, and no review requirement across benchmarked files.
 
 ### Phase 4: Structure-Aware Chunking And Indexing
 
