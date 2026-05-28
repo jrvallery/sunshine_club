@@ -58,6 +58,7 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
         "pipeline_results": 1,
         "pipeline_chunks": 1,
         "pipeline_chunk_embeddings": 1,
+        "pipeline_run_events": 1,
         "model_usage": 1,
         "provider_attempts": 1,
         "document_segments": 1,
@@ -70,6 +71,7 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
     assert "insert into pipeline_results" in executed_sql
     assert "insert into pipeline_chunks" in executed_sql
     assert "insert into pipeline_chunk_embeddings" in executed_sql
+    assert "insert into pipeline_run_events" in executed_sql
     assert "insert into model_usage" in executed_sql
     assert "insert into provider_attempts" in executed_sql
     assert "insert into document_segments" in executed_sql
@@ -83,6 +85,9 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
     assert any("[0.1,0.2,0.3]" in str(params) for _query, params in connection.executed)
     provider_attempt_params = next(params for query, params in connection.executed if "insert into provider_attempts" in query)
     assert provider_attempt_params[1:4] == ("/source/a.pdf", "Sunshine/a.pdf", "current")
+    run_event_params = next(params for query, params in connection.executed if "insert into pipeline_run_events" in query)
+    assert run_event_params[1:6] == ("/source/a.pdf", "Sunshine/a.pdf", "extract_content", "ok", "extracted text")
+    assert json.loads(run_event_params[6])["duration_ms"] == 12.5
     review_item_params = next(params for query, params in connection.executed if "insert into review_items_v2" in query)
     assert review_item_params[1:8] == (
         "/source/a.pdf",
@@ -128,6 +133,7 @@ def test_postgres_pipeline_store_reports_runtime_summary() -> None:
                     "review_items_v2": 1,
                     "model_usage": 3,
                     "provider_attempts": 4,
+                    "pipeline_run_events": 8,
                     "document_segments": 5,
                     "pipeline_chunks": 6,
                     "pipeline_chunk_embeddings": 6,
@@ -175,6 +181,7 @@ def test_postgres_pipeline_store_reports_runtime_summary() -> None:
 
     assert summary["pipeline_runs"] == 2
     assert summary["pipeline_results"] == 7
+    assert summary["pipeline_run_events"] == 8
     assert summary["pipeline_chunk_embeddings"] == 6
     assert summary["recent_runs"][0]["run_key"] == "run-1"
     assert summary["recent_runs"][0]["result_count"] == 7
@@ -224,6 +231,46 @@ def test_postgres_pipeline_store_lists_review_items() -> None:
 
     assert rows[0]["run_key"] == "run-1"
     assert rows[0]["proposed_tag"] == "meeting_records"
+    assert connection.executed[0][1] == ("run-1", 10)
+    assert connection.closed is True
+
+
+def test_postgres_pipeline_store_lists_run_events() -> None:
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.closed = False
+            self.executed: list[tuple[str, tuple[Any, ...]]] = []
+
+        def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
+            self.executed.append((query, params))
+            return _Cursor(
+                rows=[
+                    {
+                        "id": "event-id",
+                        "run_id": "run-id",
+                        "run_key": "run-1",
+                        "source_path": "/source/a.pdf",
+                        "relative_path": "Sunshine/a.pdf",
+                        "node": "extract_content",
+                        "status": "ok",
+                        "message": "extracted text",
+                        "payload": {"duration_ms": 12.5},
+                        "created_at": "2026-05-28T00:00:00",
+                    }
+                ]
+            )
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+    store = PostgresPipelineStore("postgresql://local/test", connect_factory=lambda _url: connection)
+
+    rows = store.list_run_events(run_key="run-1", limit=10)
+
+    assert rows[0]["run_key"] == "run-1"
+    assert rows[0]["node"] == "extract_content"
+    assert rows[0]["payload"]["duration_ms"] == 12.5
     assert connection.executed[0][1] == ("run-1", 10)
     assert connection.closed is True
 
@@ -301,6 +348,7 @@ def test_postgres_pipeline_store_deletes_run_with_cascade_counts() -> None:
                         "pipeline_results": 2,
                         "pipeline_chunks": 3,
                         "pipeline_chunk_embeddings": 3,
+                        "pipeline_run_events": 8,
                         "model_usage": 4,
                         "provider_attempts": 5,
                         "document_segments": 6,
@@ -326,6 +374,7 @@ def test_postgres_pipeline_store_deletes_run_with_cascade_counts() -> None:
         "pipeline_results": 2,
         "pipeline_chunks": 3,
         "pipeline_chunk_embeddings": 3,
+        "pipeline_run_events": 8,
         "model_usage": 4,
         "provider_attempts": 5,
         "document_segments": 6,
@@ -493,6 +542,23 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
                         }
                     ]
                 )
+            if "from pipeline_run_events pre" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "event-id",
+                            "run_id": "run-id",
+                            "run_key": "run-report",
+                            "source_path": "/source/scrapbook.pdf",
+                            "relative_path": "History/scrapbook.pdf",
+                            "node": "propose_document_segments",
+                            "status": "ok",
+                            "message": "proposed segments",
+                            "payload": {"duration_ms": 31.5},
+                            "created_at": None,
+                        }
+                    ]
+                )
             return _Cursor()
 
         def close(self) -> None:
@@ -508,12 +574,15 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     assert report["summary"]["open_review_item_count"] == 1
     assert report["summary"]["model_call_count"] == 1
     assert report["summary"]["local_model_call_count"] == 1
+    assert report["summary"]["run_event_count"] == 1
+    assert report["summary"]["run_event_status"] == {"ok": 1}
     assert report["summary"]["segment_review_count"] == 1
     assert report["summary"]["segment_type"] == {"scrapbook_page_group": 1}
     assert report["results"][0]["top_tag_candidate"] == "scrapbooks"
     assert report["review_items"][0]["segment_id"] == "scrapbook:segment-001"
     assert report["model_usage"][0]["provider"] == "cortex"
     assert report["provider_attempts"][0]["provider"] == "docling"
+    assert report["run_events"][0]["node"] == "propose_document_segments"
     assert report["document_segments"][0]["segment_type"] == "scrapbook_page_group"
     assert report["document_segments"][0]["requires_segment_review"] is True
     assert any(params == ("run-report", 10) for _query, params in connection.executed)
@@ -1245,6 +1314,24 @@ def _postgres_import_artifacts(tmp_path: Path) -> Path:
                 "embedding_dimensions": 3,
                 "semantic_quality": True,
                 "embedding": [0.1, 0.2, 0.3],
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "graph-audit-events.jsonl",
+        [
+            {
+                "run_id": "run-1",
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "node": "extract_content",
+                "status": "ok",
+                "timestamp": "2026-05-28T00:00:00+00:00",
+                "duration_ms": 12.5,
+                "attempts": 1,
+                "summary": "extracted text",
+                "warnings": [],
+                "errors": [],
             }
         ],
     )

@@ -39,6 +39,7 @@ from sunshine_api.services.imports import (
     get_postgres_run_report,
     list_postgres_pipeline_runs,
     list_postgres_review_items,
+    list_postgres_run_events,
     postgres_runtime_summary,
     record_postgres_review_decision,
 )
@@ -115,6 +116,17 @@ def postgres_runtime_run_report(run_key: str, limit: int = 500) -> dict[str, Any
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     return {"ok": True, **report}
+
+
+@router.get("/admin/system/postgres-runtime/runs/{run_key}/events")
+def postgres_runtime_run_events(run_key: str, limit: int = 200) -> dict[str, Any]:
+    try:
+        events = list_postgres_run_events(run_key=run_key, limit=limit)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"ok": True, "run_key": run_key, "count": len(events), "events": events}
 
 
 @router.post("/admin/foundation/run-staged-file", response_model=ThinSliceOutcome)

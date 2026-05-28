@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import threading
 import json
+from typing import Any
 
 from fastapi.testclient import TestClient
 
@@ -152,6 +153,7 @@ def test_postgres_run_report_endpoint_wraps_service(monkeypatch) -> None:
             "model_usage": [{"provider": "cortex"}],
             "provider_attempts": [{"provider": "docling"}],
             "document_segments": [{"segment_type": "scrapbook_page_group", "requires_segment_review": True}],
+            "run_events": [{"node": "propose_document_segments", "status": "ok"}],
         }
 
     monkeypatch.setattr("sunshine_api.routers.health.get_postgres_run_report", fake_get_report)
@@ -163,8 +165,27 @@ def test_postgres_run_report_endpoint_wraps_service(monkeypatch) -> None:
     assert payload["run"]["run_key"] == "run-1"
     assert payload["summary"]["segment_review_count"] == 1
     assert payload["document_segments"][0]["segment_type"] == "scrapbook_page_group"
+    assert payload["run_events"][0]["node"] == "propose_document_segments"
     assert payload["provider_attempts"][0]["provider"] == "docling"
     assert captured == {"run_key": "run-1", "limit": 7}
+
+
+def test_postgres_run_events_endpoint_wraps_service(monkeypatch) -> None:
+    captured = {}
+
+    def fake_list_events(*, run_key: str, limit: int = 200) -> list[dict[str, Any]]:
+        captured["run_key"] = run_key
+        captured["limit"] = limit
+        return [{"node": "extract_content", "status": "ok", "message": "extracted text"}]
+
+    monkeypatch.setattr("sunshine_api.routers.health.list_postgres_run_events", fake_list_events)
+
+    response = TestClient(app).get("/admin/system/postgres-runtime/runs/run-1/events?limit=9")
+
+    assert response.status_code == 200
+    assert response.json()["count"] == 1
+    assert response.json()["events"][0]["node"] == "extract_content"
+    assert captured == {"run_key": "run-1", "limit": 9}
 
 
 def test_postgres_review_decision_endpoint_wraps_service(monkeypatch) -> None:

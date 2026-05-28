@@ -114,6 +114,17 @@ def get_postgres_run_report(
     return store.get_run_report(run_key=run_key, limit=limit)
 
 
+def list_postgres_run_events(
+    *,
+    run_key: str,
+    limit: int = 200,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> list[dict[str, Any]]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.list_run_events(run_key=run_key, limit=limit)
+
+
 def list_postgres_review_items(
     *,
     run_key: str | None = None,
@@ -409,6 +420,7 @@ __all__ = [
     "list_postgres_golden_labels",
     "list_postgres_pipeline_runs",
     "list_postgres_review_items",
+    "list_postgres_run_events",
     "postgres_golden_label_summary",
     "postgres_file_facets",
     "postgres_file_result_inspection",

@@ -49,6 +49,7 @@ class PostgresPipelineStore:
                 "pipeline_results": self._import_results(connection, run_id, output_path),
                 "pipeline_chunks": self._import_chunks(connection, run_id, output_path),
                 "pipeline_chunk_embeddings": self._import_chunk_embeddings(connection, run_id, output_path),
+                "pipeline_run_events": self._import_run_events(connection, run_id, output_path),
                 "model_usage": self._import_model_usage(connection, run_id, output_path),
                 "provider_attempts": self._import_provider_attempts(connection, run_id, output_path),
                 "document_segments": self._import_document_segments(connection, run_id, output_path),
@@ -70,6 +71,7 @@ class PostgresPipelineStore:
                 "review_items": _scalar_count(connection, "select count(*) from review_items_v2"),
                 "model_usage": _scalar_count(connection, "select count(*) from model_usage"),
                 "provider_attempts": _scalar_count(connection, "select count(*) from provider_attempts"),
+                "pipeline_run_events": _scalar_count(connection, "select count(*) from pipeline_run_events"),
                 "document_segments": _scalar_count(connection, "select count(*) from document_segments"),
                 "pipeline_chunks": _scalar_count(connection, "select count(*) from pipeline_chunks"),
                 "pipeline_chunk_embeddings": _scalar_count(connection, "select count(*) from pipeline_chunk_embeddings"),
@@ -145,6 +147,7 @@ class PostgresPipelineStore:
                     (select count(*) from pipeline_results pr where pr.run_id = r.id) as pipeline_results,
                     (select count(*) from pipeline_chunks pc where pc.run_id = r.id) as pipeline_chunks,
                     (select count(*) from pipeline_chunk_embeddings pce where pce.run_id = r.id) as pipeline_chunk_embeddings,
+                    (select count(*) from pipeline_run_events pre where pre.run_id = r.id) as pipeline_run_events,
                     (select count(*) from model_usage mu where mu.run_id = r.id) as model_usage,
                     (select count(*) from provider_attempts pa where pa.run_id = r.id) as provider_attempts,
                     (select count(*) from document_segments ds where ds.run_id = r.id) as document_segments,
@@ -168,6 +171,7 @@ class PostgresPipelineStore:
                     "pipeline_results": _int_value(run_row.get("pipeline_results")),
                     "pipeline_chunks": _int_value(run_row.get("pipeline_chunks")),
                     "pipeline_chunk_embeddings": _int_value(run_row.get("pipeline_chunk_embeddings")),
+                    "pipeline_run_events": _int_value(run_row.get("pipeline_run_events")),
                     "model_usage": _int_value(run_row.get("model_usage")),
                     "provider_attempts": _int_value(run_row.get("provider_attempts")),
                     "document_segments": _int_value(run_row.get("document_segments")),
@@ -198,6 +202,7 @@ class PostgresPipelineStore:
             model_usage = self._list_model_usage(connection, run_key=run_key, limit=capped_limit)
             provider_attempts = self._list_provider_attempts(connection, run_key=run_key, limit=capped_limit)
             document_segments = self._list_document_segments(connection, run_key=run_key, limit=capped_limit)
+            run_events = self._list_run_events(connection, run_key=run_key, limit=capped_limit)
             return {
                 "run": run,
                 "summary": _run_report_summary(
@@ -206,13 +211,22 @@ class PostgresPipelineStore:
                     model_usage=model_usage,
                     provider_attempts=provider_attempts,
                     document_segments=document_segments,
+                    run_events=run_events,
                 ),
                 "results": results,
                 "review_items": review_items,
                 "model_usage": model_usage,
                 "provider_attempts": provider_attempts,
                 "document_segments": document_segments,
+                "run_events": run_events,
             }
+        finally:
+            connection.close()
+
+    def list_run_events(self, *, run_key: str, limit: int = 200) -> list[dict[str, Any]]:
+        connection = self._connect_factory(self.database_url)
+        try:
+            return self._list_run_events(connection, run_key=run_key, limit=limit)
         finally:
             connection.close()
 
@@ -1181,6 +1195,30 @@ class PostgresPipelineStore:
         ).fetchall()
         return [_json_safe_row(_row_to_dict(row)) for row in rows]
 
+    def _list_run_events(self, connection: PostgresConnection, *, run_key: str, limit: int) -> list[dict[str, Any]]:
+        rows = connection.execute(
+            """
+            select
+                pre.id,
+                pre.run_id,
+                r.run_key,
+                pre.source_path,
+                pre.relative_path,
+                pre.node,
+                pre.status,
+                pre.message,
+                pre.payload,
+                pre.created_at
+            from pipeline_run_events pre
+            join pipeline_runs r on r.id = pre.run_id
+            where r.run_key = %s
+            order by pre.created_at asc, pre.id asc
+            limit %s
+            """,
+            (run_key, max(1, min(int(limit), 1000))),
+        ).fetchall()
+        return [_json_safe_row(_row_to_dict(row)) for row in rows]
+
     def _list_provider_attempts(self, connection: PostgresConnection, *, run_key: str, limit: int) -> list[dict[str, Any]]:
         rows = connection.execute(
             """
@@ -1360,6 +1398,44 @@ class PostgresPipelineStore:
                     bool(row.get("semantic_quality")),
                     _vector_literal(row.get("embedding")),
                     json.dumps(row.get("metadata") or {}, sort_keys=True),
+                ),
+            )
+        return len(rows)
+
+    def _import_run_events(self, connection: PostgresConnection, run_id: str, output_path: Path) -> int:
+        rows = _read_jsonl(output_path / "graph-audit-events.jsonl")
+        connection.execute("delete from pipeline_run_events where run_id = %s", (run_id,))
+        for row in rows:
+            payload = {
+                key: value
+                for key, value in row.items()
+                if key
+                not in {
+                    "run_id",
+                    "source_path",
+                    "relative_path",
+                    "node",
+                    "status",
+                    "summary",
+                    "message",
+                    "timestamp",
+                }
+            }
+            connection.execute(
+                """
+                insert into pipeline_run_events (
+                    run_id, source_path, relative_path, node, status, message, payload, created_at
+                ) values (%s, %s, %s, %s, %s, %s, %s::jsonb, coalesce(%s::timestamptz, now()))
+                """,
+                (
+                    run_id,
+                    row.get("source_path"),
+                    row.get("relative_path"),
+                    row.get("node"),
+                    row.get("status") or "unknown",
+                    row.get("message") or row.get("summary"),
+                    json.dumps(payload, sort_keys=True),
+                    row.get("timestamp"),
                 ),
             )
         return len(rows)
@@ -1845,6 +1921,7 @@ def _run_report_summary(
     model_usage: list[dict[str, Any]],
     provider_attempts: list[dict[str, Any]],
     document_segments: list[dict[str, Any]],
+    run_events: list[dict[str, Any]],
 ) -> dict[str, Any]:
     model_call_count = sum(_int_value(row.get("call_count"), default=1) for row in model_usage)
     return {
@@ -1856,6 +1933,8 @@ def _run_report_summary(
         "local_model_call_count": sum(_int_value(row.get("call_count"), default=1) for row in model_usage if row.get("local_only") is True),
         "nonlocal_model_call_count": sum(_int_value(row.get("call_count"), default=1) for row in model_usage if row.get("local_only") is False),
         "provider_attempt_count": len(provider_attempts),
+        "run_event_count": len(run_events),
+        "failed_run_event_count": sum(1 for row in run_events if row.get("status") == "failed"),
         "document_segment_count": len(document_segments),
         "segment_review_count": sum(1 for row in document_segments if row.get("requires_segment_review") is True),
         "route_status": _count_values(results, "route_status"),
@@ -1863,6 +1942,7 @@ def _run_report_summary(
         "primary_tag": _count_values(results, "top_tag_candidate"),
         "segment_type": _count_values(document_segments, "segment_type"),
         "provider_attempt_status": _count_values(provider_attempts, "status"),
+        "run_event_status": _count_values(run_events, "status"),
         "model_provider": _count_values(model_usage, "provider"),
     }
 
