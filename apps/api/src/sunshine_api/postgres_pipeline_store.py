@@ -279,6 +279,8 @@ class PostgresPipelineStore:
             provider_attempts = self._list_provider_attempts(connection, run_key=run_key, limit=capped_limit)
             parser_results = self._list_parser_results(connection, run_key=run_key, limit=capped_limit)
             document_segments = self._list_document_segments(connection, run_key=run_key, limit=capped_limit)
+            chunks = self._list_chunks(connection, run_key=run_key, limit=capped_limit)
+            chunk_embeddings = self._list_chunk_embeddings(connection, run_key=run_key, limit=capped_limit)
             run_events = self._list_run_events(connection, run_key=run_key, limit=capped_limit)
             return {
                 "run": run,
@@ -289,6 +291,8 @@ class PostgresPipelineStore:
                     provider_attempts=provider_attempts,
                     parser_results=parser_results,
                     document_segments=document_segments,
+                    chunks=chunks,
+                    chunk_embeddings=chunk_embeddings,
                     run_events=run_events,
                 ),
                 "results": results,
@@ -297,6 +301,8 @@ class PostgresPipelineStore:
                 "provider_attempts": provider_attempts,
                 "parser_results": parser_results,
                 "document_segments": document_segments,
+                "chunks": chunks,
+                "chunk_embeddings": chunk_embeddings,
                 "run_events": run_events,
             }
         finally:
@@ -1800,6 +1806,60 @@ class PostgresPipelineStore:
         ).fetchall()
         return [_json_safe_row(_row_to_dict(row)) for row in rows]
 
+    def _list_chunks(self, connection: PostgresConnection, *, run_key: str, limit: int) -> list[dict[str, Any]]:
+        rows = connection.execute(
+            """
+            select
+                pc.id,
+                pc.run_id,
+                r.run_key,
+                pc.source_path,
+                pc.relative_path,
+                pc.sample_path,
+                pc.chunk_id,
+                pc.chunk_index,
+                pc.chunk_kind,
+                left(pc.content, 500) as content_snippet,
+                length(pc.content) as content_length,
+                pc.metadata,
+                pc.created_at
+            from pipeline_chunks pc
+            join pipeline_runs r on r.id = pc.run_id
+            where r.run_key = %s
+            order by pc.source_path asc nulls last, pc.chunk_index asc, pc.id asc
+            limit %s
+            """,
+            (run_key, max(1, min(int(limit), 1000))),
+        ).fetchall()
+        return [_json_safe_row(_row_to_dict(row)) for row in rows]
+
+    def _list_chunk_embeddings(self, connection: PostgresConnection, *, run_key: str, limit: int) -> list[dict[str, Any]]:
+        rows = connection.execute(
+            """
+            select
+                pce.id,
+                pce.run_id,
+                r.run_key,
+                pce.chunk_id,
+                pce.source_path,
+                pce.relative_path,
+                pce.embedding_provider,
+                pce.embedding_model,
+                pce.embedding_dimensions,
+                pce.embedding_status,
+                pce.semantic_quality,
+                pce.metadata,
+                pce.created_at
+            from pipeline_chunk_embeddings pce
+            join pipeline_runs r on r.id = pce.run_id
+            where r.run_key = %s
+            order by pce.source_path asc nulls last, pce.chunk_id asc, pce.embedding_provider asc
+            limit %s
+            """,
+            (run_key, max(1, min(int(limit), 1000))),
+        ).fetchall()
+        return [_json_safe_row(_row_to_dict(row)) for row in rows]
+
     def _upsert_run(self, connection: PostgresConnection, *, run_key: str, preset_key: str | None, output_dir: Path, summary: dict[str, Any]) -> str:
         graph_runtime = summary.get("graph_runtime") if isinstance(summary.get("graph_runtime"), dict) else {}
         providers = summary.get("providers") if isinstance(summary.get("providers"), dict) else {}
@@ -2779,9 +2839,12 @@ def _run_report_summary(
     provider_attempts: list[dict[str, Any]],
     parser_results: list[dict[str, Any]],
     document_segments: list[dict[str, Any]],
+    chunks: list[dict[str, Any]],
+    chunk_embeddings: list[dict[str, Any]],
     run_events: list[dict[str, Any]],
 ) -> dict[str, Any]:
     model_call_count = sum(_int_value(row.get("call_count"), default=1) for row in model_usage)
+    semantic_embedding_count = sum(1 for row in chunk_embeddings if row.get("semantic_quality") is True)
     return {
         "result_count": len(results),
         "review_item_count": len(review_items),
@@ -2797,10 +2860,18 @@ def _run_report_summary(
         "failed_run_event_count": sum(1 for row in run_events if row.get("status") == "failed"),
         "document_segment_count": len(document_segments),
         "segment_review_count": sum(1 for row in document_segments if row.get("requires_segment_review") is True),
+        "chunk_count": len(chunks),
+        "chunk_embedding_count": len(chunk_embeddings),
+        "semantic_embedding_count": semantic_embedding_count,
+        "placeholder_embedding_count": len(chunk_embeddings) - semantic_embedding_count,
         "route_status": _count_values(results, "route_status"),
         "quality": _count_values(results, "quality"),
         "primary_tag": _count_values(results, "top_tag_candidate"),
         "segment_type": _count_values(document_segments, "segment_type"),
+        "chunk_kind": _count_values(chunks, "chunk_kind"),
+        "embedding_provider": _count_values(chunk_embeddings, "embedding_provider"),
+        "embedding_status": _count_values(chunk_embeddings, "embedding_status"),
+        "embedding_model": _count_values(chunk_embeddings, "embedding_model"),
         "provider_attempt_status": _count_values(provider_attempts, "status"),
         "parser_status": _count_values(parser_results, "status"),
         "parser_quality": _count_values(parser_results, "quality"),

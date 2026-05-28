@@ -354,6 +354,16 @@ export type RunReport = {
     by_status: Record<string, number>;
     items: Array<Record<string, unknown>>;
   };
+  indexing: {
+    count: number;
+    by_provider: Record<string, number>;
+    by_status: Record<string, number>;
+    indexed_count: number;
+    skipped_count: number;
+    semantic_embedding_count: number;
+    placeholder_embedding_count: number;
+    items: Array<Record<string, unknown>>;
+  };
   tags: Record<string, Record<string, number>>;
   placement: Record<string, Record<string, number>>;
   model_usage: RunModelUsageReport;
@@ -380,10 +390,18 @@ export type PostgresRunReport = {
     failed_run_event_count: number;
     document_segment_count: number;
     segment_review_count: number;
+    chunk_count?: number;
+    chunk_embedding_count?: number;
+    semantic_embedding_count?: number;
+    placeholder_embedding_count?: number;
     route_status: Record<string, number>;
     quality: Record<string, number>;
     primary_tag: Record<string, number>;
     segment_type: Record<string, number>;
+    chunk_kind?: Record<string, number>;
+    embedding_provider?: Record<string, number>;
+    embedding_status?: Record<string, number>;
+    embedding_model?: Record<string, number>;
     provider_attempt_status: Record<string, number>;
     parser_status?: Record<string, number>;
     parser_quality?: Record<string, number>;
@@ -399,6 +417,8 @@ export type PostgresRunReport = {
   provider_attempts: Array<Record<string, unknown>>;
   parser_results?: Array<Record<string, unknown>>;
   document_segments: Array<Record<string, unknown>>;
+  chunks?: Array<Record<string, unknown>>;
+  chunk_embeddings?: Array<Record<string, unknown>>;
   run_events: Array<Record<string, unknown>>;
 };
 

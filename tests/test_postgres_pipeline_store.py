@@ -901,6 +901,46 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
                         }
                     ]
                 )
+            if "from pipeline_chunks pc" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "chunk-row-id",
+                            "run_id": "run-id",
+                            "run_key": "run-report",
+                            "source_path": "/source/scrapbook.pdf",
+                            "relative_path": "History/scrapbook.pdf",
+                            "sample_path": "/sample/scrapbook.pdf",
+                            "chunk_id": "scrapbook:segment-001:chunk-001",
+                            "chunk_index": 1,
+                            "chunk_kind": "segment_text",
+                            "content_snippet": "Scrapbook page text",
+                            "content_length": 19,
+                            "metadata": {"segment_id": "scrapbook:segment-001"},
+                            "created_at": None,
+                        }
+                    ]
+                )
+            if "from pipeline_chunk_embeddings pce" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "embedding-row-id",
+                            "run_id": "run-id",
+                            "run_key": "run-report",
+                            "chunk_id": "scrapbook:segment-001:chunk-001",
+                            "source_path": "/source/scrapbook.pdf",
+                            "relative_path": "History/scrapbook.pdf",
+                            "embedding_provider": "cortex",
+                            "embedding_model": "local-embedding",
+                            "embedding_dimensions": 768,
+                            "embedding_status": "embedded",
+                            "semantic_quality": True,
+                            "metadata": {"vector_store_provider": "qdrant"},
+                            "created_at": None,
+                        }
+                    ]
+                )
             if "from pipeline_run_events pre" in normalized:
                 return _Cursor(
                     rows=[
@@ -940,6 +980,13 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     assert report["summary"]["run_event_status"] == {"ok": 1}
     assert report["summary"]["segment_review_count"] == 1
     assert report["summary"]["segment_type"] == {"scrapbook_page_group": 1}
+    assert report["summary"]["chunk_count"] == 1
+    assert report["summary"]["chunk_embedding_count"] == 1
+    assert report["summary"]["semantic_embedding_count"] == 1
+    assert report["summary"]["placeholder_embedding_count"] == 0
+    assert report["summary"]["chunk_kind"] == {"segment_text": 1}
+    assert report["summary"]["embedding_provider"] == {"cortex": 1}
+    assert report["summary"]["embedding_status"] == {"embedded": 1}
     assert report["results"][0]["top_tag_candidate"] == "scrapbooks"
     assert report["review_items"][0]["segment_id"] == "scrapbook:segment-001"
     assert report["model_usage"][0]["provider"] == "cortex"
@@ -947,6 +994,8 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     assert report["provider_attempts"][0]["provider"] == "docling"
     assert report["parser_results"][0]["provider"] == "docling"
     assert report["parser_results"][0]["page_text_coverage_rate"] == 0.92
+    assert report["chunks"][0]["chunk_kind"] == "segment_text"
+    assert report["chunk_embeddings"][0]["semantic_quality"] is True
     assert report["run_events"][0]["node"] == "propose_document_segments"
     assert report["document_segments"][0]["segment_type"] == "scrapbook_page_group"
     assert report["document_segments"][0]["requires_segment_review"] is True

@@ -14,7 +14,7 @@ import { StatusBadge } from "../../../../components/ui/StatusBadge";
 import { deleteJson, fetchJson, postJson } from "../../../../lib/api";
 import type { PipelineRun, PipelineRunEvent, PostgresRunReport, RunModelUsageReport, RunReport } from "../../../../lib/types";
 
-type ReportTab = "overview" | "files" | "review" | "segments" | "training" | "ocr" | "tags" | "placement" | "models" | "providers" | "logs" | "artifacts" | "diff";
+type ReportTab = "overview" | "files" | "review" | "segments" | "training" | "ocr" | "indexing" | "tags" | "placement" | "models" | "providers" | "logs" | "artifacts" | "diff";
 
 const tabs: Array<{ key: ReportTab; label: string }> = [
   { key: "overview", label: "Overview" },
@@ -23,6 +23,7 @@ const tabs: Array<{ key: ReportTab; label: string }> = [
   { key: "segments", label: "Segments" },
   { key: "training", label: "Training Cycle" },
   { key: "ocr", label: "OCR" },
+  { key: "indexing", label: "Indexing" },
   { key: "tags", label: "Tags" },
   { key: "placement", label: "Placement" },
   { key: "models", label: "Model Usage" },
@@ -225,6 +226,7 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
       {activeTab === "segments" ? <SegmentsTab postgresReport={postgresData} postgresError={postgresReport.error} /> : null}
       {activeTab === "training" ? <TrainingCycleTab report={data} /> : null}
       {activeTab === "ocr" ? <OcrTab report={data} /> : null}
+      {activeTab === "indexing" ? <IndexingTab report={data} postgresReport={postgresData} /> : null}
       {activeTab === "tags" ? <BreakdownGrid values={data.tags} /> : null}
       {activeTab === "placement" ? <BreakdownGrid values={data.placement} /> : null}
       {activeTab === "models" ? <ModelUsageTab usage={data.model_usage} /> : null}
@@ -262,7 +264,7 @@ function PostgresRunReportView({
   const runKey = String(report.run.run_key ?? "");
   const status = String(report.run.status ?? "-");
   const modelCalls = Number(report.summary.model_call_count ?? 0);
-  const postgresTabs = tabs.filter((tab) => ["overview", "files", "review", "segments", "ocr", "models", "providers", "logs"].includes(tab.key));
+  const postgresTabs = tabs.filter((tab) => ["overview", "files", "review", "segments", "ocr", "indexing", "models", "providers", "logs"].includes(tab.key));
   const activePostgresTab = postgresTabs.some((tab) => tab.key === activeTab) ? activeTab : "overview";
   return (
     <main className="pageShell">
@@ -302,6 +304,8 @@ function PostgresRunReportView({
         <Metric label="Open review" value={String(report.summary.open_review_item_count ?? 0)} />
         <Metric label="Segments" value={String(report.summary.document_segment_count ?? 0)} />
         <Metric label="Segment reviews" value={String(report.summary.segment_review_count ?? 0)} />
+        <Metric label="Chunks" value={String(report.summary.chunk_count ?? report.chunks?.length ?? 0)} />
+        <Metric label="Embeddings" value={String(report.summary.chunk_embedding_count ?? report.chunk_embeddings?.length ?? 0)} />
         <Metric label="Parser results" value={String(report.summary.parser_result_count ?? report.parser_results?.length ?? 0)} />
         <Metric label="Parser review" value={String(report.summary.parser_review_required_count ?? 0)} />
         <Metric label="Model calls" value={String(modelCalls)} />
@@ -322,6 +326,7 @@ function PostgresRunReportView({
       {activePostgresTab === "review" ? <PostgresReviewQueueTab report={report} /> : null}
       {activePostgresTab === "segments" ? <SegmentsTab postgresReport={report} /> : null}
       {activePostgresTab === "ocr" ? <PostgresParserTab report={report} /> : null}
+      {activePostgresTab === "indexing" ? <PostgresIndexingTab report={report} /> : null}
       {activePostgresTab === "models" ? <JsonTable title="Model Calls" rows={report.model_usage ?? []} /> : null}
       {activePostgresTab === "providers" ? <ProviderAttemptsTab rows={report.provider_attempts ?? []} summary={report.summary} /> : null}
       {activePostgresTab === "logs" ? <LogsTab events={report.run_events ?? []} postgresBacked /> : null}
@@ -337,6 +342,9 @@ function PostgresOverviewTab({ report }: { report: PostgresRunReport }) {
         <Breakdown title="Quality" values={report.summary.quality ?? {}} />
         <Breakdown title="Primary Tags" values={report.summary.primary_tag ?? {}} />
         <Breakdown title="Segment Types" values={report.summary.segment_type ?? {}} />
+        <Breakdown title="Chunk Kinds" values={report.summary.chunk_kind ?? {}} />
+        <Breakdown title="Embedding Status" values={report.summary.embedding_status ?? {}} />
+        <Breakdown title="Embedding Providers" values={report.summary.embedding_provider ?? {}} />
         <Breakdown title="Provider Attempts" values={report.summary.provider_attempt_status ?? {}} />
         <Breakdown title="Parser Quality" values={report.summary.parser_quality ?? {}} />
         <Breakdown title="Parser Providers" values={report.summary.parser_provider ?? {}} />
@@ -480,6 +488,62 @@ function OcrTab({ report }: { report: RunReport }) {
         <span>{report.ocr.document_count} documents, {report.ocr.page_count} pages</span>
       </div>
       <JsonTable title="OCR Documents" rows={report.ocr.documents} />
+    </section>
+  );
+}
+
+function IndexingTab({ report, postgresReport }: { report: RunReport; postgresReport?: PostgresRunReport }) {
+  if (postgresReport) {
+    return <PostgresIndexingTab report={postgresReport} />;
+  }
+  return (
+    <section className="panel">
+      <div className="sectionHeader">
+        <div>
+          <h2>Indexing</h2>
+          <span>{report.indexing.count} indexing rows</span>
+        </div>
+      </div>
+      <div className="metrics compactMetrics">
+        <Metric label="Indexed chunks" value={String(report.indexing.indexed_count ?? 0)} />
+        <Metric label="Skipped chunks" value={String(report.indexing.skipped_count ?? 0)} />
+        <Metric label="Semantic embeddings" value={String(report.indexing.semantic_embedding_count ?? 0)} />
+        <Metric label="Placeholder embeddings" value={String(report.indexing.placeholder_embedding_count ?? 0)} />
+      </div>
+      <div className="reportGrid">
+        <Breakdown title="Provider" values={report.indexing.by_provider ?? {}} />
+        <Breakdown title="Status" values={report.indexing.by_status ?? {}} />
+      </div>
+      <JsonTable title="Indexing Rows" rows={report.indexing.items ?? []} />
+    </section>
+  );
+}
+
+function PostgresIndexingTab({ report }: { report: PostgresRunReport }) {
+  const chunks = report.chunks ?? [];
+  const embeddings = report.chunk_embeddings ?? [];
+  return (
+    <section className="panel">
+      <div className="sectionHeader">
+        <div>
+          <h2>Chunks & Embeddings</h2>
+          <span>{chunks.length} chunk rows, {embeddings.length} embedding rows imported for this run</span>
+        </div>
+      </div>
+      <div className="metrics compactMetrics">
+        <Metric label="Chunks" value={String(report.summary.chunk_count ?? chunks.length)} />
+        <Metric label="Embeddings" value={String(report.summary.chunk_embedding_count ?? embeddings.length)} />
+        <Metric label="Semantic" value={String(report.summary.semantic_embedding_count ?? 0)} />
+        <Metric label="Placeholder" value={String(report.summary.placeholder_embedding_count ?? 0)} />
+      </div>
+      <div className="reportGrid">
+        <Breakdown title="Chunk Kind" values={report.summary.chunk_kind ?? {}} />
+        <Breakdown title="Embedding Status" values={report.summary.embedding_status ?? {}} />
+        <Breakdown title="Embedding Provider" values={report.summary.embedding_provider ?? {}} />
+        <Breakdown title="Embedding Model" values={report.summary.embedding_model ?? {}} />
+      </div>
+      <JsonTable title="Chunks" rows={chunks} />
+      <JsonTable title="Chunk Embeddings" rows={embeddings} />
     </section>
   );
 }
