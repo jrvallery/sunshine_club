@@ -17,6 +17,7 @@ from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, 
 from sunshine_extraction.sample_pipeline import SampleFile, llm_tag_inspector_from_env, ocr_executor_from_env
 from sunshine_extraction.services.provider_policy import assert_local_provider
 from sunshine_extraction.services.confidence import calibrate_confidence, confidence_calibration_row
+from sunshine_extraction.services.routing import resolve_route_decision
 from sunshine_extraction.services.segmentation import propose_document_segments
 from sunshine_extraction.services.extraction import ExtractionResult
 from sunshine_extraction.services.structure import normalize_document_structure
@@ -219,6 +220,26 @@ def test_confidence_calibration_service_writes_auditable_row() -> None:
     assert row["calibrated_confidence"] == candidates[0]["confidence"]
     assert row["candidate_count"] == 1
     assert row["extraction_strategy"] == "text_extraction"
+
+
+def test_route_decision_service_prioritizes_embedding_unavailable(tmp_path: Path) -> None:
+    source = tmp_path / "tea.txt"
+    source.write_text("Annual tea notes", encoding="utf-8")
+    sample = _sample(source)
+
+    route, decision = resolve_route_decision(
+        sample=sample,
+        tag_candidates=[{"tag": "annual_spring_tea", "confidence": 0.96}],
+        extraction_quality={"quality": "ok"},
+        extraction_plan={"strategy": "text_extraction"},
+        warnings=["embedding_quality_unavailable"],
+    )
+
+    assert route["route_status"] == "review_embedding_unavailable"
+    assert decision["accepted"] is False
+    assert decision["priority"] == "high"
+    assert decision["review_stage"] == "needs_ocr_review"
+    assert "warning:embedding_quality_unavailable" in decision["evidence"]
 
 
 def test_docling_provider_is_optional_and_local_only() -> None:
