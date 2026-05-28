@@ -338,6 +338,25 @@ def test_run_report_reads_live_graph_run_artifacts_before_batch_finalize(tmp_pat
         + "\n",
         encoding="utf-8",
     )
+    (second_run_dir / "sample-placement-proposals.jsonl").write_text(
+        json.dumps(
+            {
+                "source_path": "/source/review.pdf",
+                "relative_path": "Review/review.pdf",
+                "sample_path": str(second_run_dir / "review.pdf"),
+                "primary_tag": "scrapbooks",
+                "proposal": {
+                    "placement_status": "needs_review",
+                    "placement_rule": "by_year",
+                    "destination_path": "90_Intake_Needs_Review/06_History_Archive",
+                    "date_confidence": "missing",
+                },
+                "metadata": {"tag_confidence": 0.52, "candidate_count": 1},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     client = TestClient(app)
     run = client.post(
@@ -369,6 +388,8 @@ def test_run_report_reads_live_graph_run_artifacts_before_batch_finalize(tmp_pat
     assert payload["indexing"]["by_status"]["skipped"] == 1
     assert payload["indexing"]["skipped_count"] == 1
     assert payload["indexing"]["semantic_embedding_count"] == 1
+    assert payload["placement"]["proposal_count"] == 1
+    assert payload["placement"]["proposal_status"]["needs_review"] == 1
     assert payload["model_usage"]["summary"]["total_calls"] == 1
     assert payload["model_usage"]["summary"]["external_calls"] == 1
     assert payload["distributions"]["primary_tag"]["meeting_records"] == 1

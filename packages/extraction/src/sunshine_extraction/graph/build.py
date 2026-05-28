@@ -21,6 +21,7 @@ from sunshine_extraction.graph.nodes.extraction import (
 )
 from sunshine_extraction.graph.nodes.loading import _after_load_file_context, _identify_file, _load_file_context
 from sunshine_extraction.graph.nodes.persistence import _persist_outputs
+from sunshine_extraction.graph.nodes.placement import _propose_placement_node
 from sunshine_extraction.graph.nodes.probing import _probe_file
 from sunshine_extraction.graph.nodes.routing import _resolve_route_or_review_node
 from sunshine_extraction.graph.nodes.tagging import _assign_deterministic_tags, _calibrate_tag_confidence_node, _combine_tag_evidence, _inspect_tags_with_llm
@@ -49,6 +50,7 @@ def build_document_graph(deps: DocumentPipelineDeps | None = None, *, checkpoint
     builder.add_node("inspect_tags_with_llm", lambda state: _run_node("inspect_tags_with_llm", state, lambda active: _inspect_tags_with_llm(active, active_deps)))
     builder.add_node("combine_tag_evidence", lambda state: _run_node("combine_tag_evidence", state, _combine_tag_evidence))
     builder.add_node("calibrate_tag_confidence", lambda state: _run_node("calibrate_tag_confidence", state, _calibrate_tag_confidence_node))
+    builder.add_node("propose_placement", lambda state: _run_node("propose_placement", state, _propose_placement_node))
     builder.add_node("resolve_route_or_review", lambda state: _run_node("resolve_route_or_review", state, _resolve_route_or_review_node))
     builder.add_node("persist_outputs", lambda state: _run_node("persist_outputs", state, _persist_outputs))
 
@@ -79,7 +81,8 @@ def build_document_graph(deps: DocumentPipelineDeps | None = None, *, checkpoint
     builder.add_edge("assign_deterministic_tags", "inspect_tags_with_llm")
     builder.add_edge("inspect_tags_with_llm", "combine_tag_evidence")
     builder.add_edge("combine_tag_evidence", "calibrate_tag_confidence")
-    builder.add_edge("calibrate_tag_confidence", "resolve_route_or_review")
+    builder.add_edge("calibrate_tag_confidence", "propose_placement")
+    builder.add_edge("propose_placement", "resolve_route_or_review")
     builder.add_edge("resolve_route_or_review", "persist_outputs")
     builder.add_edge("persist_outputs", END)
     return builder.compile(checkpointer=checkpointer)

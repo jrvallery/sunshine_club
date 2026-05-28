@@ -221,6 +221,7 @@ def run_report(run_id: int) -> dict[str, Any]:
     provider_attempts = store.list_provider_attempts(run_id) or _read_run_jsonl_with_live_fallback(output_dir, "sample-provider-attempts.jsonl", limit=500)
     document_segments = store.list_document_segments(run_id) or _read_run_jsonl_with_live_fallback(output_dir, "sample-document-segments.jsonl", limit=500)
     indexing_rows = _read_run_jsonl_with_live_fallback(output_dir, "sample-indexing.jsonl", limit=200)
+    placement_proposals = _read_run_jsonl_with_live_fallback(output_dir, "sample-placement-proposals.jsonl", limit=500)
     model_usage_rows = store.list_model_usage(run_id) or _read_model_usage_artifact(output_dir, run_id=run_id)
     comparison = run_compare_previous(run_id)
     artifacts = _run_artifacts(output_dir)
@@ -319,6 +320,9 @@ def run_report(run_id: int) -> dict[str, Any]:
             "status": _count_values(results, "placement_status"),
             "privacy": _count_values(results, "default_privacy"),
             "rule": _count_values(results, "placement_rule"),
+            "proposal_count": len(placement_proposals),
+            "proposal_status": _count_nested_values(placement_proposals, "proposal", "placement_status"),
+            "proposal_items": placement_proposals[:100],
         },
         "model_usage": _model_usage_report(model_usage_rows),
         "artifacts": artifacts,
@@ -351,6 +355,15 @@ def _production_status_buckets(results: list[dict[str, Any]]) -> dict[str, int]:
         else:
             buckets["review_required"] += 1
     return buckets
+
+
+def _count_nested_values(rows: list[dict[str, Any]], parent: str, field: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        nested = row.get(parent) if isinstance(row.get(parent), dict) else {}
+        value = str(nested.get(field) or "unknown")
+        counts[value] = counts.get(value, 0) + 1
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
 
 
 @router.get("/admin/runs/{run_id}/compare-previous")

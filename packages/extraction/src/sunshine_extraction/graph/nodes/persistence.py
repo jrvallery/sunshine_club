@@ -12,6 +12,7 @@ from sunshine_extraction.graph.utils import _json_safe, _write_jsonl
 from sunshine_extraction.services.artifacts import extraction_result_row, sample_input_row, write_pipeline_result
 from sunshine_extraction.services.extraction import ExtractionResult
 from sunshine_extraction.services.tagging import llm_inspection_row
+from sunshine_extraction.sample_pipeline import quarantine_placement_for_review_route
 
 
 def _persist_outputs(state: DocumentPipelineState) -> dict[str, Any]:
@@ -43,6 +44,7 @@ def _persist_outputs(state: DocumentPipelineState) -> dict[str, Any]:
     artifacts["sample-embeddings.jsonl"] = state.get("embeddings", [])
     artifacts["sample-indexing.jsonl"] = [state["indexing_result"]] if state.get("indexing_result") else []
     artifacts["sample-semantic-examples.jsonl"] = state.get("semantic_examples", [])
+    artifacts["sample-placement-proposals.jsonl"] = [state["placement_proposal"]] if state.get("placement_proposal") else []
     if state.get("sample") and state.get("llm_tag_inspection"):
         artifacts["sample-llm-tag-inspections.jsonl"] = [llm_inspection_row(state["sample"], state["llm_tag_inspection"])]
     artifacts["sample-tag-candidates.jsonl"] = state.get("tag_candidates", [])
@@ -95,6 +97,18 @@ def _final_result_from_state(state: DocumentPipelineState) -> dict[str, Any]:
             result["file_id"] = state["source_identity"].get("file_id")
             result["content_sha256"] = state["source_identity"].get("content_sha256")
             result["size_bytes"] = state["source_identity"].get("size_bytes")
+        if state.get("placement_proposal"):
+            placement = quarantine_placement_for_review_route(
+                state["placement_proposal"].get("proposal", {}),
+                state.get("route", {}),
+            )
+            result["placement"] = placement
+            result["destination_path"] = placement.get("destination_path")
+            result["placement_status"] = placement.get("placement_status")
+            result["placement_rule"] = placement.get("placement_rule")
+            result["placement_date_confidence"] = placement.get("date_confidence")
+            result["default_privacy"] = placement.get("default_privacy")
+            result["reviewer_role"] = placement.get("reviewer_role")
         result["warnings"] = _unique_strings([*result.get("warnings", []), *state.get("warnings", [])])
         return result
     return {

@@ -172,6 +172,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     source_identity_rows = [json.loads(line) for line in (output_dir / "sample-source-identity.jsonl").read_text().splitlines()]
     probe_rows = [json.loads(line) for line in (output_dir / "sample-file-probes.jsonl").read_text().splitlines()]
     provider_selection_rows = [json.loads(line) for line in (output_dir / "sample-provider-selections.jsonl").read_text().splitlines()]
+    placement_rows = [json.loads(line) for line in (output_dir / "sample-placement-proposals.jsonl").read_text().splitlines()]
 
     assert final_result["route_status"] == "route_candidate"
     assert final_result["top_tag_candidate"] == "annual_spring_tea"
@@ -204,6 +205,9 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert probe_rows[0]["metadata"]["local_only"] is True
     assert provider_selection_rows[0]["selected_provider"] == "current"
     assert provider_selection_rows[0]["provider_chain"] == ["current"]
+    assert placement_rows[0]["primary_tag"] == "annual_spring_tea"
+    assert placement_rows[0]["proposal"]["placement_status"] == "needs_review"
+    assert placement_rows[0]["proposal"]["placement_rule"] == "by_year"
     assert {row["purpose"] for row in model_usage_rows} == {"chunk_embedding", "semantic_retrieval_embedding", "tag_inspection"}
     assert [event["node"] for event in audit_events] == [
         "load_file_context",
@@ -225,6 +229,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
         "inspect_tags_with_llm",
         "combine_tag_evidence",
         "calibrate_tag_confidence",
+        "propose_placement",
         "resolve_route_or_review",
         "persist_outputs",
     ]

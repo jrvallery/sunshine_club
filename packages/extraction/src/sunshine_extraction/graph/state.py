@@ -53,6 +53,7 @@ class DocumentPipelineState(TypedDict, total=False):
     model_usage: list[dict[str, Any]]
     tag_candidates: list[dict[str, Any]]
     confidence_calibration: dict[str, Any]
+    placement_proposal: dict[str, Any]
     route: dict[str, Any]
     final_result: dict[str, Any]
 

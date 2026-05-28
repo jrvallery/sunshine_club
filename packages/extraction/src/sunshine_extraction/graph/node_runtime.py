@@ -96,6 +96,9 @@ def _node_summary(name: str, updates: dict[str, Any]) -> str:
         return f"tag candidates {len(updates.get('tag_candidates', []))}"
     if name == "calibrate_tag_confidence" and updates.get("confidence_calibration"):
         return f"calibrated {updates['confidence_calibration'].get('calibrated_confidence')}"
+    if name == "propose_placement" and updates.get("placement_proposal"):
+        proposal = updates["placement_proposal"].get("proposal", {})
+        return f"placement {proposal.get('placement_status')}"
     if name == "resolve_route_or_review" and updates.get("route"):
         return f"route {updates['route'].get('route_status')}"
     if name == "persist_outputs":

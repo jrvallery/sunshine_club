@@ -118,6 +118,7 @@ def run_document_batch(
         "sample-embeddings.jsonl": [],
         "sample-indexing.jsonl": [],
         "sample-semantic-examples.jsonl": [],
+        "sample-placement-proposals.jsonl": [],
         "sample-llm-tag-inspections.jsonl": [],
         "sample-tag-candidates.jsonl": [],
         "sample-model-usage.jsonl": [],
@@ -332,6 +333,8 @@ def _append_batch_rows(artifact_rows: dict[str, list[dict[str, Any]]], result: d
     if result.get("indexing_result"):
         artifact_rows["sample-indexing.jsonl"].append(result["indexing_result"])
     artifact_rows["sample-semantic-examples.jsonl"].extend(result.get("semantic_examples", []))
+    if result.get("placement_proposal"):
+        artifact_rows["sample-placement-proposals.jsonl"].append(result["placement_proposal"])
     if sample and llm_tag_inspection:
         artifact_rows["sample-llm-tag-inspections.jsonl"].append(llm_inspection_row(sample, llm_tag_inspection))
     artifact_rows["sample-tag-candidates.jsonl"].extend(result.get("tag_candidates", []))
