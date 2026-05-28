@@ -85,6 +85,7 @@ export default function PipelineEvalPage() {
   const [benchmarkSampleRoot, setBenchmarkSampleRoot] = useState("");
   const [benchmarkSampleCategories, setBenchmarkSampleCategories] = useState("");
   const [benchmarkSampleLimit, setBenchmarkSampleLimit] = useState("");
+  const [benchmarkSampleMaxMegabytes, setBenchmarkSampleMaxMegabytes] = useState("");
   const [benchmarkMaxAverageSeconds, setBenchmarkMaxAverageSeconds] = useState("30");
   const [benchmarkPaths, setBenchmarkPaths] = useState("");
   const [benchmarkProviders, setBenchmarkProviders] = useState<ExtractionProviderName[]>(["current", "docling"]);
@@ -182,6 +183,7 @@ export default function PipelineEvalPage() {
           .map((category) => category.trim())
           .filter(Boolean),
         sample_limit: Number(benchmarkSampleLimit) > 0 ? Number(benchmarkSampleLimit) : undefined,
+        sample_max_megabytes: Number(benchmarkSampleMaxMegabytes) > 0 ? Number(benchmarkSampleMaxMegabytes) : undefined,
         max_average_seconds: Number(benchmarkMaxAverageSeconds) > 0 ? Number(benchmarkMaxAverageSeconds) : undefined,
         paths: benchmarkPaths
           .split("\n")
@@ -296,6 +298,12 @@ export default function PipelineEvalPage() {
             placeholder="image_scan,scanned_pdf"
           />
           <TextInput label="Sample limit" value={benchmarkSampleLimit} onChange={(event) => setBenchmarkSampleLimit(event.target.value)} placeholder="2" />
+          <TextInput
+            label="Max sample MB"
+            value={benchmarkSampleMaxMegabytes}
+            onChange={(event) => setBenchmarkSampleMaxMegabytes(event.target.value)}
+            placeholder="10"
+          />
           <TextInput
             label="Max avg seconds"
             value={benchmarkMaxAverageSeconds}
