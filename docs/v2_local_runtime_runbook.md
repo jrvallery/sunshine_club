@@ -43,7 +43,7 @@ The local infrastructure endpoint should show:
 - `local_only: true`
 - Postgres configured with complete V2 migrations
 - Qdrant available when `SUNSHINE_VECTOR_STORE=qdrant`
-- Temporal SDK and worker module available
+- Temporal SDK and worker module available, plus `temporal.address_reachable: true` when the Temporal service is actually listening
 - hosted third-party APIs disabled by policy
 
 ## Environment

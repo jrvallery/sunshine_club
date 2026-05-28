@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+import socket
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from sunshine_extraction.config import provider_registry_rows, validate_provider_registry
 from sunshine_extraction.providers.extraction import (
@@ -32,6 +34,7 @@ def local_infrastructure_status() -> dict[str, Any]:
     }
     observability = observability_provider_from_env()
     cortex_base = os.environ.get("CORTEX_OPENAI_BASE_URL") or os.environ.get("CORTEX_BASE_URL")
+    temporal_address = os.environ.get("TEMPORAL_ADDRESS")
     return {
         "local_only": True,
         "postgres": {
@@ -63,8 +66,9 @@ def local_infrastructure_status() -> dict[str, Any]:
         },
         "model_call_cache": _model_call_cache_status(),
         "temporal": {
-            "configured": bool(os.environ.get("TEMPORAL_ADDRESS")),
-            "address": os.environ.get("TEMPORAL_ADDRESS"),
+            "configured": bool(temporal_address),
+            "address": temporal_address,
+            "address_reachable": _tcp_reachable(temporal_address),
             "sdk_available": _module_available("temporalio"),
             "worker_registered": _module_available("sunshine_worker.temporal_worker"),
             "task_queue": os.environ.get("SUNSHINE_TEMPORAL_TASK_QUEUE") or "sunshine-pipeline",
@@ -87,6 +91,29 @@ def _module_available(module_name: str) -> bool:
     except Exception:  # noqa: BLE001 - health check should normalize import failures.
         return False
     return True
+
+
+def _tcp_reachable(address: str | None, *, timeout_seconds: float = 0.25) -> bool:
+    if not address:
+        return False
+    host, port = _host_port(address)
+    if not host or port is None:
+        return False
+    try:
+        with socket.create_connection((host, port), timeout=timeout_seconds):
+            return True
+    except OSError:
+        return False
+
+
+def _host_port(address: str) -> tuple[str | None, int | None]:
+    value = address.strip()
+    if not value:
+        return None, None
+    parsed = urlparse(value if "://" in value else f"tcp://{value}")
+    if not parsed.hostname or parsed.port is None:
+        return None, None
+    return parsed.hostname, parsed.port
 
 
 def _model_call_cache_status() -> dict[str, Any]:

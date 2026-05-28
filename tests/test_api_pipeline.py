@@ -301,6 +301,7 @@ def test_local_infrastructure_status_is_local_only(monkeypatch) -> None:
     assert payload["model_call_cache"]["local_only"] is True
     assert payload["model_call_cache"]["namespaces"] == ["embedding", "llm_tag_inspection"]
     assert payload["temporal"]["configured"] is True
+    assert "address_reachable" in payload["temporal"]
     assert payload["temporal"]["worker_registered"] is True
     assert payload["observability"]["local_only"] is True
     assert payload["provider_registry"]["validation"]["ok"] is True
