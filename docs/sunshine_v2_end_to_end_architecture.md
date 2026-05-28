@@ -787,6 +787,13 @@ Physical split/export phase:
 - Re-running the same accepted segment decision must produce the same child artifact path and metadata.
 - Rejecting or changing a segment must never delete or mutate the original parent packet.
 
+Current-pass decision:
+
+- Implement segmentation as part of the V2 graph contract now, because scrapbook/newspaper packet boundaries affect extraction, chunking, embeddings, tagging, review, and future folder placement.
+- Keep the first pass conservative: create logical page-range segment proposals and route them to segment review; do not automatically split files into new PDFs.
+- Use Docling page/layout output when available as boundary evidence, but keep the final split decision inside `propose_document_segments` so the workflow remains deterministic and auditable.
+- Defer automatic physical split/export until the dashboard can review segment proposals and benchmarks show low false-split risk on scrapbook packets, newspaper packets, and mixed historical PDFs.
+
 ### 13. `chunk_document`
 
 Purpose:
