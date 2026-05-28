@@ -2030,7 +2030,6 @@ V2 is successful when:
 
 ## Remaining Open Questions
 
-- The canonical provider benchmark sample is represented by a local JSON manifest with categories for born-digital text, image scans, scanned PDFs, scrapbook packets, newspaper packets, and financial/table-heavy documents. The checked-in file is an example template only; real customer paths stay local.
 - How much raw provider output should be stored per file?
 - What is the single-file latency target?
 - Which self-hosted dashboard/review framework, if any, should replace or augment the current custom dashboard?
@@ -2038,15 +2037,15 @@ V2 is successful when:
 
 ## Immediate Next Slice After Approval
 
-Build provider interfaces and wrap current behavior without changing output.
+Run real local provider benchmarks and use them to choose the first promoted parser/OCR default.
 
 Deliverables:
 
-- `providers/extraction/base.py`
-- current extraction provider wrapper.
-- `providers/chunking/base.py`
-- current chunk provider wrapper.
-- provider attempt artifact rows.
-- tests proving V1 output remains compatible.
+- Create a private local copy of `docs/provider_benchmark_canonical_samples.example.json` with real Sunshine corpus paths for born-digital text, image scans, scanned PDFs, scrapbook packets, newspaper packets, and financial/table-heavy documents. The checked-in file stays as a template only.
+- Install and validate the Docling optional dependency locally.
+- Run current vs Docling benchmarks from the dashboard Provider Benchmarks panel.
+- Review benchmark recommendations and result snippets for OCR quality, layout/table handling, provider runtime, and review-required routing.
+- If Docling improves quality without hiding bad text, promote Docling for scanned/image-only/PDF layout plans behind the provider policy.
+- Keep scrapbook/newspaper splitting as review-only logical page-range proposals until benchmark evidence proves boundaries are reliable.
 
-This gives us the seam needed to add Docling/MinerU/RAGFlow benchmarks without destabilizing the current dashboard.
+This is the first slice that should change the production extraction default. It must be benchmark-driven, local-only, and reversible through provider policy.
