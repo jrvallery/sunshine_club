@@ -12,6 +12,22 @@ def __getattr__(name: str):
         from sunshine_extraction.providers.extraction.docling_provider import DoclingExtractionProvider
 
         return DoclingExtractionProvider
+    if name == "HostedOpenAIOcrExecutor":
+        from sunshine_extraction.providers.extraction.openai_ocr import HostedOpenAIOcrExecutor
+
+        return HostedOpenAIOcrExecutor
+    if name == "MinerUExtractionProvider":
+        from sunshine_extraction.providers.extraction.mineru_provider import MinerUExtractionProvider
+
+        return MinerUExtractionProvider
+    if name == "RAGFlowDeepDocExtractionProvider":
+        from sunshine_extraction.providers.extraction.ragflow_deepdoc_provider import RAGFlowDeepDocExtractionProvider
+
+        return RAGFlowDeepDocExtractionProvider
+    if name == "UnstructuredExtractionProvider":
+        from sunshine_extraction.providers.extraction.unstructured_provider import UnstructuredExtractionProvider
+
+        return UnstructuredExtractionProvider
     if name == "CortexNativeOcrExecutor":
         from sunshine_extraction.providers.extraction.cortex_ocr import CortexNativeOcrExecutor
 
@@ -44,7 +60,11 @@ __all__ = [
     "DoclingExtractionProvider",
     "ExtractionProvider",
     "ExtractionProviderAttempt",
+    "HostedOpenAIOcrExecutor",
     "LocalTesseractOcrExecutor",
+    "MinerUExtractionProvider",
+    "RAGFlowDeepDocExtractionProvider",
+    "UnstructuredExtractionProvider",
     "extract_photo_metadata",
     "extract_spreadsheet_metadata",
     "extract_text",

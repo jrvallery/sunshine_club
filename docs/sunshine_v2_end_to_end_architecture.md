@@ -496,6 +496,8 @@ Current implementation:
 - `providers/extraction/native_text.py`, `providers/extraction/photo_metadata.py`, and `providers/extraction/spreadsheet.py` own the current local extraction helpers for those strategies.
 - `providers/extraction/tesseract_ocr.py` and `providers/extraction/cortex_ocr.py` own local Tesseract and Cortex OCR executor implementations used by graph extraction and repair nodes.
 - `providers/extraction/ocr_common.py` owns shared OCR page/document row helpers; `providers/ocr.py` remains a compatibility import wrapper.
+- `providers/extraction/mineru_provider.py`, `providers/extraction/ragflow_deepdoc_provider.py`, and `providers/extraction/unstructured_provider.py` define optional local parser boundaries that report skipped/unavailable until benchmarked and enabled.
+- `providers/extraction/openai_ocr.py` is an explicit hosted-OpenAI OCR policy boundary that raises because production is local-only.
 - Production graph/provider code no longer imports `sample_pipeline.py`; that module remains a legacy CLI compatibility runner and test target.
 
 ### 8. `validate_extraction`
@@ -755,6 +757,7 @@ Current implementation:
 - `domain/document_segments.py` defines logical child-document segment rows that preserve parent source path and page range.
 - `services/segmentation/page_grouping.py` emits review-only candidate page segments for multi-page scrapbook/newspaper inputs, separator-based groups when blank pages are detected, and fixed page windows for very large files.
 - Generic long scanned PDFs can also become `mixed_collection_page_group` proposals when OCR page text contains multiple collection signals such as scrapbook/photo, newspaper/article, page-layout, or historical-context evidence.
+- Docling/MinerU/RAGFlow layout outputs should feed this node as boundary evidence; they should not create child documents outside the segment-review contract.
 - `graph/nodes/segmentation.py` runs segmentation after structure normalization.
 - `graph/nodes/chunking.py` attaches single-segment IDs to chunks when safe.
 - Segment proposals are artifacts only; no physical source files are split or modified.
@@ -895,6 +898,7 @@ Current implementation:
 
 - `services/indexing/chunk_indexer.py` owns normalized indexing result shaping.
 - `providers/vectorstores/base.py` defines the vector-store provider contract, with `NoopVectorStoreProvider` for side-effect-free runs and `QdrantVectorStoreProvider` for configured local indexing.
+- `providers/vectorstores/sqlite_golden.py` exposes the existing SQLite golden-label semantic-index path as an explicit provider boundary.
 - `graph/nodes/indexing.py` owns the `index_chunks` node, separated from embedding so vector-store writes are auditable as their own graph phase.
 - Graph writes `sample-indexing.jsonl` with provider status, chunk counts, embedding counts, placeholder counts, and warnings.
 

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from pypdf import PdfWriter
 
+from sunshine_extraction.config.provider_registry import DEFAULT_PROVIDER_REGISTRY
 from sunshine_extraction.embeddings import EmbeddingConfigurationError, PlaceholderEmbeddingProvider, provider_from_env
 from sunshine_extraction.domain.artifacts import ArtifactManifestEntry
 from sunshine_extraction.domain.chunks import chunk_row
@@ -16,11 +17,20 @@ from sunshine_extraction.providers.probe import NativeFileProbeProvider
 from sunshine_extraction.providers.chunking import CurrentChunkingProvider, LlamaIndexChunkingProvider, StructureAwareChunkingProvider
 from sunshine_extraction.providers.chunking.legacy import chunk_content as legacy_chunk_content
 from sunshine_extraction.providers.embeddings import CortexEmbeddingProvider, CurrentChunkEmbeddingProvider, HostedOpenAIEmbeddingProvider, embedding_cache_key
-from sunshine_extraction.providers.extraction import CurrentExtractionProvider, DoclingExtractionProvider, extraction_provider_from_env
+from sunshine_extraction.providers.extraction import (
+    CurrentExtractionProvider,
+    DoclingExtractionProvider,
+    HostedOpenAIOcrExecutor,
+    MinerUExtractionProvider,
+    RAGFlowDeepDocExtractionProvider,
+    UnstructuredExtractionProvider,
+    extraction_provider_from_env,
+)
 from sunshine_extraction.providers.llm import CortexLLMTagInspector, CurrentLLMTagInspectionProvider, HostedOpenAILLMTagInspector, llm_cache_key
+from sunshine_extraction.providers.observability import LangfuseObservabilityProvider, NoopObservabilityProvider
 from sunshine_extraction.providers.reranking import CortexRerankProvider
 from sunshine_extraction.providers.retrieval import CurrentSemanticRetrievalProvider, GoldenExampleRetrievalProvider, QdrantSemanticRetrievalProvider
-from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider
+from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider, SQLiteGoldenVectorStoreProvider
 from sunshine_extraction.domain.documents import IMAGE_EXTENSIONS, SPREADSHEET_EXTENSIONS, TEXT_EXTENSIONS, SampleFile
 from sunshine_extraction.services.artifacts.writers import extraction_result_row, sample_input_row, write_pipeline_result
 from sunshine_extraction.services.artifact_manifest import build_artifact_manifest
@@ -591,6 +601,28 @@ def test_extraction_provider_factory_selects_current_and_docling(monkeypatch: py
     assert isinstance(extraction_provider_from_env("docling"), DoclingExtractionProvider)
 
 
+def test_optional_extraction_provider_boundaries_are_local_only(tmp_path: Path) -> None:
+    source = tmp_path / "scan.pdf"
+    source.write_bytes(b"fake")
+    sample = _sample(source)
+    providers = [
+        MinerUExtractionProvider(),
+        RAGFlowDeepDocExtractionProvider(),
+        UnstructuredExtractionProvider(),
+    ]
+
+    for provider in providers:
+        extraction, attempt = provider.extract(sample, {"strategy": "ocr_page_level"})
+
+        assert provider.dependency_status()["local_only"] is True
+        assert extraction.metadata["local_only"] is True
+        assert attempt.status == "skipped"
+        assert attempt.metadata["local_only"] is True
+
+    with pytest.raises(ValueError):
+        HostedOpenAIOcrExecutor()
+
+
 def test_qdrant_vector_provider_is_optional_and_local_only() -> None:
     status = QdrantVectorStoreProvider(url="http://127.0.0.1:6333", collection="test").dependency_status()
 
@@ -612,6 +644,24 @@ def test_noop_vector_provider_records_unconfigured_indexing() -> None:
     assert result.indexed_chunk_ids == []
     assert result.skipped_chunk_ids == ["chunk-1"]
     assert "vector_store_not_configured" in result.warnings
+
+
+def test_sqlite_golden_vectorstore_and_observability_boundaries_are_local_only() -> None:
+    sqlite_result = SQLiteGoldenVectorStoreProvider(index_path=".local/test.sqlite").upsert_embeddings(
+        [{"chunk_id": "chunk-1"}],
+        [{"chunk_id": "chunk-1", "embedding_status": "embedded"}],
+    )
+    langfuse_status = LangfuseObservabilityProvider(host="http://127.0.0.1:3000").dependency_status()
+    noop_status = NoopObservabilityProvider().dependency_status()
+
+    assert sqlite_result.provider == "sqlite_golden"
+    assert sqlite_result.status == "skipped"
+    assert sqlite_result.metadata["local_only"] is True
+    assert langfuse_status["provider"] == "langfuse"
+    assert langfuse_status["local_only"] is True
+    assert noop_status == {"provider": "noop", "available": True, "local_only": True}
+    assert DEFAULT_PROVIDER_REGISTRY["ocr.openai"].enabled is False
+    assert DEFAULT_PROVIDER_REGISTRY["observability.langfuse"].name == "langfuse"
 
 
 def test_native_probe_detects_image_only_pdf_likelihood(tmp_path: Path) -> None:
