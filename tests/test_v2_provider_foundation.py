@@ -17,6 +17,7 @@ from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, 
 from sunshine_extraction.sample_pipeline import SampleFile, llm_tag_inspector_from_env, ocr_executor_from_env
 from sunshine_extraction.services.provider_policy import assert_local_provider
 from sunshine_extraction.services.confidence import calibrate_confidence, confidence_calibration_row
+from sunshine_extraction.services.quality import extraction_quality_gate, quality_gate_row, validate_extracted_text, validation_row, with_text_validation
 from sunshine_extraction.services.routing import resolve_route_decision
 from sunshine_extraction.services.segmentation import propose_document_segments
 from sunshine_extraction.services.tagging.evidence import combine_tag_candidates
@@ -249,6 +250,40 @@ def test_tagging_package_exposes_v2_boundaries() -> None:
     assert callable(assign_tag_candidates)
     assert callable(combine_tag_candidates)
     assert str(DEFAULT_TAXONOMY_PATH).endswith(".json")
+
+
+def test_quality_services_write_validation_and_gate_rows(tmp_path: Path) -> None:
+    source = tmp_path / "minutes.txt"
+    source.write_text("Meeting minutes text", encoding="utf-8")
+    sample = _sample(source)
+    extraction = ExtractionResult(
+        sample=sample,
+        plan={"strategy": "text_extraction"},
+        extraction_status="extracted",
+        text="Meeting minutes text",
+        metadata={},
+        page_count=1,
+        warnings=[],
+    )
+
+    validation = validate_extracted_text(extraction)
+    validation_artifact = validation_row(sample, extraction, validation)
+    extraction_with_validation = with_text_validation(extraction, validation)
+    quality = extraction_quality_gate(extraction_with_validation)
+    quality_artifact = quality_gate_row(
+        sample,
+        extraction_with_validation,
+        quality,
+        extraction_provider_selection={"selected_provider": "current"},
+        extraction_validation=validation_artifact,
+        extraction_repair={"status": "not_needed"},
+    )
+
+    assert validation_artifact["status"] == "ok"
+    assert extraction_with_validation.metadata["text_validation"]["status"] == "ok"
+    assert quality_artifact["quality"] == "ok"
+    assert quality_artifact["provider"] == "current"
+    assert "validation:ok" in quality_artifact["quality_evidence"]
 
 
 def test_docling_provider_is_optional_and_local_only() -> None:

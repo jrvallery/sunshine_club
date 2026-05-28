@@ -508,6 +508,7 @@ Current implementation:
 - Graph has an explicit `validate_extraction` node after extraction.
 - The node writes `sample-extraction-validations.jsonl` with validation status, reason, strategy, extraction status, and text length.
 - Validation metadata is attached to the extraction result before quality gating.
+- `services/quality/text_validation.py` owns validation row shaping and extraction metadata attachment; the graph node only orchestrates the service call.
 
 ### 9. `repair_or_escalate_extraction`
 
@@ -586,6 +587,7 @@ Current implementation:
 
 - Graph writes `sample-quality-gates.jsonl` from the `quality_gate` node.
 - Rows include `quality`, `can_chunk`, `can_embed`, `requires_review`, provider/strategy, validation status/reason, repair status, and quality evidence.
+- `services/quality/gates.py` owns quality gate row and evidence construction.
 - Run reports summarize quality gate counts, quality labels, and review-required flags separately from extraction result rows.
 
 ### 11. `normalize_document_structure`
