@@ -16,6 +16,7 @@ from sunshine_extraction.providers.extraction import (
 from sunshine_extraction.providers.observability import observability_provider_from_env
 from sunshine_extraction.providers.retrieval import QdrantSemanticRetrievalProvider
 from sunshine_extraction.providers.vectorstores import QdrantVectorStoreProvider
+from sunshine_extraction.services.vector_policy import vector_store_policy_from_env
 
 
 def local_infrastructure_status() -> dict[str, Any]:
@@ -39,6 +40,7 @@ def local_infrastructure_status() -> dict[str, Any]:
             "pipeline_runtime_importer": True,
             "v2_migrations": _migration_status(),
         },
+        "vector_store_policy": vector_store_policy_from_env(),
         "qdrant": _qdrant_status(qdrant),
         "qdrant_retrieval": qdrant_retrieval.dependency_status(),
         "docling": parser_providers["docling"].dependency_status(),
@@ -99,10 +101,14 @@ def _model_call_cache_status() -> dict[str, Any]:
 
 
 def _qdrant_status(provider: QdrantVectorStoreProvider) -> dict[str, Any]:
+    policy = vector_store_policy_from_env()
     status = provider.dependency_status()
     status["compose_service"] = "qdrant"
     status["compose_file"] = "compose.yaml"
     status["required_for_production"] = True
+    status["required_now"] = bool(policy["qdrant_required"])
+    status["policy_provider"] = policy["provider"]
+    status["policy_reason"] = policy["qdrant_required_reason"]
     return status
 
 

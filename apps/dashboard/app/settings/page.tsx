@@ -17,6 +17,7 @@ type Health = {
 type LocalInfrastructure = {
   local_only: boolean;
   postgres: Record<string, unknown>;
+  vector_store_policy: Record<string, unknown>;
   qdrant: Record<string, unknown>;
   qdrant_retrieval: Record<string, unknown>;
   docling: Record<string, unknown>;
@@ -133,6 +134,22 @@ export default function SettingsPage() {
           <ProviderStatus title="Model cache" status={infrastructure.data?.model_call_cache} />
           <ProviderStatus title="Temporal" status={infrastructure.data?.temporal} />
           <ProviderStatus title="Observability" status={infrastructure.data?.observability} />
+        </div>
+      </section>
+      <section className="panel">
+        <div className="sectionHeader">
+          <h2>Vector Store Policy</h2>
+          <StatusBadge
+            value={String(infrastructure.data?.vector_store_policy?.provider ?? "-")}
+            tone={infrastructure.data?.vector_store_policy?.qdrant_required && infrastructure.data?.vector_store_policy?.provider !== "qdrant" ? "danger" : "default"}
+          />
+        </div>
+        <div className="settingsGrid">
+          <KeyValue label="Runtime mode" value={String(infrastructure.data?.vector_store_policy?.runtime_mode ?? "-")} />
+          <KeyValue label="Qdrant required" value={String(infrastructure.data?.vector_store_policy?.qdrant_required ?? false)} />
+          <KeyValue label="Reason" value={String(infrastructure.data?.vector_store_policy?.qdrant_required_reason ?? "-")} />
+          <KeyValue label="Collection" value={String(infrastructure.data?.vector_store_policy?.qdrant_collection ?? "-")} />
+          <KeyValue label="Embedding dimensions" value={String(infrastructure.data?.vector_store_policy?.embedding_dimensions ?? "-")} />
         </div>
       </section>
       <section className="panel">

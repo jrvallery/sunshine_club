@@ -23,6 +23,7 @@ from sunshine_extraction.services.cache import SQLiteModelCallCache, model_call_
 from sunshine_extraction.services.extraction import OcrExecutor, ocr_executor_from_env
 from sunshine_extraction.services.imports import RunResultsImporter, run_results_importer_from_env
 from sunshine_extraction.services.tagging import LLMTagInspector, llm_tag_inspector_from_env
+from sunshine_extraction.services.vector_policy import vector_store_policy_from_env
 
 SEMANTIC_INDEX_FROM_ENV = object()
 
@@ -77,11 +78,13 @@ def _embedding_failure_mode(configured: str | None) -> str:
 
 
 def _vector_store_from_env() -> VectorStoreProvider:
-    provider_name = os.environ.get("SUNSHINE_VECTOR_STORE", "noop").strip().lower()
-    if provider_name in {"", "none", "disabled", "noop"}:
+    provider_name = vector_store_policy_from_env()["provider"]
+    if provider_name == "noop":
         return NoopVectorStoreProvider()
     if provider_name == "qdrant":
         return QdrantVectorStoreProvider()
+    if provider_name == "sqlite_golden":
+        return NoopVectorStoreProvider()
     return NoopVectorStoreProvider()
 
 

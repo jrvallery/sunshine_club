@@ -1558,9 +1558,9 @@ Important missing V2 dependencies:
 
 - Docling is declared as an optional Python extra and has a local provider boundary; the actual local dependency install/runtime benchmark still needs to be performed.
 - MinerU, RAGFlow DeepDoc, and Unstructured have local provider boundaries for benchmarking, but are not declared as installed dependencies yet.
-- Qdrant client, Compose service, readiness metadata, and a Settings-page provider health/provisioning surface exist for inspecting local infrastructure and triggering Qdrant rebuilds.
+- Qdrant client, Compose service, readiness metadata, executable vector-store policy, and a Settings-page provider health/provisioning surface exist for inspecting local infrastructure and triggering Qdrant rebuilds.
 - Postgres client and Compose service exist; V2 migrations now include run/results/model/provider/segment/review/chunk/embedding tables, and the API exposes read-only Postgres runtime, run listing, and review-item listing surfaces. Dashboard runtime still needs to move from SQLite to Postgres as the authoritative store.
-- Local embedding/vector indexing stack is wired through providers, optional Qdrant indexing, and a Postgres-to-Qdrant rebuild service; production still needs a reviewed canonical collection policy.
+- Local embedding/vector indexing stack is wired through providers, optional dev Qdrant indexing, production-required Qdrant policy, and a Postgres-to-Qdrant rebuild service. Production/V2 mode fail-closes if Qdrant is explicitly disabled.
 - Provider benchmark tooling exists for extraction providers and emits promotion recommendations; real Docling/MinerU/RAGFlow dependency benchmarking still needs to be finished.
 - The provider benchmark API returns summary, result rows, and promotion recommendations from benchmark artifacts, and the Pipeline Quality Eval dashboard now has a Provider Benchmarks panel for running and reviewing those artifacts.
 - The local-infrastructure API and Settings dashboard expose parser candidate dependency status for Docling, MinerU, RAGFlow DeepDoc, and Unstructured, so missing local packages are visible before running provider benchmarks.
@@ -2028,6 +2028,7 @@ V2 is successful when:
 - Hosted third-party APIs are not allowed in the production graph.
 - Postgres is required for V2 production dashboard/run/review state.
 - A local vector database is required; Qdrant is the recommended default.
+- Qdrant is optional for side-effect-free local development but required for production/V2 runs through `SUNSHINE_RUNTIME_MODE=production` or `SUNSHINE_REQUIRE_QDRANT=true`.
 - Docling remains the first recommended OSS parser/OCR provider to implement and benchmark.
 - Long scrapbook/newspaper/mixed PDFs are handled through immutable parent files plus review-only logical page-range segment proposals before any future physical split/export.
 
@@ -2036,7 +2037,6 @@ V2 is successful when:
 - How much raw provider output should be stored per file?
 - What is the single-file latency target?
 - Which self-hosted dashboard/review framework, if any, should replace or augment the current custom dashboard?
-- Should Qdrant be required for all local development, or optional until search UI exists?
 
 ## Immediate Next Slice After Approval
 

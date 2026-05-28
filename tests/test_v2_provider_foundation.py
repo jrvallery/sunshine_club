@@ -51,6 +51,7 @@ from sunshine_extraction.services.tagging.llm_inspection import llm_tag_inspecto
 from sunshine_extraction.services.tagging.rules import assign_tag_candidates
 from sunshine_extraction.services.tagging.taxonomy import DEFAULT_TAXONOMY_PATH
 from sunshine_extraction.services.vectorization import embed_chunks, embed_chunks_with_fallback
+from sunshine_extraction.services.vector_policy import vector_store_policy_from_env
 from sunshine_extraction.services.extraction import ExtractionResult
 from sunshine_extraction.services.structure import normalize_document_structure
 
@@ -855,6 +856,33 @@ def test_noop_vector_provider_records_unconfigured_indexing() -> None:
     assert result.indexed_chunk_ids == []
     assert result.skipped_chunk_ids == ["chunk-1"]
     assert "vector_store_not_configured" in result.warnings
+
+
+def test_vector_store_policy_defaults_to_noop_for_development(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SUNSHINE_VECTOR_STORE", raising=False)
+    monkeypatch.delenv("SUNSHINE_REQUIRE_QDRANT", raising=False)
+    monkeypatch.delenv("SUNSHINE_RUNTIME_MODE", raising=False)
+
+    policy = vector_store_policy_from_env()
+
+    assert policy["runtime_mode"] == "development"
+    assert policy["provider"] == "noop"
+    assert policy["qdrant_required"] is False
+
+
+def test_vector_store_policy_requires_qdrant_for_production(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SUNSHINE_RUNTIME_MODE", "production")
+    monkeypatch.delenv("SUNSHINE_VECTOR_STORE", raising=False)
+
+    policy = vector_store_policy_from_env()
+
+    assert policy["provider"] == "qdrant"
+    assert policy["qdrant_required"] is True
+    assert policy["qdrant_required_reason"] == "production_mode"
+
+    monkeypatch.setenv("SUNSHINE_VECTOR_STORE", "noop")
+    with pytest.raises(ValueError, match="Qdrant is required"):
+        vector_store_policy_from_env()
 
 
 def test_sqlite_golden_vectorstore_and_observability_boundaries_are_local_only() -> None:

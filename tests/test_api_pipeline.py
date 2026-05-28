@@ -100,6 +100,9 @@ def test_local_infrastructure_status_is_local_only(monkeypatch) -> None:
     assert payload["qdrant"]["local_only"] is True
     assert payload["qdrant"]["compose_service"] == "qdrant"
     assert payload["qdrant"]["required_for_production"] is True
+    assert payload["qdrant"]["required_now"] is False
+    assert payload["vector_store_policy"]["provider"] == "noop"
+    assert payload["vector_store_policy"]["qdrant_required"] is False
     assert payload["qdrant_retrieval"]["provider"] == "qdrant"
     assert payload["docling"]["provider"] == "docling"
     assert payload["docling"]["local_only"] is True
