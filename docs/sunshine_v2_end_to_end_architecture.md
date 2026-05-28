@@ -771,6 +771,7 @@ Current implementation:
 - Segment proposals are artifacts only; no physical source files are split or modified.
 - Long mixed scrapbook PDFs are intentionally handled as proposed page-range child documents first. A later export/promote action can create physical child documents only after review accepts the page ranges.
 - Large conglomerate scrapbook PDFs, newspaper PDFs, and mixed historical packets are explicitly in scope for V2 as review-only logical splits. The current pass should preserve enough page-level structure to make splitting easy later; it should not attempt irreversible physical PDF splitting until segment proposals have dashboard review and benchmark-backed acceptance criteria.
+- Docling/MinerU/RAGFlow parser comparisons should explicitly score scrapbook packet segmentation. If a parser can expose reliable page/section/article boundaries, those boundaries become evidence for `propose_document_segments`; they do not replace the LangGraph node or bypass human review.
 
 Segmentation benchmark criteria:
 
@@ -1305,6 +1306,7 @@ Current implementation:
 - Dashboard run reports now fetch the Postgres V2 report by run key when available, show Postgres runtime/segment-review summary counts, prefer normalized Postgres rows for file/review tables, and include a `Segments` tab for logical page-range proposals.
 - Segment proposals now feed chunking when page-level structure text is available. Multi-page scrapbook/newspaper/mixed packets emit `segment_text` chunks with segment IDs and page ranges, so downstream embeddings, retrieval, and tagging can operate on proposed child documents instead of only the parent PDF.
 - Review queue artifacts are segment-aware for segment-boundary routes. When a long packet produces review-required page-range candidates, `sample-review-queue.jsonl` emits one row per reviewable segment with segment ID, title, type, page range, confidence, and boundary evidence, allowing Postgres review rows and golden labels to attach corrections to the child-document candidate.
+- `GET /admin/files`, `/admin/files/search`, and `/admin/files/facets` can opt into the V2 Postgres file read model with `source=postgres`. The default remains SQLite until file detail/preview/action routes are fully source-aware, but Postgres search/facets now let the dashboard inspect run-owned V2 results without making SQLite the source of truth.
 
 ### 24. `import_run_results`
 
@@ -1599,7 +1601,7 @@ Important missing V2 dependencies:
 - Docling is declared as an optional Python extra and has a local provider boundary; the actual local dependency install/runtime benchmark still needs to be performed.
 - MinerU, RAGFlow DeepDoc, and Unstructured have local provider boundaries for benchmarking, but are not declared as installed dependencies yet.
 - Qdrant client, Compose service, readiness metadata, executable vector-store policy, and a Settings-page provider health/provisioning surface exist for inspecting local infrastructure and triggering Qdrant rebuilds.
-- Postgres client and Compose service exist; V2 migrations now include run/results/model/provider/segment/review/golden-label/chunk/embedding tables, and the API exposes Postgres runtime, run detail, run listing, review-item, review-decision, and golden-label surfaces. Dashboard runtime still needs to move remaining legacy views from SQLite to Postgres as the authoritative store.
+- Postgres client and Compose service exist; V2 migrations now include run/results/model/provider/segment/review/golden-label/chunk/embedding tables, and the API exposes Postgres runtime, run detail, run listing, review-item, review-decision, golden-label, and file search/facet surfaces. Dashboard runtime still needs to move remaining file detail/preview/actions and other legacy views from SQLite to Postgres as the authoritative store.
 - Local embedding/vector indexing stack is wired through providers, optional dev Qdrant indexing, production-required Qdrant policy, and a Postgres-to-Qdrant rebuild service. Production/V2 mode fail-closes if Qdrant is explicitly disabled.
 - Provider benchmark tooling exists for extraction providers and emits promotion recommendations; real Docling/MinerU/RAGFlow dependency benchmarking still needs to be finished.
 - The provider benchmark API returns summary, result rows, and promotion recommendations from benchmark artifacts, and the Pipeline Quality Eval dashboard now has a Provider Benchmarks panel for running and reviewing those artifacts.

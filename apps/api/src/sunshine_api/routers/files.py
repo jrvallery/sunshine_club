@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 
 from sunshine_api.dependencies import review_store
+from sunshine_api.services.imports import postgres_file_facets, search_postgres_files
 from sunshine_api.schemas import (
     DocumentPipelineRunRequest,
     DocumentPipelineRunResponse,
@@ -46,8 +47,24 @@ def files(
     route_status: str | None = None,
     review_status: str | None = None,
     placement_status: str | None = None,
+    source: str = "sqlite",
     limit: int = 100,
 ) -> list[dict[str, Any]]:
+    if source == "postgres":
+        return search_postgres_files(
+            q=q,
+            source_collection=source_collection,
+            extension=extension,
+            content_class=content_class,
+            primary_tag=primary_tag,
+            secondary_tag=secondary_tag,
+            route_status=route_status,
+            review_status=review_status,
+            placement_status=placement_status,
+            limit=limit,
+        )["items"]
+    if source != "sqlite":
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
     return review_store().list_files(
         q=q,
         source_collection=source_collection,
@@ -79,7 +96,31 @@ def file_search(
     sort: str = "updated_desc",
     cursor: int | None = None,
     limit: int = 100,
+    source: str = "sqlite",
 ) -> dict[str, Any]:
+    if source == "postgres":
+        try:
+            return search_postgres_files(
+                q=q,
+                source_collection=source_collection,
+                extension=extension,
+                content_class=content_class,
+                primary_tag=primary_tag,
+                secondary_tag=secondary_tag,
+                route_status=route_status,
+                review_status=review_status,
+                ocr_quality=ocr_quality,
+                warning_type=warning_type,
+                placement_status=placement_status,
+                run_id=run_id,
+                sort=sort,
+                cursor=cursor,
+                limit=limit,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+    if source != "sqlite":
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
     return review_store().search_files(
         q=q,
         source_collection=source_collection,
@@ -113,7 +154,28 @@ def file_facets(
     warning_type: str | None = None,
     placement_status: str | None = None,
     run_id: int | None = None,
+    source: str = "sqlite",
 ) -> dict[str, dict[str, int]]:
+    if source == "postgres":
+        try:
+            return postgres_file_facets(
+                q=q,
+                source_collection=source_collection,
+                extension=extension,
+                content_class=content_class,
+                primary_tag=primary_tag,
+                secondary_tag=secondary_tag,
+                route_status=route_status,
+                review_status=review_status,
+                ocr_quality=ocr_quality,
+                warning_type=warning_type,
+                placement_status=placement_status,
+                run_id=run_id,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+    if source != "sqlite":
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
     return review_store().file_facets(
         q=q,
         source_collection=source_collection,

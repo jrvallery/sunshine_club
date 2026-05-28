@@ -125,6 +125,80 @@ def list_postgres_review_items(
     return store.list_review_items(run_key=run_key, limit=limit)
 
 
+def search_postgres_files(
+    *,
+    q: str | None = None,
+    source_collection: str | None = None,
+    extension: str | None = None,
+    content_class: str | None = None,
+    primary_tag: str | None = None,
+    secondary_tag: str | None = None,
+    route_status: str | None = None,
+    review_status: str | None = None,
+    ocr_quality: str | None = None,
+    warning_type: str | None = None,
+    placement_status: str | None = None,
+    run_id: str | int | None = None,
+    sort: str = "updated_desc",
+    cursor: int | None = None,
+    limit: int = 100,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> dict[str, Any]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.search_files(
+        q=q,
+        source_collection=source_collection,
+        extension=extension,
+        content_class=content_class,
+        primary_tag=primary_tag,
+        secondary_tag=secondary_tag,
+        route_status=route_status,
+        review_status=review_status,
+        ocr_quality=ocr_quality,
+        warning_type=warning_type,
+        placement_status=placement_status,
+        run_id=run_id,
+        sort=sort,
+        cursor=cursor,
+        limit=limit,
+    )
+
+
+def postgres_file_facets(
+    *,
+    q: str | None = None,
+    source_collection: str | None = None,
+    extension: str | None = None,
+    content_class: str | None = None,
+    primary_tag: str | None = None,
+    secondary_tag: str | None = None,
+    route_status: str | None = None,
+    review_status: str | None = None,
+    ocr_quality: str | None = None,
+    warning_type: str | None = None,
+    placement_status: str | None = None,
+    run_id: str | int | None = None,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> dict[str, dict[str, int]]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.file_facets(
+        q=q,
+        source_collection=source_collection,
+        extension=extension,
+        content_class=content_class,
+        primary_tag=primary_tag,
+        secondary_tag=secondary_tag,
+        route_status=route_status,
+        review_status=review_status,
+        ocr_quality=ocr_quality,
+        warning_type=warning_type,
+        placement_status=placement_status,
+        run_id=run_id,
+    )
+
+
 def list_postgres_golden_labels(
     *,
     limit: int = 100,
@@ -282,8 +356,10 @@ __all__ = [
     "list_postgres_pipeline_runs",
     "list_postgres_review_items",
     "postgres_golden_label_summary",
+    "postgres_file_facets",
     "postgres_runtime_summary",
     "postgres_review_summary",
     "record_postgres_review_decision",
+    "search_postgres_files",
     "update_postgres_golden_label",
 ]

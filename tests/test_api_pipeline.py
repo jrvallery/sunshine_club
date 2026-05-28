@@ -400,6 +400,61 @@ def test_review_summary_can_read_postgres_v2_source(monkeypatch) -> None:
     assert payload["review_by_status"]["resolved"] == 2
 
 
+def test_file_search_can_read_postgres_v2_source(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_search(**kwargs) -> dict:
+        captured.update(kwargs)
+        return {
+            "items": [
+                {
+                    "id": "result-1",
+                    "source": "postgres",
+                    "filename": "history.pdf",
+                    "compact_path": "Sunshine/.../history.pdf",
+                    "source_path": "/mnt/sunshine/history.pdf",
+                    "relative_path": "Sunshine/history.pdf",
+                    "extension": ".pdf",
+                    "source_collection": "sunshine_shared_folders",
+                    "content_class": "document",
+                    "primary_tag": "history_archive_general",
+                    "secondary_tags": ["club_history"],
+                    "route_status": "route_candidate",
+                    "quality": "ok",
+                    "review_status": None,
+                    "placement_status": "ready",
+                    "text_snippet": "Founders history",
+                    "latest_run_id": "run-id",
+                    "latest_run_key": "run-1",
+                    "updated_at": "2026-05-28T00:00:00",
+                }
+            ],
+            "next_cursor": None,
+            "total_estimate": 1,
+            "query": {"source": "postgres"},
+        }
+
+    def fake_facets(**kwargs) -> dict[str, dict[str, int]]:
+        captured["facets"] = kwargs
+        return {"primary_tag": {"history_archive_general": 1}, "extension": {".pdf": 1}}
+
+    monkeypatch.setattr("sunshine_api.routers.files.search_postgres_files", fake_search)
+    monkeypatch.setattr("sunshine_api.routers.files.postgres_file_facets", fake_facets)
+
+    search = TestClient(app).get("/admin/files/search", params={"source": "postgres", "primary_tag": "history_archive_general"})
+    facets = TestClient(app).get("/admin/files/facets", params={"source": "postgres", "primary_tag": "history_archive_general"})
+    legacy_list = TestClient(app).get("/admin/files", params={"source": "postgres", "primary_tag": "history_archive_general"})
+
+    assert search.status_code == 200
+    assert search.json()["items"][0]["source"] == "postgres"
+    assert search.json()["items"][0]["primary_tag"] == "history_archive_general"
+    assert facets.status_code == 200
+    assert facets.json()["primary_tag"] == {"history_archive_general": 1}
+    assert legacy_list.status_code == 200
+    assert legacy_list.json()[0]["id"] == "result-1"
+    assert captured["primary_tag"] == "history_archive_general"
+
+
 def test_golden_labels_can_read_postgres_v2_source(monkeypatch) -> None:
     monkeypatch.setattr(
         "sunshine_api.routers.review.list_postgres_golden_labels",

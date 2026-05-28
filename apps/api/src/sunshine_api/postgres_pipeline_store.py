@@ -223,6 +223,166 @@ class PostgresPipelineStore:
         finally:
             connection.close()
 
+    def search_files(
+        self,
+        *,
+        q: str | None = None,
+        source_collection: str | None = None,
+        extension: str | None = None,
+        content_class: str | None = None,
+        primary_tag: str | None = None,
+        secondary_tag: str | None = None,
+        route_status: str | None = None,
+        review_status: str | None = None,
+        ocr_quality: str | None = None,
+        warning_type: str | None = None,
+        placement_status: str | None = None,
+        run_id: str | int | None = None,
+        sort: str = "updated_desc",
+        cursor: int | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        connection = self._connect_factory(self.database_url)
+        try:
+            rows = connection.execute(
+                """
+                select
+                    pr.id,
+                    pr.run_id,
+                    r.run_key,
+                    r.preset_key,
+                    r.embedding_provider,
+                    r.llm_provider,
+                    r.extraction_provider,
+                    pr.source_path,
+                    pr.relative_path,
+                    pr.sample_path,
+                    pr.route_status,
+                    pr.review_reason,
+                    pr.final_class,
+                    pr.extraction_strategy,
+                    pr.extraction_status,
+                    pr.quality,
+                    pr.top_tag_candidate,
+                    pr.secondary_tags,
+                    pr.tag_confidence,
+                    pr.result,
+                    pr.created_at,
+                    pr.updated_at,
+                    (
+                        select ri.status
+                        from review_items_v2 ri
+                        where ri.source_path = pr.source_path
+                          and (ri.segment_id is null or ri.segment_id = '')
+                        order by ri.updated_at desc, ri.created_at desc
+                        limit 1
+                    ) as review_status
+                from pipeline_results pr
+                left join pipeline_runs r on r.id = pr.run_id
+                order by pr.updated_at desc, pr.created_at desc
+                limit %s
+                """,
+                (5000,),
+            ).fetchall()
+            mapped = _dedupe_postgres_file_rows(
+                [_postgres_file_search_item(_json_safe_row(_row_to_dict(row))) for row in rows]
+            )
+            filtered = _filter_postgres_files(
+                mapped,
+                q=q,
+                source_collection=source_collection,
+                extension=extension,
+                content_class=content_class,
+                primary_tag=primary_tag,
+                secondary_tag=secondary_tag,
+                route_status=route_status,
+                review_status=review_status,
+                ocr_quality=ocr_quality,
+                warning_type=warning_type,
+                placement_status=placement_status,
+                run_id=run_id,
+            )
+            ordered = _sort_postgres_files(filtered, sort)
+            offset = max(int(cursor or 0), 0)
+            capped_limit = max(1, min(int(limit), 500))
+            items = ordered[offset : offset + capped_limit]
+            next_cursor = offset + len(items) if offset + len(items) < len(ordered) else None
+            return {
+                "items": items,
+                "next_cursor": next_cursor,
+                "total_estimate": len(ordered),
+                "query": {
+                    key: value
+                    for key, value in {
+                        "q": q,
+                        "source_collection": source_collection,
+                        "extension": extension,
+                        "content_class": content_class,
+                        "primary_tag": primary_tag,
+                        "secondary_tag": secondary_tag,
+                        "route_status": route_status,
+                        "review_status": review_status,
+                        "ocr_quality": ocr_quality,
+                        "warning_type": warning_type,
+                        "placement_status": placement_status,
+                        "run_id": run_id,
+                        "sort": sort,
+                        "cursor": offset,
+                        "limit": capped_limit,
+                        "source": "postgres",
+                    }.items()
+                    if value not in (None, "")
+                },
+            }
+        finally:
+            connection.close()
+
+    def file_facets(
+        self,
+        *,
+        q: str | None = None,
+        source_collection: str | None = None,
+        extension: str | None = None,
+        content_class: str | None = None,
+        primary_tag: str | None = None,
+        secondary_tag: str | None = None,
+        route_status: str | None = None,
+        review_status: str | None = None,
+        ocr_quality: str | None = None,
+        warning_type: str | None = None,
+        placement_status: str | None = None,
+        run_id: str | int | None = None,
+    ) -> dict[str, dict[str, int]]:
+        search = self.search_files(
+            q=q,
+            source_collection=source_collection,
+            extension=extension,
+            content_class=content_class,
+            primary_tag=primary_tag,
+            secondary_tag=secondary_tag,
+            route_status=route_status,
+            review_status=review_status,
+            ocr_quality=ocr_quality,
+            warning_type=warning_type,
+            placement_status=placement_status,
+            run_id=run_id,
+            limit=5000,
+        )
+        rows = search["items"]
+        return {
+            "extension": _facet_count_postgres(rows, "extension"),
+            "source_collection": _facet_count_postgres(rows, "source_collection"),
+            "content_class": _facet_count_postgres(rows, "content_class"),
+            "primary_tag": _facet_count_postgres(rows, "primary_tag"),
+            "secondary_tag": _facet_array_count_postgres(rows, "secondary_tags"),
+            "route_status": _facet_count_postgres(rows, "route_status"),
+            "review_status": _facet_count_postgres(rows, "review_status"),
+            "ocr_quality": _facet_count_postgres(rows, "quality"),
+            "warning_type": _facet_array_count_postgres(rows, "warnings"),
+            "placement_status": _facet_count_postgres(rows, "placement_status"),
+            "latest_run": _facet_count_postgres(rows, "latest_run_id"),
+        }
+
     def list_golden_labels(self, *, limit: int = 100) -> list[dict[str, Any]]:
         connection = self._connect_factory(self.database_url)
         try:
@@ -1310,6 +1470,161 @@ def _clean_json_tags(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return sorted({str(tag).strip() for tag in value if str(tag).strip()})
+
+
+def _postgres_file_search_item(row: dict[str, Any]) -> dict[str, Any]:
+    result = row.get("result") if isinstance(row.get("result"), dict) else {}
+    source_path = str(row.get("source_path") or row.get("sample_path") or "")
+    relative_path = str(row.get("relative_path") or source_path)
+    filename = Path(relative_path or source_path).name
+    extension = Path(filename).suffix.lower() or None
+    secondary_tags = row.get("secondary_tags") if isinstance(row.get("secondary_tags"), list) else result.get("secondary_tags")
+    warnings = result.get("warnings") if isinstance(result.get("warnings"), list) else []
+    return {
+        "id": row.get("id"),
+        "source": "postgres",
+        "filename": filename,
+        "compact_path": _compact_postgres_path(relative_path),
+        "source_path": source_path,
+        "relative_path": relative_path,
+        "sample_path": row.get("sample_path"),
+        "extension": extension,
+        "source_collection": _source_collection_postgres(relative_path, source_path),
+        "content_class": row.get("final_class") or result.get("final_class"),
+        "primary_tag": row.get("top_tag_candidate") or result.get("top_tag_candidate"),
+        "secondary_tags": secondary_tags if isinstance(secondary_tags, list) else [],
+        "route_status": row.get("route_status") or result.get("route_status"),
+        "quality": row.get("quality") or result.get("quality"),
+        "review_status": row.get("review_status"),
+        "placement_status": result.get("placement_status"),
+        "text_snippet": _short_postgres_text(result.get("extraction_text_snippet") or result.get("text") or ""),
+        "warnings": warnings,
+        "latest_run_id": row.get("run_id"),
+        "latest_run_key": row.get("run_key"),
+        "latest_run_preset_key": row.get("preset_key"),
+        "latest_embedding_provider": row.get("embedding_provider"),
+        "latest_enable_llm_tags": bool(row.get("llm_provider")) if row.get("llm_provider") is not None else None,
+        "latest_llm_tag_provider": row.get("llm_provider"),
+        "latest_ocr_fallback_provider": row.get("extraction_provider"),
+        "updated_at": row.get("updated_at") or row.get("created_at"),
+    }
+
+
+def _filter_postgres_files(rows: list[dict[str, Any]], **filters: Any) -> list[dict[str, Any]]:
+    result = rows
+    q = str(filters.get("q") or "").strip().lower()
+    if q:
+        result = [
+            row
+            for row in result
+            if q in " ".join(str(row.get(key) or "") for key in ("filename", "relative_path", "source_path", "text_snippet")).lower()
+        ]
+    for filter_key, row_key in {
+        "source_collection": "source_collection",
+        "content_class": "content_class",
+        "primary_tag": "primary_tag",
+        "route_status": "route_status",
+        "review_status": "review_status",
+        "ocr_quality": "quality",
+        "placement_status": "placement_status",
+    }.items():
+        value = filters.get(filter_key)
+        if value:
+            result = [row for row in result if str(row.get(row_key) or "") == str(value)]
+    extension = filters.get("extension")
+    if extension:
+        normalized = str(extension).lower()
+        if not normalized.startswith("."):
+            normalized = f".{normalized}"
+        result = [row for row in result if row.get("extension") == normalized]
+    secondary_tag = filters.get("secondary_tag")
+    if secondary_tag:
+        result = [row for row in result if str(secondary_tag) in set(map(str, row.get("secondary_tags") or []))]
+    warning_type = filters.get("warning_type")
+    if warning_type:
+        result = [row for row in result if str(warning_type) in set(map(str, row.get("warnings") or []))]
+    run_id = filters.get("run_id")
+    if run_id:
+        result = [row for row in result if str(row.get("latest_run_id") or "") == str(run_id)]
+    return result
+
+
+def _dedupe_postgres_file_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep the newest row for each source file while preserving query order."""
+
+    seen: set[str] = set()
+    deduped: list[dict[str, Any]] = []
+    for row in rows:
+        key = str(row.get("source_path") or row.get("relative_path") or row.get("id") or "")
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(row)
+    return deduped
+
+
+def _sort_postgres_files(rows: list[dict[str, Any]], sort: str) -> list[dict[str, Any]]:
+    if sort == "updated_asc":
+        return sorted(rows, key=lambda row: str(row.get("updated_at") or ""))
+    if sort == "filename":
+        return sorted(rows, key=lambda row: str(row.get("filename") or "").lower())
+    if sort == "primary_tag":
+        return sorted(rows, key=lambda row: (str(row.get("primary_tag") or ""), str(row.get("filename") or "")))
+    if sort == "quality":
+        return sorted(rows, key=lambda row: (str(row.get("quality") or ""), str(row.get("filename") or "")))
+    return sorted(rows, key=lambda row: str(row.get("updated_at") or ""), reverse=True)
+
+
+def _facet_count_postgres(rows: list[dict[str, Any]], key: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        value = str(row.get(key) or "unknown")
+        counts[value] = counts.get(value, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _facet_array_count_postgres(rows: list[dict[str, Any]], key: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        values = row.get(key)
+        if not isinstance(values, list) or not values:
+            counts["none"] = counts.get("none", 0) + 1
+            continue
+        for value in values:
+            text = str(value or "unknown")
+            counts[text] = counts.get(text, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _compact_postgres_path(path: str) -> str:
+    parts = [part for part in path.split("/") if part]
+    if len(parts) <= 3:
+        return path
+    return "/".join([parts[0], "...", parts[-2], parts[-1]])
+
+
+def _short_postgres_text(value: Any, limit: int = 240) -> str | None:
+    text = " ".join(str(value or "").split())
+    if not text:
+        return None
+    return text if len(text) <= limit else text[: limit - 3].rstrip() + "..."
+
+
+def _source_collection_postgres(relative_path: str, source_path: str) -> str:
+    text = f"{relative_path} {source_path}"
+    if "_manifest/" in text or "/_manifest/" in text:
+        return "manifest"
+    if "Sunshine shared folders/" in text:
+        return "sunshine_shared_folders"
+    if "archive-2026-05-25/" in text:
+        return "archive"
+    if "google-drive-delta-2026-05-25/" in text:
+        return "google_drive_delta"
+    if "Paige Agent Sunshine Files/" in text:
+        return "paige_agent_files"
+    if "From Mac Sunshine Pass 2026-05-25/" in text:
+        return "from_mac_pass"
+    return "other"
 
 
 def _run_report_summary(

@@ -659,6 +659,95 @@ def test_postgres_pipeline_store_gets_review_item() -> None:
     assert connection.closed is True
 
 
+def test_postgres_pipeline_store_searches_files_and_facets() -> None:
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.closed = False
+            self.executed: list[tuple[str, tuple[Any, ...]]] = []
+
+        def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
+            self.executed.append((query, params))
+            return _Cursor(
+                rows=[
+                    {
+                        "id": "result-1",
+                        "run_id": "run-id",
+                        "run_key": "run-1",
+                        "preset_key": "qa",
+                        "embedding_provider": "cortex",
+                        "llm_provider": "cortex",
+                        "extraction_provider": "docling",
+                        "source_path": "/mnt/sunshine/Sunshine shared folders/History/history.pdf",
+                        "relative_path": "Sunshine shared folders/History/history.pdf",
+                        "sample_path": "/samples/history.pdf",
+                        "route_status": "route_candidate",
+                        "review_reason": None,
+                        "final_class": "document",
+                        "extraction_strategy": "text_extraction",
+                        "extraction_status": "extracted",
+                        "quality": "ok",
+                        "top_tag_candidate": "history_archive_general",
+                        "secondary_tags": ["club_history"],
+                        "tag_confidence": 0.91,
+                        "result": {
+                            "top_tag_candidate": "history_archive_general",
+                            "secondary_tags": ["club_history"],
+                            "route_status": "route_candidate",
+                            "quality": "ok",
+                            "placement_status": "ready",
+                            "extraction_text_snippet": "Founders history text",
+                            "warnings": ["reviewed"],
+                        },
+                        "review_status": "accepted",
+                        "created_at": "2026-05-28T00:00:00",
+                        "updated_at": "2026-05-28T00:00:00",
+                    },
+                    {
+                        "id": "result-2",
+                        "run_id": "run-id",
+                        "run_key": "run-1",
+                        "preset_key": "qa",
+                        "source_path": "/mnt/sunshine/archive-2026-05-25/Budget/report.pdf",
+                        "relative_path": "archive-2026-05-25/Budget/report.pdf",
+                        "route_status": "review_required",
+                        "final_class": "scanned_document",
+                        "quality": "poor",
+                        "top_tag_candidate": "finance_treasurer_records",
+                        "secondary_tags": ["budget"],
+                        "result": {
+                            "top_tag_candidate": "finance_treasurer_records",
+                            "secondary_tags": ["budget"],
+                            "route_status": "review_required",
+                            "quality": "poor",
+                            "placement_status": "needs_review",
+                            "warnings": ["ocr_quality_below_threshold"],
+                        },
+                        "review_status": "open",
+                        "created_at": "2026-05-28T00:00:00",
+                        "updated_at": "2026-05-28T00:00:00",
+                    },
+                ]
+            )
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+    store = PostgresPipelineStore("postgresql://local/test", connect_factory=lambda _url: connection)
+
+    search = store.search_files(primary_tag="history_archive_general", q="founders")
+    facets = store.file_facets(review_status="open")
+
+    assert search["total_estimate"] == 1
+    assert search["items"][0]["source"] == "postgres"
+    assert search["items"][0]["filename"] == "history.pdf"
+    assert search["items"][0]["source_collection"] == "sunshine_shared_folders"
+    assert search["items"][0]["text_snippet"] == "Founders history text"
+    assert facets["primary_tag"] == {"finance_treasurer_records": 1}
+    assert facets["warning_type"] == {"ocr_quality_below_threshold": 1}
+    assert connection.closed is True
+
+
 def test_postgres_pipeline_store_reports_review_summary() -> None:
     class FakeConnection:
         def __init__(self) -> None:
