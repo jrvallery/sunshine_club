@@ -26,13 +26,33 @@ def _read_live_run_summary(output_dir: str, current_summary: dict[str, Any]) -> 
         processed = _count_jsonl_rows(results_path)
         summary["processed_count"] = processed
         summary.setdefault("graph_run_count", processed)
+    else:
+        processed = _count_live_graph_run_rows(output_path, "sample-pipeline-results.jsonl")
+        if processed:
+            summary["processed_count"] = processed
+            summary.setdefault("graph_run_count", processed)
     review_path = output_path / "sample-review-queue.jsonl"
     if review_path.exists():
         summary["review_required_count"] = _count_jsonl_rows(review_path)
+    else:
+        review_required = _count_live_graph_run_rows(output_path, "sample-review-queue.jsonl")
+        if review_required:
+            summary["review_required_count"] = review_required
     audit_path = output_path / "graph-audit-events.jsonl"
     if audit_path.exists():
         summary["audit_event_count"] = _count_jsonl_rows(audit_path)
+    else:
+        audit_events = _count_live_graph_run_rows(output_path, "graph-audit-events.jsonl")
+        if audit_events:
+            summary["audit_event_count"] = audit_events
     return summary
+
+
+def _count_live_graph_run_rows(output_dir: Path, artifact_name: str) -> int:
+    return sum(
+        _count_jsonl_rows(path)
+        for path in _live_graph_run_artifact_paths(output_dir, artifact_name)
+    )
 
 
 def _count_jsonl_rows(path: Path) -> int:
@@ -91,23 +111,28 @@ def _load_run_results_by_source(output_dir: str) -> dict[str, dict[str, Any]]:
     output_path = Path(output_dir)
     sample_results_path = output_path / "sample-pipeline-results.jsonl"
     if sample_results_path.exists():
-        rows: dict[str, dict[str, Any]] = {}
-        with sample_results_path.open("r", encoding="utf-8") as input_file:
-            for line in input_file:
-                if not line.strip():
-                    continue
-                row = json.loads(line)
-                source_path = str(row.get("source_path") or row.get("sample_path") or "")
-                if source_path:
-                    rows[source_path] = row
-        return rows
+        rows = _rows_by_source(_read_jsonl_file(sample_results_path))
+        if rows:
+            return rows
     graph_result_path = output_path / "graph-result.json"
     if graph_result_path.exists():
         row = json.loads(graph_result_path.read_text(encoding="utf-8"))
         final_result = row.get("final_result", row)
         source_path = str(final_result.get("source_path") or final_result.get("sample_path") or "")
         return {source_path: final_result} if source_path else {}
+    live_rows = _rows_by_source(_read_live_graph_run_jsonl(output_path, "sample-pipeline-results.jsonl"))
+    if live_rows:
+        return live_rows
     return {}
+
+
+def _rows_by_source(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    by_source: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        source_path = str(row.get("source_path") or row.get("sample_path") or "")
+        if source_path:
+            by_source[source_path] = row
+    return by_source
 
 
 def _read_jsonl_file(path: Path, *, limit: int | None = None) -> list[dict[str, Any]]:
@@ -130,6 +155,34 @@ def _read_jsonl_file(path: Path, *, limit: int | None = None) -> list[dict[str, 
     except OSError:
         return []
     return rows
+
+
+def _read_run_jsonl_with_live_fallback(output_dir: Path, artifact_name: str, *, limit: int | None = None) -> list[dict[str, Any]]:
+    rows = _read_jsonl_file(output_dir / artifact_name, limit=limit)
+    if rows:
+        return rows
+    return _read_live_graph_run_jsonl(output_dir, artifact_name, limit=limit)
+
+
+def _read_live_graph_run_jsonl(output_dir: str | Path, artifact_name: str, *, limit: int | None = None) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for path in _live_graph_run_artifact_paths(Path(output_dir), artifact_name):
+        remaining = None if limit is None else max(0, limit - len(rows))
+        if remaining == 0:
+            break
+        rows.extend(_read_jsonl_file(path, limit=remaining))
+    return rows
+
+
+def _live_graph_run_artifact_paths(output_dir: Path, artifact_name: str) -> list[Path]:
+    graph_runs_dir = output_dir / "graph-runs"
+    if not graph_runs_dir.exists():
+        return []
+    try:
+        run_dirs = sorted(path for path in graph_runs_dir.iterdir() if path.is_dir())
+    except OSError:
+        return []
+    return [run_dir / artifact_name for run_dir in run_dirs if (run_dir / artifact_name).exists()]
 
 
 def _run_artifacts(output_dir: Path) -> list[dict[str, Any]]:

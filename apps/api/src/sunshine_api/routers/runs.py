@@ -38,8 +38,8 @@ from sunshine_api.services.run_reports import (
     _load_run_results_by_source,
     _progress_ratio,
     _progress_total,
-    _read_jsonl_file,
     _read_live_run_summary,
+    _read_run_jsonl_with_live_fallback,
     _read_run_summary,
     _result_file_rows,
     _run_artifacts,
@@ -129,7 +129,7 @@ def run_progress(run_id: int) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=str(error)) from error
     output_dir = str(run.get("output_dir") or "")
     summary = _read_run_summary(output_dir)
-    if run["status"] == "running":
+    if run["status"] == "running" or not summary:
         live_summary = _read_live_run_summary(output_dir, run.get("summary") or {})
         if live_summary:
             summary = {**summary, **live_summary}
@@ -211,14 +211,14 @@ def run_report(run_id: int) -> dict[str, Any]:
     output_dir = Path(str(run.get("output_dir") or ""))
     progress = run_progress(run_id)
     results = list(_load_run_results_by_source(str(output_dir)).values())
-    review_queue = _read_jsonl_file(output_dir / "sample-review-queue.jsonl", limit=200)
-    ocr_documents = _read_jsonl_file(output_dir / "sample-ocr-documents.jsonl", limit=200)
-    ocr_pages = _read_jsonl_file(output_dir / "sample-ocr-pages.jsonl", limit=200)
-    extraction_results = _read_jsonl_file(output_dir / "sample-extraction-results.jsonl", limit=200)
+    review_queue = _read_run_jsonl_with_live_fallback(output_dir, "sample-review-queue.jsonl", limit=200)
+    ocr_documents = _read_run_jsonl_with_live_fallback(output_dir, "sample-ocr-documents.jsonl", limit=200)
+    ocr_pages = _read_run_jsonl_with_live_fallback(output_dir, "sample-ocr-pages.jsonl", limit=200)
+    extraction_results = _read_run_jsonl_with_live_fallback(output_dir, "sample-extraction-results.jsonl", limit=200)
     model_usage_rows = store.list_model_usage(run_id) or _read_model_usage_artifact(output_dir, run_id=run_id)
     comparison = run_compare_previous(run_id)
     artifacts = _run_artifacts(output_dir)
-    summary = _read_run_summary(str(output_dir)) or run.get("summary") or {}
+    summary = _read_live_run_summary(str(output_dir), _read_run_summary(str(output_dir)) or run.get("summary") or {})
     review_items = store.list_review_items(status="all", run_id=run_id, limit=200)
     training_cycle = _training_cycle_metrics(run, review_items, store.list_golden_labels(limit=10000), comparison)
     status_buckets = _production_status_buckets(results)

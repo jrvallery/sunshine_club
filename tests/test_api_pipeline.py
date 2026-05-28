@@ -98,6 +98,96 @@ def test_model_usage_report_infers_calls_from_legacy_artifacts(tmp_path: Path) -
     assert report["by_purpose"]["chunk_embedding"]["calls"] == 1
 
 
+def test_run_report_reads_live_graph_run_artifacts_before_batch_finalize(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SUNSHINE_REVIEW_DB_PATH", str(tmp_path / "review.sqlite"))
+    output_dir = tmp_path / "live-run"
+    first_run_dir = output_dir / "graph-runs" / "00001"
+    second_run_dir = output_dir / "graph-runs" / "00002"
+    first_run_dir.mkdir(parents=True)
+    second_run_dir.mkdir(parents=True)
+    accepted = {
+        "sample_path": str(tmp_path / "accepted.pdf"),
+        "source_path": "/source/accepted.pdf",
+        "relative_path": "Accepted/accepted.pdf",
+        "route_status": "route_candidate",
+        "final_class": "document",
+        "extraction_strategy": "text_extraction",
+        "extraction_status": "extracted",
+        "quality": "ok",
+        "top_tag_candidate": "meeting_records",
+        "secondary_tags": ["meeting_minutes"],
+        "tag_confidence": 0.96,
+        "placement_status": "ready",
+    }
+    review_required = {
+        "sample_path": str(tmp_path / "review.pdf"),
+        "source_path": "/source/review.pdf",
+        "relative_path": "Review/review.pdf",
+        "route_status": "review_ocr_quality",
+        "review_reason": "ocr_quality_not_trusted",
+        "final_class": "scanned_document",
+        "extraction_strategy": "ocr_page_level",
+        "extraction_status": "extracted",
+        "quality": "poor",
+        "top_tag_candidate": "scrapbooks",
+        "secondary_tags": ["scrapbook_page"],
+        "tag_confidence": 0.64,
+        "placement_status": "needs_review",
+        "warnings": ["ocr_fallback_used:openai:gpt-4.1-mini"],
+    }
+    (first_run_dir / "sample-pipeline-results.jsonl").write_text(json.dumps(accepted) + "\n", encoding="utf-8")
+    (second_run_dir / "sample-pipeline-results.jsonl").write_text(json.dumps(review_required) + "\n", encoding="utf-8")
+    (second_run_dir / "sample-review-queue.jsonl").write_text(json.dumps(review_required) + "\n", encoding="utf-8")
+    (second_run_dir / "sample-ocr-documents.jsonl").write_text(
+        json.dumps({**review_required, "total_text_length": 42, "mean_confidence": 52.0}) + "\n",
+        encoding="utf-8",
+    )
+    (second_run_dir / "sample-ocr-pages.jsonl").write_text(
+        json.dumps({**review_required, "page_number": 1, "ocr_status": "ok"}) + "\n",
+        encoding="utf-8",
+    )
+    (second_run_dir / "sample-extraction-results.jsonl").write_text(
+        json.dumps({**review_required, "text": "Live OCR text snippet."}) + "\n",
+        encoding="utf-8",
+    )
+    (second_run_dir / "sample-model-usage.jsonl").write_text(
+        json.dumps(
+            {
+                "source_path": "/source/review.pdf",
+                "relative_path": "Review/review.pdf",
+                "purpose": "ocr_fallback",
+                "provider": "openai",
+                "model": "gpt-4.1-mini",
+                "status": "ok",
+                "cost_basis": "external",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    client = TestClient(app)
+    run = client.post(
+        "/admin/runs",
+        json={"preset_key": "qa_samples_fast", "input_root": str(tmp_path / "input"), "output_dir": str(output_dir), "start": False},
+    )
+    report = client.get(f"/admin/runs/{run.json()['id']}/report")
+
+    assert report.status_code == 200
+    payload = report.json()
+    assert payload["progress"]["summary"]["processed_count"] == 2
+    assert payload["status_buckets"]["accepted"] == 1
+    assert payload["status_buckets"]["review_required"] == 1
+    assert payload["review_queue"]["count"] == 1
+    assert payload["ocr"]["document_count"] == 1
+    assert payload["ocr"]["page_count"] == 1
+    assert payload["extraction"]["count"] == 1
+    assert payload["model_usage"]["summary"]["total_calls"] == 1
+    assert payload["model_usage"]["summary"]["external_calls"] == 1
+    assert payload["distributions"]["primary_tag"]["meeting_records"] == 1
+    assert payload["distributions"]["primary_tag"]["scrapbooks"] == 1
+
+
 def test_delete_run_removes_run_owned_dashboard_rows_and_artifacts(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SUNSHINE_REVIEW_DB_PATH", str(tmp_path / "review.sqlite"))
     output_dir = tmp_path / "dashboard-runs" / "delete-me"
