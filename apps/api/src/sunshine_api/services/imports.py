@@ -65,6 +65,27 @@ def delete_postgres_pipeline_run_if_configured(*, run_key: str) -> dict[str, Any
         }
 
 
+def import_provider_benchmark_output_to_postgres(
+    output_dir: str | Path,
+    *,
+    benchmark_key: str | None = None,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> dict[str, Any]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.import_provider_benchmark_output(output_dir, benchmark_key=benchmark_key)
+
+
+def list_postgres_provider_benchmark_runs(
+    *,
+    limit: int = 50,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> list[dict[str, Any]]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.list_provider_benchmark_runs(limit=limit)
+
+
 def postgres_runtime_summary(
     *,
     database_url: str | None = None,
@@ -407,6 +428,7 @@ __all__ = [
     "add_postgres_file_result_to_review",
     "import_langgraph_output_to_postgres",
     "import_langgraph_output_to_postgres_if_configured",
+    "import_provider_benchmark_output_to_postgres",
     "delete_postgres_pipeline_run_if_configured",
     "delete_postgres_golden_label",
     "export_postgres_golden_labels_sqlite",
@@ -419,6 +441,7 @@ __all__ = [
     "get_postgres_run_report",
     "list_postgres_golden_labels",
     "list_postgres_pipeline_runs",
+    "list_postgres_provider_benchmark_runs",
     "list_postgres_review_items",
     "list_postgres_run_events",
     "postgres_golden_label_summary",

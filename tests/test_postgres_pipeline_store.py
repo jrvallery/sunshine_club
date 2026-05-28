@@ -117,6 +117,68 @@ def test_postgres_import_service_wraps_store(tmp_path: Path) -> None:
     assert connection.committed is True
 
 
+def test_postgres_pipeline_store_imports_provider_benchmark_artifacts(tmp_path: Path) -> None:
+    output_dir = tmp_path / "provider-benchmark"
+    output_dir.mkdir()
+    _write_jsonl(
+        output_dir / "provider-benchmark-results.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "sample_category": "scanned_pdf",
+                "sample_label": "A",
+                "provider": "docling",
+                "status": "extracted",
+                "quality": "ok",
+                "requires_review": False,
+                "seconds": 12.5,
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-parser-results.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "sample_category": "scanned_pdf",
+                "sample_label": "A",
+                "provider": "docling",
+                "status": "extracted",
+                "quality": "ok",
+                "requires_review": False,
+                "seconds": 12.5,
+                "text_length": 1234,
+                "page_count": 4,
+            }
+        ],
+    )
+    _write_jsonl(output_dir / "provider-benchmark-recommendations.jsonl", [{"provider": "docling", "recommendation": "candidate", "average_seconds": 12.5}])
+    (output_dir / "provider-benchmark-summary.json").write_text(json.dumps({"result_count": 1, "partial": False}), encoding="utf-8")
+    (output_dir / "artifact-manifest.json").write_text(json.dumps({"artifacts": [{"name": "provider-benchmark-results.jsonl"}]}), encoding="utf-8")
+    connection = _FakeConnection()
+    store = PostgresPipelineStore("postgresql://local/test", connect_factory=lambda _url: connection)
+
+    result = store.import_provider_benchmark_output(output_dir, benchmark_key="benchmark-1")
+
+    assert result["benchmark_run_id"] == "00000000-0000-0000-0000-000000000123"
+    assert result["benchmark_key"] == "benchmark-1"
+    assert result["status"] == "completed"
+    assert result["partial"] is False
+    assert result["imported"] == {
+        "provider_benchmark_results": 1,
+        "provider_benchmark_parser_results": 1,
+        "provider_benchmark_recommendations": 1,
+    }
+    executed_sql = "\n".join(query for query, _params in connection.executed)
+    assert "insert into provider_benchmark_runs" in executed_sql
+    assert "insert into provider_benchmark_results" in executed_sql
+    assert "insert into provider_benchmark_parser_results" in executed_sql
+    assert "insert into provider_benchmark_recommendations" in executed_sql
+    assert connection.committed is True
+
+
 def test_postgres_pipeline_store_reports_runtime_summary() -> None:
     class FakeConnection:
         def __init__(self) -> None:

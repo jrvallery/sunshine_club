@@ -120,6 +120,9 @@ def _migration_status() -> dict[str, Any]:
         "0001_initial.sql",
         "0002_pipeline_runtime.sql",
         "0003_pipeline_chunks_embeddings.sql",
+        "0004_golden_labels_v2.sql",
+        "0005_pipeline_run_events_indexes.sql",
+        "0006_provider_benchmarks.sql",
     ]
     return {
         "migration_dir": str(migration_dir),

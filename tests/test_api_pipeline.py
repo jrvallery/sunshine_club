@@ -334,6 +334,41 @@ def test_provider_benchmark_api_can_start_background_run(tmp_path: Path, monkeyp
     assert called.wait(timeout=2)
 
 
+def test_provider_benchmark_postgres_import_and_list_wrap_services(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_import(output_dir: str, *, benchmark_key: str | None = None) -> dict[str, Any]:
+        captured["output_dir"] = output_dir
+        captured["benchmark_key"] = benchmark_key
+        return {
+            "benchmark_run_id": "benchmark-id",
+            "benchmark_key": benchmark_key,
+            "output_dir": output_dir,
+            "status": "completed",
+            "partial": False,
+            "imported": {"provider_benchmark_results": 1},
+        }
+
+    def fake_list(*, limit: int = 50) -> list[dict[str, Any]]:
+        captured["limit"] = limit
+        return [{"benchmark_key": "benchmark-1", "result_count": 1}]
+
+    monkeypatch.setattr("sunshine_api.routers.semantic.import_provider_benchmark_output_to_postgres", fake_import)
+    monkeypatch.setattr("sunshine_api.routers.semantic.list_postgres_provider_benchmark_runs", fake_list)
+
+    imported = TestClient(app).post(
+        "/admin/provider-benchmarks/import-postgres",
+        json={"output_dir": "/tmp/provider-benchmark", "benchmark_key": "benchmark-1"},
+    )
+    listed = TestClient(app).get("/admin/provider-benchmarks/postgres?limit=7")
+
+    assert imported.status_code == 200
+    assert imported.json()["benchmark_run_id"] == "benchmark-id"
+    assert listed.status_code == 200
+    assert listed.json()["runs"][0]["benchmark_key"] == "benchmark-1"
+    assert captured == {"output_dir": "/tmp/provider-benchmark", "benchmark_key": "benchmark-1", "limit": 7}
+
+
 def test_review_items_can_read_postgres_v2_source(monkeypatch) -> None:
     rows = [
         {

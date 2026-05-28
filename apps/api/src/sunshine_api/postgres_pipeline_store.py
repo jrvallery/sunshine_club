@@ -230,6 +230,84 @@ class PostgresPipelineStore:
         finally:
             connection.close()
 
+    def import_provider_benchmark_output(
+        self,
+        output_dir: str | Path,
+        *,
+        benchmark_key: str | None = None,
+    ) -> dict[str, Any]:
+        output_path = Path(output_dir)
+        if not output_path.exists():
+            raise FileNotFoundError(f"Provider benchmark output directory not found: {output_path}")
+        results = _read_jsonl(output_path / "provider-benchmark-results.jsonl")
+        parser_results = _read_jsonl(output_path / "sample-parser-results.jsonl")
+        recommendations = _read_jsonl(output_path / "provider-benchmark-recommendations.jsonl")
+        summary = _read_json(output_path / "provider-benchmark-summary.json")
+        artifact_manifest = _read_json(output_path / "artifact-manifest.json")
+        background_error = _read_json(output_path / "provider-benchmark-background-error.json")
+        if not any((results, parser_results, recommendations, summary, background_error)):
+            raise FileNotFoundError(f"No provider benchmark artifacts found in {output_path}")
+        resolved_key = benchmark_key or output_path.name
+        partial = not bool(summary)
+        status = "failed" if background_error else ("partial" if partial else "completed")
+        connection = self._connect_factory(self.database_url)
+        try:
+            run_id = self._upsert_provider_benchmark_run(
+                connection,
+                benchmark_key=resolved_key,
+                output_dir=output_path,
+                status=status,
+                partial=partial,
+                summary=summary or _provider_benchmark_partial_summary(results, parser_results, recommendations),
+                artifact_manifest=artifact_manifest,
+                background_error=background_error,
+            )
+            counts = {
+                "provider_benchmark_results": self._import_provider_benchmark_results(connection, run_id, results),
+                "provider_benchmark_parser_results": self._import_provider_benchmark_parser_results(connection, run_id, parser_results),
+                "provider_benchmark_recommendations": self._import_provider_benchmark_recommendations(connection, run_id, recommendations),
+            }
+            connection.commit()
+        finally:
+            connection.close()
+        return {
+            "benchmark_run_id": run_id,
+            "benchmark_key": resolved_key,
+            "output_dir": str(output_path),
+            "status": status,
+            "partial": partial,
+            "imported": counts,
+        }
+
+    def list_provider_benchmark_runs(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        connection = self._connect_factory(self.database_url)
+        try:
+            rows = connection.execute(
+                """
+                select
+                    pbr.id,
+                    pbr.benchmark_key,
+                    pbr.output_dir,
+                    pbr.status,
+                    pbr.partial,
+                    pbr.summary,
+                    pbr.artifact_manifest,
+                    pbr.background_error,
+                    pbr.created_at,
+                    pbr.updated_at,
+                    (select count(*) from provider_benchmark_results r where r.benchmark_run_id = pbr.id) as result_count,
+                    (select count(*) from provider_benchmark_parser_results r where r.benchmark_run_id = pbr.id) as parser_result_count,
+                    (select count(*) from provider_benchmark_recommendations r where r.benchmark_run_id = pbr.id) as recommendation_count
+                from provider_benchmark_runs pbr
+                order by pbr.updated_at desc, pbr.created_at desc
+                limit %s
+                """,
+                (max(1, min(int(limit), 200)),),
+            ).fetchall()
+            return [_json_safe_row(_row_to_dict(row)) for row in rows]
+        finally:
+            connection.close()
+
     def list_review_items(self, *, run_key: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
         connection = self._connect_factory(self.database_url)
         try:
@@ -1319,6 +1397,45 @@ class PostgresPipelineStore:
         ).fetchone()
         return str(row[0] if isinstance(row, tuple) else row["id"])
 
+    def _upsert_provider_benchmark_run(
+        self,
+        connection: PostgresConnection,
+        *,
+        benchmark_key: str,
+        output_dir: Path,
+        status: str,
+        partial: bool,
+        summary: dict[str, Any],
+        artifact_manifest: dict[str, Any],
+        background_error: dict[str, Any],
+    ) -> str:
+        row = connection.execute(
+            """
+            insert into provider_benchmark_runs (
+                benchmark_key, output_dir, status, partial, summary, artifact_manifest, background_error
+            ) values (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb)
+            on conflict (benchmark_key) do update set
+                output_dir = excluded.output_dir,
+                status = excluded.status,
+                partial = excluded.partial,
+                summary = excluded.summary,
+                artifact_manifest = excluded.artifact_manifest,
+                background_error = excluded.background_error,
+                updated_at = now()
+            returning id
+            """,
+            (
+                benchmark_key,
+                str(output_dir),
+                status,
+                partial,
+                json.dumps(summary, sort_keys=True),
+                json.dumps(artifact_manifest or {}, sort_keys=True),
+                json.dumps(background_error or {}, sort_keys=True),
+            ),
+        ).fetchone()
+        return str(row[0] if isinstance(row, tuple) else row["id"])
+
     def _import_results(self, connection: PostgresConnection, run_id: str, output_path: Path) -> int:
         rows = _read_jsonl(output_path / "sample-pipeline-results.jsonl")
         connection.execute("delete from pipeline_results where run_id = %s", (run_id,))
@@ -1436,6 +1553,80 @@ class PostgresPipelineStore:
                     row.get("message") or row.get("summary"),
                     json.dumps(payload, sort_keys=True),
                     row.get("timestamp"),
+                ),
+            )
+        return len(rows)
+
+    def _import_provider_benchmark_results(self, connection: PostgresConnection, benchmark_run_id: str, rows: list[dict[str, Any]]) -> int:
+        connection.execute("delete from provider_benchmark_results where benchmark_run_id = %s", (benchmark_run_id,))
+        for row in rows:
+            connection.execute(
+                """
+                insert into provider_benchmark_results (
+                    benchmark_run_id, source_path, relative_path, sample_category, sample_label,
+                    provider, status, quality, requires_review, seconds, result
+                ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                """,
+                (
+                    benchmark_run_id,
+                    row.get("source_path"),
+                    row.get("relative_path"),
+                    row.get("sample_category"),
+                    row.get("sample_label"),
+                    row.get("provider") or "unknown",
+                    row.get("status") or "unknown",
+                    row.get("quality"),
+                    row.get("requires_review"),
+                    row.get("seconds"),
+                    json.dumps(row, sort_keys=True),
+                ),
+            )
+        return len(rows)
+
+    def _import_provider_benchmark_parser_results(self, connection: PostgresConnection, benchmark_run_id: str, rows: list[dict[str, Any]]) -> int:
+        connection.execute("delete from provider_benchmark_parser_results where benchmark_run_id = %s", (benchmark_run_id,))
+        for row in rows:
+            connection.execute(
+                """
+                insert into provider_benchmark_parser_results (
+                    benchmark_run_id, source_path, relative_path, sample_category, sample_label,
+                    provider, status, quality, requires_review, seconds, text_length, page_count, result
+                ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                """,
+                (
+                    benchmark_run_id,
+                    row.get("source_path"),
+                    row.get("relative_path"),
+                    row.get("sample_category"),
+                    row.get("sample_label"),
+                    row.get("provider") or row.get("parser_provider") or "unknown",
+                    row.get("status") or "unknown",
+                    row.get("quality"),
+                    row.get("requires_review"),
+                    row.get("seconds"),
+                    row.get("text_length"),
+                    row.get("page_count"),
+                    json.dumps(row, sort_keys=True),
+                ),
+            )
+        return len(rows)
+
+    def _import_provider_benchmark_recommendations(self, connection: PostgresConnection, benchmark_run_id: str, rows: list[dict[str, Any]]) -> int:
+        connection.execute("delete from provider_benchmark_recommendations where benchmark_run_id = %s", (benchmark_run_id,))
+        for row in rows:
+            connection.execute(
+                """
+                insert into provider_benchmark_recommendations (
+                    benchmark_run_id, provider, recommendation, status, average_seconds, result
+                ) values (%s, %s, %s, %s, %s, %s::jsonb)
+                """,
+                (
+                    benchmark_run_id,
+                    row.get("provider") or "unknown",
+                    row.get("recommendation"),
+                    row.get("status"),
+                    row.get("average_seconds") or row.get("avg_seconds"),
+                    json.dumps(row, sort_keys=True),
                 ),
             )
         return len(rows)
@@ -1614,6 +1805,23 @@ def _read_json(path: Path) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {"error": "invalid_json", "path": str(path)}
     return value if isinstance(value, dict) else {"value": value}
+
+
+def _provider_benchmark_partial_summary(
+    results: list[dict[str, Any]],
+    parser_results: list[dict[str, Any]],
+    recommendations: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "partial": True,
+        "result_count": len(results),
+        "parser_result_count": len(parser_results),
+        "recommendation_count": len(recommendations),
+        "by_provider": _count_values(results, "provider"),
+        "by_status": _count_values(results, "status"),
+        "by_quality": _count_values(results, "quality"),
+        "sample_category": _count_values(results, "sample_category"),
+    }
 
 
 def _provider_summary(model_usage_rows: list[dict[str, Any]], provider_attempt_rows: list[dict[str, Any]], indexing_rows: list[dict[str, Any]]) -> dict[str, Any]:

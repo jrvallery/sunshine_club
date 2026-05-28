@@ -158,3 +158,8 @@ class ProviderBenchmarkRequest(BaseModel):
     sample_limit: int | None = None
     max_average_seconds: float | None = 30.0
     background: bool = False
+
+
+class ProviderBenchmarkImportRequest(BaseModel):
+    output_dir: str
+    benchmark_key: str | None = None

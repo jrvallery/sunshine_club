@@ -14,7 +14,11 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 
 from sunshine_api.dependencies import review_store
-from sunshine_api.services.imports import export_postgres_golden_labels_sqlite
+from sunshine_api.services.imports import (
+    export_postgres_golden_labels_sqlite,
+    import_provider_benchmark_output_to_postgres,
+    list_postgres_provider_benchmark_runs,
+)
 from sunshine_api.schemas import (
     DocumentPipelineRunRequest,
     DocumentPipelineRunResponse,
@@ -27,6 +31,7 @@ from sunshine_api.schemas import (
     RunStartRequest,
     PipelineEvalImportRequest,
     PipelineEvalRequest,
+    ProviderBenchmarkImportRequest,
     ProviderBenchmarkRequest,
     QdrantRebuildRequest,
     SemanticEvalRequest,
@@ -273,6 +278,26 @@ def provider_benchmark_latest(output_dir: str) -> dict[str, Any]:
         "artifact_manifest": _read_optional_json(manifest_path),
         "background_error": _read_optional_json(background_error_path),
     }
+
+
+@router.post("/admin/provider-benchmarks/import-postgres")
+def provider_benchmark_import_postgres(request: ProviderBenchmarkImportRequest) -> dict[str, Any]:
+    try:
+        result = import_provider_benchmark_output_to_postgres(request.output_dir, benchmark_key=request.benchmark_key)
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"ok": True, **result}
+
+
+@router.get("/admin/provider-benchmarks/postgres")
+def provider_benchmark_postgres_runs(limit: int = 50) -> dict[str, Any]:
+    try:
+        runs = list_postgres_provider_benchmark_runs(limit=limit)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"ok": True, "count": len(runs), "runs": runs}
 
 
 def _pipeline_eval_comparison(
