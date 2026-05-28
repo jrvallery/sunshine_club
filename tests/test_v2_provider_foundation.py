@@ -7,8 +7,11 @@ import pytest
 from pypdf import PdfWriter
 
 from sunshine_extraction.embeddings import PlaceholderEmbeddingProvider
+from sunshine_extraction.domain.artifacts import ArtifactManifestEntry
 from sunshine_extraction.domain.chunks import chunk_row
 from sunshine_extraction.domain.model_usage import ModelUsageRow, cost_basis
+from sunshine_extraction.domain.tags import tag_candidate_row
+from sunshine_extraction.domain.taxonomy import TaxonomyOptions
 from sunshine_extraction.providers.probe import NativeFileProbeProvider
 from sunshine_extraction.providers.chunking import CurrentChunkingProvider
 from sunshine_extraction.providers.chunking.legacy import chunk_content as legacy_chunk_content
@@ -19,6 +22,7 @@ from sunshine_extraction.providers.retrieval import CurrentSemanticRetrievalProv
 from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider
 from sunshine_extraction.domain.documents import IMAGE_EXTENSIONS, SPREADSHEET_EXTENSIONS, TEXT_EXTENSIONS, SampleFile
 from sunshine_extraction.services.artifacts.writers import extraction_result_row, sample_input_row, write_pipeline_result
+from sunshine_extraction.services.artifact_manifest import build_artifact_manifest
 from sunshine_extraction.services.provider_policy import assert_local_provider
 from sunshine_extraction.services.confidence import calibrate_confidence, confidence_calibration_row
 from sunshine_extraction.services.extraction import ocr_executor_from_env
@@ -201,6 +205,52 @@ def test_model_usage_domain_contract_tracks_cost_basis() -> None:
     assert row["cost_basis"] == "local"
     assert cost_basis("openai") == "external"
     assert cost_basis("placeholder") == "placeholder"
+
+
+def test_taxonomy_and_tag_domain_contracts_are_service_compatible() -> None:
+    taxonomy = TaxonomyOptions(
+        primary_tags=["meeting_records"],
+        secondary_tags=["minutes"],
+        primary_definitions={"meeting_records": "Meeting minutes and agendas."},
+    )
+    candidate = tag_candidate_row(
+        source_path="/source/minutes.pdf",
+        relative_path="minutes.pdf",
+        tag=taxonomy.primary_tags[0],
+        confidence=0.91,
+        evidence=["matched:minutes"],
+        secondary_tags=taxonomy.secondary_tags,
+        assignment_source="deterministic",
+    )
+
+    assert candidate["tag"] == "meeting_records"
+    assert candidate["secondary_tags"] == ["minutes"]
+    assert "requires_review" not in candidate
+
+
+def test_artifact_manifest_domain_contract_preserves_optional_note(tmp_path: Path) -> None:
+    output_dir = tmp_path / "run"
+    output_dir.mkdir()
+    (output_dir / "sample-route-decisions.jsonl").write_text('{"route_status":"route_candidate"}\n', encoding="utf-8")
+
+    manifest = build_artifact_manifest(output_dir, expected_names=["missing.jsonl"], run_id="run-1", generated_at="2026-05-28T00:00:00+00:00")
+    manifest_by_name = {row["name"]: row for row in manifest["artifacts"]}
+    standalone = ArtifactManifestEntry(
+        name="artifact-manifest.json",
+        path=str(output_dir / "artifact-manifest.json"),
+        kind="json",
+        exists=True,
+        size_bytes=1,
+        modified_at=None,
+        row_count=None,
+        sha256=None,
+        note="self_referential_manifest",
+    ).as_row()
+
+    assert manifest["run_id"] == "run-1"
+    assert manifest_by_name["sample-route-decisions.jsonl"]["row_count"] == 1
+    assert manifest_by_name["missing.jsonl"]["exists"] is False
+    assert standalone["note"] == "self_referential_manifest"
 
 
 def test_current_chunk_embedding_provider_wraps_existing_behavior() -> None:

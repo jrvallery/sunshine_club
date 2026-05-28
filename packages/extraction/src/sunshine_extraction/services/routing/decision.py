@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from sunshine_extraction.domain.routing import RouteDecision
 from sunshine_extraction.services.content import SampleFile
 
 
@@ -93,16 +94,16 @@ def route_decision_row(
 ) -> dict[str, Any]:
     route_status = str(route.get("route_status") or "unknown")
     review_reason = route.get("review_reason")
-    return {
-        "source_path": sample.source_path,
-        "relative_path": sample.relative_path,
-        "sample_path": str(sample.sample_path),
-        "route_status": route_status,
-        "review_reason": review_reason,
-        "priority": _priority(route_status, review_reason),
-        "review_stage": _review_stage(route_status, review_reason),
-        "accepted": route_status == "route_candidate",
-        "evidence": _route_evidence(
+    return RouteDecision(
+        source_path=sample.source_path,
+        relative_path=sample.relative_path,
+        sample_path=str(sample.sample_path),
+        route_status=route_status,
+        review_reason=review_reason,
+        priority=_priority(route_status, review_reason),
+        review_stage=_review_stage(route_status, review_reason),
+        accepted=route_status == "route_candidate",
+        evidence=_route_evidence(
             route=route,
             tag_candidates=tag_candidates,
             extraction_quality=extraction_quality,
@@ -112,7 +113,7 @@ def route_decision_row(
             embeddings=embeddings,
             warnings=warnings,
         ),
-        "metadata": {
+        metadata={
             "quality": extraction_quality.get("quality"),
             "strategy": extraction_plan.get("strategy"),
             "top_tag": (tag_candidates or [{}])[0].get("tag") if tag_candidates else None,
@@ -120,7 +121,7 @@ def route_decision_row(
             "placement_status": placement_proposal.get("proposal", {}).get("placement_status"),
             "embedding_statuses": sorted({row.get("embedding_status") for row in embeddings if row.get("embedding_status")}),
         },
-    }
+    ).as_row()
 
 
 def _priority(route_status: str, review_reason: object) -> str:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from sunshine_extraction.domain.tags import tag_candidate_row
 
 def combine_tag_candidates(
     deterministic_candidates: list[dict[str, Any]],
@@ -31,15 +32,15 @@ def combine_tag_candidates(
             break
     if not matched:
         combined.append(
-            {
-                "source_path": deterministic_candidates[0]["source_path"] if deterministic_candidates else None,
-                "relative_path": deterministic_candidates[0]["relative_path"] if deterministic_candidates else None,
-                "tag": primary_tag,
-                "confidence": min(0.82, llm_confidence * 0.85),
-                "evidence": ["llm_primary_without_deterministic_agreement", *[f"llm:{item}" for item in llm_inspection.get("evidence", [])[:3]]],
-                "secondary_tags": llm_inspection.get("secondary_tags", []),
-                "assignment_source": "llm",
-            }
+            tag_candidate_row(
+                source_path=deterministic_candidates[0]["source_path"] if deterministic_candidates else None,
+                relative_path=deterministic_candidates[0]["relative_path"] if deterministic_candidates else None,
+                tag=primary_tag,
+                confidence=min(0.82, llm_confidence * 0.85),
+                evidence=["llm_primary_without_deterministic_agreement", *[f"llm:{item}" for item in llm_inspection.get("evidence", [])[:3]]],
+                secondary_tags=llm_inspection.get("secondary_tags", []),
+                assignment_source="llm",
+            )
         )
     combined.sort(key=lambda row: row["confidence"], reverse=True)
     return apply_semantic_example_adjustments(combined, semantic_examples or [])[:5]
@@ -74,15 +75,15 @@ def apply_semantic_example_adjustments(candidates: list[dict[str, Any]], semanti
         score = float(example.get("score") or 0)
         if example_tag and example_tag not in existing_tags and score >= 0.7:
             adjusted.append(
-                {
-                    "source_path": None,
-                    "relative_path": None,
-                    "tag": example_tag,
-                    "confidence": min(0.78, score * 0.72),
-                    "evidence": [f"semantic_example_only:{example_tag}:{score:.3f}", str(example.get("relative_path") or "")],
-                    "secondary_tags": example.get("correct_secondary_tags", []),
-                    "assignment_source": "semantic",
-                }
+                tag_candidate_row(
+                    source_path=None,
+                    relative_path=None,
+                    tag=example_tag,
+                    confidence=min(0.78, score * 0.72),
+                    evidence=[f"semantic_example_only:{example_tag}:{score:.3f}", str(example.get("relative_path") or "")],
+                    secondary_tags=example.get("correct_secondary_tags", []),
+                    assignment_source="semantic",
+                )
             )
             existing_tags.add(example_tag)
     adjusted.sort(key=lambda row: row["confidence"], reverse=True)

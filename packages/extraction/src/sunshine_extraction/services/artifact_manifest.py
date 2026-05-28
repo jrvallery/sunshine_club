@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from sunshine_extraction.domain.artifacts import ArtifactManifest, ArtifactManifestEntry
+
 MANIFEST_NAME = "artifact-manifest.json"
 
 
@@ -46,17 +48,17 @@ def build_artifact_manifest(
     names = _artifact_names(output_path, expected_names)
     artifacts = [_artifact_entry(output_path, name) for name in names]
     existing = [artifact for artifact in artifacts if artifact["exists"]]
-    return {
-        "schema_version": 1,
-        "generated_at": generated,
-        "run_id": run_id,
-        "output_dir": str(output_path),
-        "artifact_count": len(artifacts),
-        "existing_artifact_count": len(existing),
-        "missing_artifact_count": len(artifacts) - len(existing),
-        "total_size_bytes": sum(int(artifact.get("size_bytes") or 0) for artifact in existing),
-        "artifacts": artifacts,
-    }
+    return ArtifactManifest(
+        schema_version=1,
+        generated_at=generated,
+        run_id=run_id,
+        output_dir=str(output_path),
+        artifact_count=len(artifacts),
+        existing_artifact_count=len(existing),
+        missing_artifact_count=len(artifacts) - len(existing),
+        total_size_bytes=sum(int(artifact.get("size_bytes") or 0) for artifact in existing),
+        artifacts=artifacts,
+    ).as_row()
 
 
 def _artifact_names(output_dir: Path, expected_names: list[str] | tuple[str, ...] | None) -> list[str]:
@@ -71,16 +73,16 @@ def _artifact_entry(output_dir: Path, name: str) -> dict[str, Any]:
     path = output_dir / name
     exists = path.exists()
     suffix = path.suffix.lower()
-    entry: dict[str, Any] = {
-        "name": name,
-        "path": str(path),
-        "kind": _artifact_kind(path),
-        "exists": exists,
-        "size_bytes": None,
-        "modified_at": None,
-        "row_count": None,
-        "sha256": None,
-    }
+    entry = ArtifactManifestEntry(
+        name=name,
+        path=str(path),
+        kind=_artifact_kind(path),
+        exists=exists,
+        size_bytes=None,
+        modified_at=None,
+        row_count=None,
+        sha256=None,
+    ).as_row()
     if not exists:
         return entry
 

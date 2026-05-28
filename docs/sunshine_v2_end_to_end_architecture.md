@@ -966,6 +966,7 @@ Current implementation:
 
 - `services/tagging/rules.py` owns the deterministic rule-tagging policy while preserving existing rule behavior.
 - `services/tagging/taxonomy.py` owns taxonomy loading for primary/secondary tag options.
+- `domain/taxonomy.py` defines taxonomy option contracts, and `domain/tags.py` defines normalized tag candidate rows shared by deterministic, semantic, and LLM evidence paths.
 - The graph writes deterministic and final tag candidates through `sample-tag-candidates.jsonl`; the next hardening step is moving the rule table itself out of Python into data/config.
 
 ### 18. `inspect_tags_with_llm`
@@ -1157,6 +1158,7 @@ Current implementation:
 
 - Graph writes `sample-route-decisions.jsonl` from the `route_or_review` node.
 - Rows include route status, review reason, accepted flag, review priority, review stage, evidence, and metadata from quality/tag/placement/embedding state.
+- `domain/routing.py` defines the route-decision row contract used by the routing service.
 - `services/routing/decision.py` owns route resolution and review priority/stage policy; the graph node only passes state into the service and records the returned row.
 - Run reports summarize route decisions by status, priority, and review stage, separate from final result distributions.
 
@@ -1226,6 +1228,7 @@ Current implementation:
 
 - Graph single-file runs and batch runs write `artifact-manifest.json`.
 - `domain/model_usage.py` defines the normalized model-usage row contract and local/external/placeholder cost-basis classification used by graph audit rows.
+- `domain/artifacts.py` defines artifact manifest and manifest-entry contracts used by manifest generation.
 - Manifest rows include artifact path, kind, existence, size, modified time, JSONL row count, and SHA-256 for non-manifest artifacts.
 - `artifact-manifest.json` includes itself with `sha256: null` and `note: self_referential_manifest` because a file cannot truthfully hash itself while embedding that hash.
 - The manifest makes review-critical rows such as `sample-document-segments.jsonl`, `sample-route-decisions.jsonl`, `sample-quality-gates.jsonl`, and `sample-model-usage.jsonl` discoverable from one place.

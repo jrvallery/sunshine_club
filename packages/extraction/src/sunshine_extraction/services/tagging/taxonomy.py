@@ -3,18 +3,11 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from pathlib import Path
 
+from sunshine_extraction.domain.taxonomy import TaxonomyOptions
+
 DEFAULT_TAXONOMY_PATH = Path("docs/Sunshine_Taxonomy_Seed_v0.1_2026-05-25.json")
-
-
-@dataclass(frozen=True)
-class TaxonomyOptions:
-    primary_tags: list[str]
-    secondary_tags: list[str]
-    primary_definitions: dict[str, str]
-
 
 def load_taxonomy_options(path: str | Path) -> TaxonomyOptions:
     taxonomy_path = Path(path)

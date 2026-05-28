@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from sunshine_extraction.domain.tags import tag_candidate_row
 from sunshine_extraction.services.content import SampleFile
 from sunshine_extraction.services.extraction import ExtractionResult
 
@@ -46,15 +47,15 @@ def assign_tag_candidates(sample: SampleFile, corrected: dict[str, Any], plan: d
         matches = [needle for needle in needles if needle in haystack]
         if matches:
             candidates.append(
-                {
-                    "source_path": sample.source_path,
-                    "relative_path": sample.relative_path,
-                    "tag": tag,
-                    "confidence": confidence,
-                    "evidence": [explanation, *[f"matched:{match.strip()}" for match in matches[:3]]],
-                    "secondary_tags": secondary_tags,
-                    "assignment_source": "deterministic",
-                }
+                tag_candidate_row(
+                    source_path=sample.source_path,
+                    relative_path=sample.relative_path,
+                    tag=tag,
+                    confidence=confidence,
+                    evidence=[explanation, *[f"matched:{match.strip()}" for match in matches[:3]]],
+                    secondary_tags=secondary_tags,
+                    assignment_source="deterministic",
+                )
             )
     candidates.sort(key=lambda row: row["confidence"], reverse=True)
     deduped: list[dict[str, Any]] = []
