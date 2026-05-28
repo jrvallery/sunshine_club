@@ -76,6 +76,7 @@ def start_run(request: RunStartRequest) -> dict[str, Any]:
     )
     run = store.create_pipeline_run(
         preset_key=request.preset_key,
+        run_role=request.run_role,
         input_root=input_root,
         output_dir=output_dir,
         command=command,
@@ -220,6 +221,7 @@ def run_report(run_id: int) -> dict[str, Any]:
     summary = _read_run_summary(str(output_dir)) or run.get("summary") or {}
     review_items = store.list_review_items(status="all", run_id=run_id, limit=200)
     training_cycle = _training_cycle_metrics(run, review_items, store.list_golden_labels(limit=10000), comparison)
+    status_buckets = _production_status_buckets(results)
     return {
         "run": run,
         "progress": progress,
@@ -229,8 +231,10 @@ def run_report(run_id: int) -> dict[str, Any]:
             "route_candidate_count": run.get("route_candidate_count") or summary.get("route_candidate_count"),
             "review_required_count": run.get("review_required_count") or summary.get("review_required_count"),
             "failed_count": run.get("failed_count") or summary.get("failed_count"),
+            "status_buckets": status_buckets,
             "summary": summary,
         },
+        "status_buckets": status_buckets,
         "distributions": {
             "route_status": _count_values(results, "route_status"),
             "quality": _count_values(results, "quality"),
@@ -277,6 +281,32 @@ def run_report(run_id: int) -> dict[str, Any]:
         "diff": comparison,
         "training_cycle": training_cycle,
     }
+
+
+def _production_status_buckets(results: list[dict[str, Any]]) -> dict[str, int]:
+    buckets = {"accepted": 0, "review_required": 0, "failed": 0, "deferred": 0}
+    for result in results:
+        route_status = str(result.get("route_status") or "")
+        extraction_status = str(result.get("extraction_status") or "")
+        extraction_strategy = str(result.get("extraction_strategy") or "")
+        quality = str(result.get("quality") or "")
+        if route_status == "route_candidate":
+            buckets["accepted"] += 1
+        elif (
+            "failed" in route_status
+            or "failed" in extraction_status
+            or quality == "failed"
+        ):
+            buckets["failed"] += 1
+        elif (
+            "deferred" in route_status
+            or route_status == "technical_followup"
+            or extraction_strategy == "deferred_technical"
+        ):
+            buckets["deferred"] += 1
+        else:
+            buckets["review_required"] += 1
+    return buckets
 
 
 @router.get("/admin/runs/{run_id}/compare-previous")
@@ -406,6 +436,7 @@ def rerun_failed(run_id: int) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="Run has no command to rerun")
     rerun = store.create_pipeline_run(
         preset_key=f"{run['preset_key']}_rerun_failed",
+        run_role=run.get("run_role") or "test",
         input_root=str(run.get("input_root") or ""),
         output_dir=str(run.get("output_dir") or ""),
         command=command,

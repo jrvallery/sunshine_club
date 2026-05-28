@@ -79,13 +79,54 @@ def test_review_store_imports_langgraph_results_and_records_decision(tmp_path: P
             },
         ],
     )
+    _write_jsonl(
+        output_dir / "sample-model-usage.jsonl",
+        [
+            {
+                "source_path": "/source/b.pdf",
+                "relative_path": "Sunshine/b.pdf",
+                "purpose": "ocr_fallback",
+                "provider": "openai",
+                "model": "gpt-4.1-mini",
+                "status": "ok",
+                "runtime_ms": 900,
+                "total_tokens": 120,
+                "estimated_cost_usd": 0.0042,
+                "cost_basis": "external",
+            },
+            {
+                "source_path": "/source/b.pdf",
+                "relative_path": "Sunshine/b.pdf",
+                "purpose": "tag_inspection",
+                "provider": "cortex",
+                "model": "gemma4-26b",
+                "status": "ok",
+                "runtime_ms": 300,
+                "total_tokens": 80,
+                "cost_basis": "local",
+            },
+        ],
+    )
     store = ReviewStore(tmp_path / "review.sqlite")
     lineage_run = store.create_pipeline_run(
         preset_key="qa_samples_fast",
+        run_role="evaluation",
         input_root="/tmp/input",
         output_dir=str(output_dir),
         command=["python", "-m", "sunshine_extraction.langgraph_pipeline"],
         embedding_provider="openai",
+        enable_llm_tags=True,
+        llm_tag_provider="cortex",
+        ocr_fallback_provider="openai",
+    )
+    assert lineage_run["run_role"] == "evaluation"
+    assert lineage_run["run_metadata"]["run_role"] == "evaluation"
+    baseline_run = store.create_pipeline_run(
+        preset_key="qa_samples_full",
+        input_root="/tmp/qa samples",
+        output_dir="/tmp/dashboard-runs/qa_samples_full",
+        command=["python", "-m", "sunshine_extraction.langgraph_pipeline"],
+        embedding_provider="cortex",
         enable_llm_tags=True,
         llm_tag_provider="cortex",
         ocr_fallback_provider="openai",
@@ -106,16 +147,48 @@ def test_review_store_imports_langgraph_results_and_records_decision(tmp_path: P
         correct_destination_path="01_Governance_Admin/1992-1993",
         correct_placement_year="1992-1993",
         correct_privacy="club_internal",
+        ocr_quality_label="ok",
+        expected_review_required=True,
+        sensitive_record=True,
         review_stage="resolved",
         notes="Looks correct.",
         reviewer="james",
     )
     golden_labels = store.list_golden_labels()
     golden_summary = store.golden_label_summary()
+    eval_record = store.record_pipeline_eval(
+        {
+            "labels_db": str(store.db_path),
+            "output_dir": str(tmp_path / "eval-output"),
+            "total_golden_labels": 1,
+            "evaluated_predictions": 1,
+            "primary_accuracy": 1.0,
+            "content_class_accuracy": 1.0,
+            "secondary_precision": 1.0,
+            "secondary_recall": 1.0,
+            "ocr_quality_accuracy": 1.0,
+            "ocr_acceptable_rate": 1.0,
+            "review_routing_accuracy": 1.0,
+            "review_false_accepts": 0,
+            "embedding_success_rate": 1.0,
+            "semantic_same_family_top5_rate": 1.0,
+            "placement_destination_accuracy": 1.0,
+            "source_file_mutations": 0,
+            "acceptance_gate": {"status": "pass"},
+            "production_readiness": {"status": "ready_for_larger_batch"},
+            "failure_count": 0,
+            "model_usage": {"total_model_usage_rows": 3},
+        }
+    )
+    eval_runs = store.list_pipeline_eval_runs()
     edited_label = store.update_golden_label(
         golden_labels[0]["id"],
         correct_primary_tag="governance_bylaws_policy",
         correct_secondary_tags=["policy"],
+        content_class="document",
+        ocr_quality_label="ok",
+        expected_review_required=False,
+        sensitive_record=False,
         reviewer="james",
         notes="Corrected after audit.",
     )
@@ -139,11 +212,22 @@ def test_review_store_imports_langgraph_results_and_records_decision(tmp_path: P
     assert facets["review_reason"]["ocr_quality_not_trusted"] == 1
     assert review_item["run_id"] == lineage_run["id"]
     assert review_item["run_key"] == lineage_run["run_key"]
+    assert lineage_run["run_role"] == "evaluation"
+    assert baseline_run["run_role"] == "baseline"
+    assert baseline_run["run_metadata"]["run_role"] == "baseline"
     assert review_item["run_preset_key"] == "qa_samples_fast"
     assert review_item["embedding_provider"] == "openai"
     assert review_item["enable_llm_tags"] is True
     assert review_item["llm_tag_provider"] == "cortex"
     assert review_item["ocr_fallback_provider"] == "openai"
+    assert review_item["model_usage_summary"]["scope"] == "file"
+    assert review_item["model_usage_summary"]["total_calls"] == 2
+    assert review_item["model_usage_summary"]["external_calls"] == 1
+    assert review_item["model_usage_summary"]["local_calls"] == 1
+    assert review_item["model_usage_summary"]["total_runtime_ms"] == 1200
+    assert review_item["model_usage_summary"]["total_tokens"] == 200
+    assert review_item["model_usage_summary"]["estimated_external_cost_usd"] == 0.0042
+    assert review_item["model_usage_summary"]["purposes"] == ["ocr_fallback", "tag_inspection"]
     assert sampled_item["secondary_tags"] == ["event_material", "guest_list"]
     assert sampled_item["extraction_text_snippet"] == "Annual Sunshine Tea guest list with names and event notes."
     assert review_item["warnings"] == ["ocr_confidence_below_threshold"]
@@ -157,14 +241,39 @@ def test_review_store_imports_langgraph_results_and_records_decision(tmp_path: P
     assert updated["correct_privacy"] == "club_internal"
     assert updated["review_stage"] == "resolved"
     assert len(golden_labels) == 1
+    assert golden_labels[0]["content_class"] == "scanned_document"
+    assert golden_labels[0]["ocr_quality_label"] == "ok"
+    assert golden_labels[0]["expected_review_required"] is True
+    assert golden_labels[0]["sensitive_record"] is True
+    assert golden_labels[0]["correct_destination_path"] == "01_Governance_Admin/1992-1993"
+    assert golden_labels[0]["correct_placement_year"] == "1992-1993"
+    assert golden_labels[0]["correct_privacy"] == "club_internal"
+    assert edited_label["content_class"] == "document"
     assert edited_label["correct_primary_tag"] == "governance_bylaws_policy"
     assert edited_label["correct_secondary_tags"] == ["policy"]
+    assert edited_label["expected_review_required"] is False
+    assert edited_label["sensitive_record"] is False
     assert edited_label["reviewer"] == "james"
     assert edited_label["notes"] == "Corrected after audit."
     assert deleted_label["deleted"] is True
     assert store.list_golden_labels() == []
     assert golden_summary["total_golden_labels"] == 1
     assert golden_summary["golden_by_primary_tag"]["meeting_records"] == 1
+    assert "meeting_records" in golden_summary["taxonomy_primary_tags"]
+    assert "meeting_records" not in golden_summary["missing_primary_tags"]
+    assert golden_summary["primary_coverage_rate"] is not None
+    assert eval_record["evaluated_predictions"] == 1
+    assert eval_record["primary_accuracy"] == 1.0
+    assert eval_record["ocr_acceptable_rate"] == 1.0
+    assert eval_record["embedding_success_rate"] == 1.0
+    assert eval_record["semantic_same_family_top5_rate"] == 1.0
+    assert eval_record["placement_destination_accuracy"] == 1.0
+    assert eval_record["review_false_accepts"] == 0
+    assert eval_record["source_file_mutations"] == 0
+    assert eval_record["acceptance_gate_status"] == "pass"
+    assert eval_record["production_readiness_status"] == "ready_for_larger_batch"
+    assert eval_record["model_usage"]["total_model_usage_rows"] == 3
+    assert eval_runs[0]["id"] == eval_record["id"]
     assert store.file_path_for_review_item(review_item["id"]) == sample_file
 
     files = store.list_files(q="meeting minutes")

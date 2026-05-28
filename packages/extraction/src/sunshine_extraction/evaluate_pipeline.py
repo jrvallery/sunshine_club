@@ -1,0 +1,1622 @@
+"""Run the document graph against golden labels and emit quality artifacts."""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import hashlib
+import json
+import os
+import sqlite3
+import subprocess
+from collections import Counter
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from sunshine_extraction.embeddings import (
+    EmbeddingConfigurationError,
+    EmbeddingProvider,
+    PlaceholderEmbeddingProvider,
+    provider_from_env,
+)
+from sunshine_extraction.graph.runtime import run_document_graph
+from sunshine_extraction.sample_pipeline import (
+    DEFAULT_TAXONOMY_PATH,
+    LLMTagInspector,
+    OcrExecutor,
+    load_pipeline_env,
+    load_taxonomy_options,
+    llm_tag_inspector_from_env,
+    ocr_executor_from_env,
+)
+from sunshine_extraction.semantic_index import DEFAULT_INDEX_DB, DEFAULT_LABELS_DB
+
+
+DEFAULT_EVAL_OUTPUT_DIR = ".local/pipeline-eval"
+DEFAULT_ACCEPTANCE_THRESHOLDS = {
+    "golden_label_count": 75,
+    "primary_taxonomy_coverage": 1.0,
+    "high_risk_label_min_count": 2,
+    "content_class_accuracy": 0.95,
+    "primary_accuracy": 0.88,
+    "high_risk_primary_accuracy": 0.80,
+    "ocr_quality_accuracy": 0.90,
+    "ocr_acceptable_rate": 0.90,
+    "placement_destination_accuracy": 0.90,
+    "placement_year_accuracy": 0.90,
+    "unsafe_placement_proposal_count": 0,
+    "privacy_accuracy": 1.0,
+    "high_confidence_primary_accuracy": 0.95,
+    "high_confidence_false_accepts": 0,
+    "low_confidence_false_accepts": 0,
+    "low_confidence_accepted_count": 0,
+    "medium_confidence_unexplained_count": 0,
+    "semantic_same_family_top5_rate": 0.80,
+    "llm_structured_output_validity_rate": 1.0,
+    "invalid_primary_tag_count": 0,
+    "tag_evidence_presence_rate": 1.0,
+    "model_usage_required_fields_tracked": 1.0,
+    "model_usage_cost_basis_tracked": 1.0,
+    "external_model_usage_tracked": 1.0,
+    "sensitive_false_accepts": 0,
+    "sensitive_medium_low_confidence_accepts": 0,
+    "source_file_mutations": 0,
+}
+HIGH_RISK_PRIMARY_TAGS = {
+    "meeting_records",
+    "finance_treasurer_records",
+    "donations_receipts_fundraising",
+    "membership_rosters_yearbooks",
+    "dental_program",
+    "senior_smiles",
+    "scholarships",
+    "legal_insurance_compliance",
+}
+
+
+@dataclass(frozen=True)
+class GoldenEvalLabel:
+    id: int
+    source_path: str
+    relative_path: str
+    sample_path: str | None
+    correct_primary_tag: str
+    correct_secondary_tags: list[str]
+    content_class: str | None
+    ocr_quality_label: str | None
+    expected_review_required: bool | None
+    sensitive_record: bool
+    correct_destination_path: str | None
+    correct_placement_year: str | None
+    correct_privacy: str | None
+    reviewer: str | None
+    reviewed_at: str | None
+    notes: str | None
+
+
+def run_golden_pipeline_evaluation(
+    labels_db: str | Path = DEFAULT_LABELS_DB,
+    *,
+    output_dir: str | Path = DEFAULT_EVAL_OUTPUT_DIR,
+    limit: int | None = None,
+    taxonomy_path: str | Path = DEFAULT_TAXONOMY_PATH,
+    embedding_provider: EmbeddingProvider | None = None,
+    embedding_provider_name: str | None = None,
+    llm_tag_inspector: LLMTagInspector | None = None,
+    ocr_executor: OcrExecutor | None = None,
+    ocr_fallback_provider: str | None = None,
+    semantic_index_path: str | Path | None = DEFAULT_INDEX_DB,
+    progress: bool = False,
+) -> dict[str, Any]:
+    """Evaluate the current graph by running it against reviewed golden labels."""
+
+    labels = load_golden_eval_labels(labels_db, limit=limit)
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    graph_runs_dir = output_path / "graph-runs"
+    graph_runs_dir.mkdir(parents=True, exist_ok=True)
+    active_embedding_provider, provider_warnings = _resolve_eval_embedding_provider(embedding_provider, provider_name_override=embedding_provider_name)
+    active_ocr_executor, ocr_warnings = _resolve_eval_ocr_executor(ocr_executor, fallback_provider_override=ocr_fallback_provider)
+    run_metadata = _eval_run_metadata(
+        labels_db=labels_db,
+        output_dir=output_path,
+        limit=limit,
+        taxonomy_path=taxonomy_path,
+        semantic_index_path=semantic_index_path,
+        embedding_provider=active_embedding_provider,
+        llm_tag_inspector=llm_tag_inspector,
+        ocr_executor=active_ocr_executor,
+        warnings=[*provider_warnings, *ocr_warnings],
+    )
+
+    evaluated: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    model_usage_rows: list[dict[str, Any]] = []
+    confusion: dict[str, dict[str, int]] = {}
+    counters: dict[str, Counter[str]] = {
+        "by_route_status": Counter(),
+        "by_quality": Counter(),
+        "by_embedding_status": Counter(),
+        "by_llm_status": Counter(),
+        "by_failure_reason": Counter(),
+    }
+    totals = Counter()
+
+    for index, label in enumerate(labels, start=1):
+        if progress:
+            print(f"[{index}/{len(labels)}] eval {label.relative_path}", flush=True)
+        graph_output_dir = graph_runs_dir / f"{index:05d}"
+        input_path = _label_input_path(label)
+        if input_path is None:
+            row = _missing_file_result(label)
+            evaluated.append(row)
+            failures.append(_failure_row(label, row, "missing_file"))
+            for reason in row["failure_reasons"]:
+                counters["by_failure_reason"][reason] += 1
+            _update_missing_counters(counters)
+            _update_totals(totals, row, label)
+            _record_confusion(confusion, label.correct_primary_tag, None)
+            continue
+
+        source_before = _source_file_snapshot(input_path)
+        graph_result = run_document_graph(
+            input_path,
+            output_dir=graph_output_dir,
+            source_path=label.source_path,
+            relative_path=label.relative_path,
+            taxonomy_path=taxonomy_path,
+            sample_group="golden-eval",
+            sample_number=index,
+            embedding_provider=active_embedding_provider,
+            embedding_failure_mode="review",
+            llm_tag_inspector=llm_tag_inspector,
+            ocr_executor=active_ocr_executor,
+            semantic_index_path=semantic_index_path,
+            progress=progress,
+        )
+        source_after = _source_file_snapshot(input_path)
+        source_mutation = _source_file_mutation(source_before, source_after)
+        final_result = graph_result.get("final_result", {})
+        label_model_usage_rows = _model_usage_with_label(label, graph_result.get("model_usage", []))
+        model_usage_rows.extend(label_model_usage_rows)
+        row = _evaluation_row(label, final_result, graph_output_dir)
+        row["model_usage_summary"] = _per_file_model_usage_summary(label_model_usage_rows)
+        row["failure_reasons"].extend(_model_usage_failure_reasons(row["model_usage_summary"]))
+        row["source_file_mutation"] = source_mutation
+        if source_mutation["mutated"]:
+            row["failure_reasons"].append("source_file_mutated")
+        evaluated.append(row)
+        _record_confusion(confusion, label.correct_primary_tag, row.get("predicted_primary_tag"))
+        _update_eval_counters(counters, final_result)
+        _update_totals(totals, row, label)
+        if row["failure_reasons"]:
+            for reason in row["failure_reasons"]:
+                counters["by_failure_reason"][reason] += 1
+            failures.append(_failure_row(label, row, ";".join(row["failure_reasons"])))
+
+    summary = _summary(
+        labels_db=labels_db,
+        output_dir=output_path,
+        labels=labels,
+        evaluated=evaluated,
+        failures=failures,
+        confusion=confusion,
+        counters=counters,
+        totals=totals,
+        model_usage_rows=model_usage_rows,
+        run_metadata=run_metadata,
+    )
+    failure_groups = _failure_groups(evaluated)
+    summary["failure_groups"] = failure_groups
+    summary["artifacts"]["failure_groups"] = str(output_path / "eval-failure-groups.json")
+    _write_eval_artifacts(output_path, summary, evaluated, confusion, failures, model_usage_rows, failure_groups)
+    return summary
+
+
+def load_golden_eval_labels(labels_db: str | Path, *, limit: int | None = None) -> list[GoldenEvalLabel]:
+    columns = _table_columns(labels_db, "golden_labels")
+    select_columns = [
+        "id",
+        "source_path",
+        "relative_path",
+        "sample_path",
+        "correct_primary_tag",
+        "correct_secondary_tags_json",
+        _optional_column(columns, "content_class"),
+        _optional_column(columns, "ocr_quality_label"),
+        _optional_column(columns, "expected_review_required"),
+        _optional_column(columns, "sensitive_record"),
+        _optional_column(columns, "correct_destination_path"),
+        _optional_column(columns, "correct_placement_year"),
+        _optional_column(columns, "correct_privacy"),
+        _optional_column(columns, "reviewer"),
+        _optional_column(columns, "reviewed_at"),
+        _optional_column(columns, "notes"),
+    ]
+    query = f"""
+        select {", ".join(select_columns)}
+        from golden_labels
+        order by updated_at desc, id desc
+    """
+    params: list[Any] = []
+    if limit is not None:
+        query += " limit ?"
+        params.append(limit)
+    with sqlite3.connect(labels_db) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(query, params).fetchall()
+    labels = []
+    for row in rows:
+        labels.append(
+            GoldenEvalLabel(
+                id=int(row["id"]),
+                source_path=str(row["source_path"]),
+                relative_path=str(row["relative_path"]),
+                sample_path=str(row["sample_path"]) if row["sample_path"] else None,
+                correct_primary_tag=str(row["correct_primary_tag"]),
+                correct_secondary_tags=_json_list(row["correct_secondary_tags_json"]),
+                content_class=_optional_row_text(row, "content_class"),
+                ocr_quality_label=_optional_row_text(row, "ocr_quality_label"),
+                expected_review_required=_optional_row_bool(row, "expected_review_required"),
+                sensitive_record=bool(_optional_row_bool(row, "sensitive_record") or False),
+                correct_destination_path=_optional_row_text(row, "correct_destination_path"),
+                correct_placement_year=_optional_row_text(row, "correct_placement_year"),
+                correct_privacy=_optional_row_text(row, "correct_privacy"),
+                reviewer=_optional_row_text(row, "reviewer"),
+                reviewed_at=_optional_row_text(row, "reviewed_at"),
+                notes=_optional_row_text(row, "notes"),
+            )
+        )
+    return labels
+
+
+def _evaluation_row(label: GoldenEvalLabel, final_result: dict[str, Any], graph_output_dir: Path) -> dict[str, Any]:
+    predicted_primary = final_result.get("top_tag_candidate")
+    correct_secondary = set(label.correct_secondary_tags)
+    predicted_secondary = set(_string_list(final_result.get("secondary_tags", [])))
+    semantic_examples = _semantic_examples(final_result.get("semantic_examples", []))
+    semantic_same_family_top5_count = sum(1 for example in semantic_examples[:5] if example.get("correct_primary_tag") == label.correct_primary_tag)
+    semantic_top1_primary_tag = semantic_examples[0].get("correct_primary_tag") if semantic_examples else None
+    semantic_retrieval_quality = _semantic_retrieval_quality(
+        semantic_examples,
+        correct_primary_tag=label.correct_primary_tag,
+        predicted_primary_tag=predicted_primary,
+    )
+    route_status = str(final_result.get("route_status") or "unknown")
+    review_required = route_status != "route_candidate"
+    primary_correct = predicted_primary == label.correct_primary_tag
+    content_class_correct = None
+    if label.content_class:
+        content_class_correct = final_result.get("final_class") == label.content_class
+    review_routing_correct = None
+    if label.expected_review_required is not None:
+        review_routing_correct = review_required == label.expected_review_required
+    warnings = final_result.get("warnings", [])
+    ocr_fallback_used = _has_warning_prefix(warnings, "ocr_fallback_used:")
+    ocr_fallback_failed = _has_any_warning_prefix(
+        warnings,
+        [
+            "ocr_fallback_failed:",
+            "ocr_fallback_render_failed:",
+            "ocr_fallback_page_failed:",
+        ],
+    )
+    llm_status = final_result.get("llm_status")
+    llm_structured_output_valid = True if llm_status == "inspected" else False if llm_status in {"invalid", "failed", "inspected_with_invalid_fields"} else None
+    placement_destination_correct = None
+    if label.correct_destination_path:
+        placement_destination_correct = final_result.get("destination_path") == label.correct_destination_path
+    placement_year_correct = None
+    if label.correct_placement_year:
+        placement_year_correct = str(final_result.get("placement", {}).get("placement_year_label") or "") == label.correct_placement_year
+    unsafe_placement_proposal = (
+        review_required
+        and final_result.get("placement_status") == "resolved"
+        and bool(final_result.get("destination_path"))
+        and not str(final_result.get("destination_path") or "").startswith("90_Intake_Needs_Review")
+    )
+    privacy_correct = None
+    if label.correct_privacy:
+        privacy_correct = final_result.get("default_privacy") == label.correct_privacy
+    confidence_calibration = final_result.get("confidence_calibration") if isinstance(final_result.get("confidence_calibration"), dict) else {}
+    confidence_calibration_factors = _string_list(
+        confidence_calibration.get("factors")
+        or final_result.get("confidence_calibration_factors")
+        or []
+    )
+    uncertainty_explanation = (
+        confidence_calibration.get("review_reason")
+        or confidence_calibration.get("calibrated_review_reason")
+        or final_result.get("calibrated_review_reason")
+        or final_result.get("review_reason")
+    )
+    confidence_bucket = _confidence_bucket(final_result.get("tag_confidence"))
+    medium_confidence_uncertainty_explained = None
+    if confidence_bucket == "medium":
+        medium_confidence_uncertainty_explained = bool(confidence_calibration_factors or str(uncertainty_explanation or "").strip())
+
+    failure_reasons = []
+    if not primary_correct:
+        failure_reasons.append("primary_tag_mismatch")
+    if content_class_correct is False:
+        failure_reasons.append("content_class_mismatch")
+    if review_routing_correct is False:
+        failure_reasons.append("review_routing_mismatch")
+    if label.sensitive_record and label.expected_review_required is True and not review_required:
+        failure_reasons.append("sensitive_false_accept")
+    if label.sensitive_record and not review_required and confidence_bucket in {"medium", "low"}:
+        failure_reasons.append("sensitive_medium_low_confidence_accept")
+    if medium_confidence_uncertainty_explained is False:
+        failure_reasons.append("medium_confidence_unexplained")
+    if _row_is_deferred(route_status, final_result.get("review_reason"), final_result.get("quality"), final_result.get("extraction_status")):
+        failure_reasons.append("extraction_deferred")
+    if label.ocr_quality_label and final_result.get("quality") != label.ocr_quality_label:
+        failure_reasons.append("ocr_quality_mismatch")
+    if ocr_fallback_failed:
+        failure_reasons.append("ocr_fallback_failed")
+    if llm_structured_output_valid is False:
+        failure_reasons.append("llm_structured_output_invalid")
+    if placement_destination_correct is False:
+        failure_reasons.append("placement_destination_mismatch")
+    if placement_year_correct is False:
+        failure_reasons.append("placement_year_mismatch")
+    if unsafe_placement_proposal:
+        failure_reasons.append("unsafe_placement_proposal")
+    if privacy_correct is False:
+        failure_reasons.append("privacy_mismatch")
+    if "embedding_quality_unavailable" in _string_list(final_result.get("warnings", [])):
+        failure_reasons.append("embedding_quality_unavailable")
+    if not primary_correct and semantic_retrieval_quality in {"missing", "weak", "misleading"}:
+        failure_reasons.append(f"semantic_retrieval_{semantic_retrieval_quality}")
+
+    return {
+        "golden_label_id": label.id,
+        "source_path": label.source_path,
+        "relative_path": label.relative_path,
+        "sample_path": label.sample_path,
+        "graph_output_dir": str(graph_output_dir),
+        "correct_content_class": label.content_class,
+        "predicted_content_class": final_result.get("final_class"),
+        "content_class_correct": content_class_correct,
+        "correct_primary_tag": label.correct_primary_tag,
+        "predicted_primary_tag": predicted_primary,
+        "primary_correct": primary_correct,
+        "correct_secondary_tags": sorted(correct_secondary),
+        "predicted_secondary_tags": sorted(predicted_secondary),
+        "secondary_true_positive": len(correct_secondary & predicted_secondary),
+        "secondary_false_positive": len(predicted_secondary - correct_secondary),
+        "secondary_false_negative": len(correct_secondary - predicted_secondary),
+        "expected_ocr_quality": label.ocr_quality_label,
+        "predicted_ocr_quality": final_result.get("quality"),
+        "ocr_quality_correct": (final_result.get("quality") == label.ocr_quality_label) if label.ocr_quality_label else None,
+        "expected_review_required": label.expected_review_required,
+        "predicted_review_required": review_required,
+        "review_routing_correct": review_routing_correct,
+        "ocr_fallback_used": ocr_fallback_used,
+        "ocr_fallback_failed": ocr_fallback_failed,
+        "expected_destination_path": label.correct_destination_path,
+        "predicted_destination_path": final_result.get("destination_path"),
+        "placement_destination_correct": placement_destination_correct,
+        "expected_placement_year": label.correct_placement_year,
+        "predicted_placement_year": final_result.get("placement", {}).get("placement_year_label") if isinstance(final_result.get("placement"), dict) else None,
+        "placement_year_correct": placement_year_correct,
+        "placement_status": final_result.get("placement_status"),
+        "unsafe_placement_proposal": unsafe_placement_proposal,
+        "expected_privacy": label.correct_privacy,
+        "predicted_privacy": final_result.get("default_privacy"),
+        "privacy_correct": privacy_correct,
+        "sensitive_record": label.sensitive_record,
+        "route_status": route_status,
+        "review_reason": final_result.get("review_reason"),
+        "tag_confidence": final_result.get("tag_confidence"),
+        "tag_evidence": _string_list(final_result.get("tag_evidence", [])),
+        "confidence_bucket": confidence_bucket,
+        "confidence_calibration_factors": confidence_calibration_factors,
+        "confidence_uncertainty_explanation": uncertainty_explanation,
+        "medium_confidence_uncertainty_explained": medium_confidence_uncertainty_explained,
+        "embedding_status": final_result.get("embedding_status"),
+        "llm_status": llm_status,
+        "llm_structured_output_valid": llm_structured_output_valid,
+        "semantic_example_count": len(semantic_examples),
+        "semantic_same_family_top5_count": semantic_same_family_top5_count,
+        "semantic_top1_primary_tag": semantic_top1_primary_tag,
+        "semantic_retrieval_quality": semantic_retrieval_quality,
+        "source_file_mutation": {"mutated": False},
+        "model_usage_summary": {},
+        "warnings": final_result.get("warnings", []),
+        "failure_reasons": failure_reasons,
+    }
+
+
+def _summary(
+    *,
+    labels_db: str | Path,
+    output_dir: Path,
+    labels: list[GoldenEvalLabel],
+    evaluated: list[dict[str, Any]],
+    failures: list[dict[str, Any]],
+    confusion: dict[str, dict[str, int]],
+    counters: dict[str, Counter[str]],
+    totals: Counter,
+    model_usage_rows: list[dict[str, Any]],
+    run_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    total = len(evaluated)
+    model_usage = _model_usage_summary(model_usage_rows)
+    primary_tag_metrics = _primary_tag_metrics(evaluated)
+    confidence_bucket_metrics = _confidence_bucket_metrics(evaluated)
+    taxonomy_path = run_metadata.get("taxonomy_path") or DEFAULT_TAXONOMY_PATH
+    golden_label_readiness = _golden_label_readiness(labels, taxonomy_path)
+    high_risk_metrics = {
+        tag: metric
+        for tag, metric in primary_tag_metrics.items()
+        if tag in HIGH_RISK_PRIMARY_TAGS
+    }
+    high_risk_min_accuracy = min((metric["accuracy"] for metric in high_risk_metrics.values()), default=None)
+    metrics = {
+        "primary_accuracy": _safe_divide(totals["primary_correct"], total),
+        "content_class_accuracy": _safe_divide(totals["content_class_correct"], totals["content_class_labeled"]),
+        "secondary_precision": _safe_divide(totals["secondary_true_positive"], totals["secondary_true_positive"] + totals["secondary_false_positive"]),
+        "secondary_recall": _safe_divide(totals["secondary_true_positive"], totals["secondary_true_positive"] + totals["secondary_false_negative"]),
+        "ocr_quality_accuracy": _safe_divide(totals["ocr_quality_correct"], totals["ocr_quality_labeled"]),
+        "ocr_acceptable_rate": _safe_divide(totals["ocr_acceptable"], totals["ocr_acceptable_expected"]),
+        "review_routing_accuracy": _safe_divide(totals["review_routing_correct"], totals["review_routing_labeled"]),
+        "review_routing_precision": _safe_divide(totals["review_true_positive"], totals["review_true_positive"] + totals["review_false_positive"]),
+        "review_routing_recall": _safe_divide(totals["review_true_positive"], totals["review_true_positive"] + totals["review_false_negative"]),
+        "review_false_accepts": totals["review_false_negative"],
+        "review_false_reviews": totals["review_false_positive"],
+        "ocr_fallback_rate": _safe_divide(totals["ocr_fallback_used"], total),
+        "ocr_fallback_failed_count": totals["ocr_fallback_failed"],
+        "llm_structured_output_validity_rate": _safe_divide(totals["llm_structured_output_valid"], totals["llm_structured_output_attempted"]),
+        "placement_destination_accuracy": _safe_divide(totals["placement_destination_correct"], totals["placement_destination_labeled"]),
+        "placement_year_accuracy": _safe_divide(totals["placement_year_correct"], totals["placement_year_labeled"]),
+        "unsafe_placement_proposal_count": totals["unsafe_placement_proposal"],
+        "privacy_accuracy": _safe_divide(totals["privacy_correct"], totals["privacy_labeled"]),
+        "sensitive_false_accepts": totals["sensitive_false_accepts"],
+        "sensitive_medium_low_confidence_accepts": totals["sensitive_medium_low_confidence_accepts"],
+        "embedding_success_rate": _safe_divide(
+            model_usage.get("embedding_successful_calls", 0),
+            model_usage.get("embedding_attempted_calls", 0),
+        ),
+        "semantic_same_family_top5_rate": _safe_divide(totals["semantic_same_family_top5"], total),
+        "high_risk_primary_accuracy_min": high_risk_min_accuracy,
+        "high_confidence_primary_accuracy": (confidence_bucket_metrics.get("high") or {}).get("primary_accuracy"),
+        "high_confidence_false_accepts": (confidence_bucket_metrics.get("high") or {}).get("false_accepts"),
+        "low_confidence_false_accepts": (confidence_bucket_metrics.get("low") or {}).get("false_accepts", 0),
+        "low_confidence_accepted_count": (confidence_bucket_metrics.get("low") or {}).get("accepted", 0),
+        "medium_confidence_unexplained_count": totals["medium_confidence_unexplained"],
+        "invalid_primary_tag_count": _invalid_primary_tag_count(evaluated, taxonomy_path),
+        "tag_evidence_presence_rate": _safe_divide(totals["tag_evidence_present"], totals["tag_evidence_expected"]),
+        "source_file_mutations": totals["source_file_mutations"],
+    }
+    production_status_counts = _production_status_counts(evaluated)
+    acceptance_gate = _acceptance_gate(metrics, model_usage, golden_label_readiness)
+    production_readiness = _production_readiness(
+        metrics=metrics,
+        model_usage=model_usage,
+        golden_label_readiness=golden_label_readiness,
+        acceptance_gate=acceptance_gate,
+        primary_tag_metrics=primary_tag_metrics,
+        production_status_counts=production_status_counts,
+    )
+    return {
+        "labels_db": str(labels_db),
+        "output_dir": str(output_dir),
+        "total_golden_labels": len(labels),
+        "evaluated_predictions": total,
+        "missing_files": counters["by_failure_reason"].get("missing_file", 0),
+        "failure_count": len(failures),
+        **metrics,
+        "review_required_count": totals["review_required"],
+        "route_candidate_count": totals["route_candidate"],
+        "confusion": confusion,
+        "primary_tag_metrics": primary_tag_metrics,
+        "high_risk_primary_tag_metrics": high_risk_metrics,
+        "confidence_bucket_metrics": confidence_bucket_metrics,
+        "golden_label_readiness": golden_label_readiness,
+        "by_route_status": dict(sorted(counters["by_route_status"].items())),
+        "by_quality": dict(sorted(counters["by_quality"].items())),
+        "by_embedding_status": dict(sorted(counters["by_embedding_status"].items())),
+        "by_llm_status": dict(sorted(counters["by_llm_status"].items())),
+        "by_failure_reason": dict(sorted(counters["by_failure_reason"].items())),
+        "model_usage": model_usage,
+        "run_metadata": run_metadata,
+        "run_warnings": run_metadata.get("warnings", []),
+        "acceptance_gate": acceptance_gate,
+        "production_readiness": production_readiness,
+        "production_status_counts": production_status_counts,
+        "artifacts": {
+            "summary": str(output_dir / "eval-summary.json"),
+            "results": str(output_dir / "eval-results.jsonl"),
+            "confusion_matrix": str(output_dir / "eval-confusion-matrix.json"),
+            "failures": str(output_dir / "eval-failures.jsonl"),
+            "failure_groups": str(output_dir / "eval-failure-groups.json"),
+            "model_usage": str(output_dir / "eval-model-usage.jsonl"),
+            "artifact_manifest": str(output_dir / "eval-artifacts-manifest.json"),
+        },
+    }
+
+
+def _production_readiness(
+    *,
+    metrics: dict[str, Any],
+    model_usage: dict[str, Any],
+    golden_label_readiness: dict[str, Any],
+    acceptance_gate: dict[str, Any],
+    primary_tag_metrics: dict[str, dict[str, Any]],
+    production_status_counts: dict[str, int],
+) -> dict[str, Any]:
+    gate_passed = acceptance_gate.get("status") == "pass"
+    blocking_reasons = [check["name"] for check in acceptance_gate.get("blocking_checks", [])]
+    reliable_categories: list[dict[str, Any]] = []
+    unreliable_categories: list[dict[str, Any]] = []
+    underrepresented_categories: list[dict[str, Any]] = []
+    min_examples = int(DEFAULT_ACCEPTANCE_THRESHOLDS["high_risk_label_min_count"])
+    primary_threshold = float(DEFAULT_ACCEPTANCE_THRESHOLDS["primary_accuracy"])
+
+    for tag, metric in sorted(primary_tag_metrics.items()):
+        total = int(metric.get("total") or 0)
+        accuracy = metric.get("accuracy")
+        category = {
+            "tag": tag,
+            "total": total,
+            "correct": int(metric.get("correct") or 0),
+            "accuracy": accuracy,
+            "review_required": int(metric.get("review_required") or 0),
+            "review_required_rate": metric.get("review_required_rate"),
+        }
+        if total < min_examples:
+            underrepresented_categories.append({**category, "reason": "not_enough_golden_examples"})
+        elif accuracy is not None and float(accuracy) >= primary_threshold:
+            reliable_categories.append(category)
+        else:
+            unreliable_categories.append({**category, "reason": "below_primary_accuracy_threshold"})
+
+    next_actions = _production_next_actions(blocking_reasons, golden_label_readiness, model_usage, metrics)
+    return {
+        "status": "ready_for_larger_batch" if gate_passed else "not_ready",
+        "larger_batch_allowed": gate_passed,
+        "customer_claims_allowed": gate_passed,
+        "summary": (
+            "Golden evaluation passed every production gate; larger representative batches may proceed."
+            if gate_passed
+            else "Do not process larger customer batches yet; blocking quality gates remain."
+        ),
+        "blocking_reasons": blocking_reasons,
+        "required_next_actions": next_actions,
+        "reliable_categories": reliable_categories,
+        "unreliable_categories": unreliable_categories,
+        "underrepresented_categories": underrepresented_categories,
+        "status_counts": production_status_counts,
+        "category_min_examples": min_examples,
+        "category_accuracy_threshold": primary_threshold,
+    }
+
+
+def _production_next_actions(
+    blocking_reasons: list[str],
+    golden_label_readiness: dict[str, Any],
+    model_usage: dict[str, Any],
+    metrics: dict[str, Any],
+) -> list[str]:
+    actions: list[str] = []
+    if "golden_label_count" in blocking_reasons:
+        actions.append(
+            f"Build golden QA set to at least {golden_label_readiness.get('minimum_label_count', DEFAULT_ACCEPTANCE_THRESHOLDS['golden_label_count'])} labels."
+        )
+    if "primary_taxonomy_coverage" in blocking_reasons:
+        missing = golden_label_readiness.get("missing_primary_tags") or []
+        suffix = f" Missing: {', '.join(missing[:8])}." if missing else ""
+        actions.append(f"Add labels until every primary taxonomy tag is represented.{suffix}")
+    if "high_risk_label_min_count" in blocking_reasons:
+        undercovered = golden_label_readiness.get("underrepresented_high_risk_tags") or []
+        suffix = f" Undercovered: {', '.join(undercovered)}." if undercovered else ""
+        actions.append("Add multiple labels for every high-risk category." + suffix)
+    if any(reason in blocking_reasons for reason in ("primary_accuracy", "high_risk_primary_accuracy")):
+        actions.append("Improve semantic tagging with stronger retrieved examples and rerun the golden eval.")
+    if "high_confidence_primary_accuracy" in blocking_reasons:
+        actions.append("Calibrate confidence so high-confidence predictions meet measured accuracy thresholds.")
+    if "high_confidence_false_accepts" in blocking_reasons:
+        actions.append("Route high-confidence false accepts to review; high-confidence items cannot bypass review when labels expect review.")
+    if "low_confidence_false_accepts" in blocking_reasons:
+        actions.append("Route low-confidence predictions to review; low-confidence accepted items are not production-safe.")
+    if "low_confidence_accepted_count" in blocking_reasons:
+        actions.append("Route all low-confidence predictions to review before production use.")
+    if "medium_confidence_unexplained_count" in blocking_reasons:
+        actions.append("Add confidence calibration factors or review reasons for every medium-confidence prediction.")
+    if "content_class_accuracy" in blocking_reasons:
+        actions.append("Fix content-class classifier errors before trusting downstream extraction strategy.")
+    if "ocr_quality_accuracy" in blocking_reasons:
+        actions.append("Tighten OCR quality validation and fallback routing for poor, empty, or gibberish extraction.")
+    if "ocr_acceptable_rate" in blocking_reasons:
+        actions.append("Improve OCR extraction for labels expected to produce usable text; acceptable OCR must meet the production threshold.")
+    if "placement_destination_accuracy" in blocking_reasons:
+        actions.append("Review placement rules by primary tag and year evidence before proposing folders at scale.")
+    if "placement_year_accuracy" in blocking_reasons:
+        actions.append("Improve placement year extraction before using by-year folder proposals at scale.")
+    if "unsafe_placement_proposal_count" in blocking_reasons:
+        actions.append("Quarantine placement proposals for files that are still review-required; only accepted route candidates should produce resolved destination proposals.")
+    if "semantic_same_family_top5_rate" in blocking_reasons:
+        actions.append("Improve the embedding index or retrieved examples so golden files retrieve same-family labels in the top 5.")
+    if "llm_structured_output_validity_rate" in blocking_reasons:
+        actions.append("Fix structured LLM tag output validation; invalid model responses must not produce accepted tags.")
+    if "invalid_primary_tag_count" in blocking_reasons:
+        actions.append("Fix tag validation so no result persists a primary tag outside the active taxonomy.")
+    if "tag_evidence_presence_rate" in blocking_reasons:
+        actions.append("Ensure every persisted tag decision includes human-readable evidence.")
+    if "model_usage_required_fields_tracked" in blocking_reasons:
+        actions.append("Complete model usage lineage for every model call: provider, model, purpose, status, runtime, and cost basis.")
+    if "model_usage_cost_basis_tracked" in blocking_reasons:
+        actions.append("Classify every model call as local, external, or placeholder so local Cortex calls and paid API calls are separated.")
+    if "privacy_accuracy" in blocking_reasons or "sensitive_false_accepts" in blocking_reasons:
+        actions.append("Audit privacy and sensitive-record review routing; sensitive false accepts must be zero.")
+    if "sensitive_medium_low_confidence_accepts" in blocking_reasons:
+        actions.append("Route sensitive records with medium or low confidence to review.")
+    if "embedding_placeholder_calls" in blocking_reasons or "embedding_failed_calls" in blocking_reasons:
+        actions.append(
+            f"Use a real embedding provider and eliminate placeholder/failed embedding calls. Placeholder={model_usage.get('embedding_placeholder_calls', 0)}, failed={model_usage.get('embedding_failed_calls', 0)}."
+        )
+    if "external_model_usage_tracked" in blocking_reasons:
+        actions.append("Ensure every external model call records provider, model, purpose, runtime, tokens when available, and estimated cost.")
+    if "source_file_mutations" in blocking_reasons:
+        actions.append("Stop and investigate source-file mutation evidence; production runs must be read-only.")
+    if not actions and blocking_reasons:
+        actions.append(f"Resolve remaining blocking gates: {', '.join(blocking_reasons)}.")
+    if metrics.get("review_false_accepts"):
+        actions.append("Inspect review false accepts; files that should require review cannot silently route as accepted.")
+    return actions
+
+
+def _production_status_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts = Counter(_production_status(row) for row in rows)
+    return {
+        "accepted": int(counts["accepted"]),
+        "review_required": int(counts["review_required"]),
+        "failed": int(counts["failed"]),
+        "deferred": int(counts["deferred"]),
+    }
+
+
+def _production_status(row: dict[str, Any]) -> str:
+    route_status = str(row.get("route_status") or "").lower()
+    review_reason = str(row.get("review_reason") or "").lower()
+    failure_reasons = set(_string_list(row.get("failure_reasons")))
+    if "missing_file" in failure_reasons or "failed" in route_status:
+        return "failed"
+    if "extraction_deferred" in failure_reasons or _row_is_deferred(route_status, review_reason, row.get("predicted_ocr_quality"), None):
+        return "deferred"
+    if route_status == "route_candidate" or row.get("predicted_review_required") is False:
+        return "accepted"
+    return "review_required"
+
+
+def _row_is_deferred(route_status: Any, review_reason: Any, quality: Any, extraction_status: Any) -> bool:
+    values = [
+        str(route_status or "").lower(),
+        str(review_reason or "").lower(),
+        str(quality or "").lower(),
+        str(extraction_status or "").lower(),
+    ]
+    return any("defer" in value or value == "deferred" for value in values)
+
+
+def _acceptance_gate(metrics: dict[str, Any], model_usage: dict[str, Any], golden_label_readiness: dict[str, Any]) -> dict[str, Any]:
+    high_risk_counts = golden_label_readiness.get("high_risk_label_counts") or {}
+    high_risk_min_count = min(high_risk_counts.values(), default=None)
+    checks = [
+        _minimum_check("golden_label_count", golden_label_readiness.get("total_golden_labels"), DEFAULT_ACCEPTANCE_THRESHOLDS["golden_label_count"]),
+        _minimum_check("primary_taxonomy_coverage", golden_label_readiness.get("primary_coverage_rate"), DEFAULT_ACCEPTANCE_THRESHOLDS["primary_taxonomy_coverage"]),
+        _minimum_check("high_risk_label_min_count", high_risk_min_count, DEFAULT_ACCEPTANCE_THRESHOLDS["high_risk_label_min_count"]),
+        _minimum_check("content_class_accuracy", metrics.get("content_class_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["content_class_accuracy"]),
+        _minimum_check("primary_accuracy", metrics.get("primary_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["primary_accuracy"]),
+        _minimum_check("high_risk_primary_accuracy", metrics.get("high_risk_primary_accuracy_min"), DEFAULT_ACCEPTANCE_THRESHOLDS["high_risk_primary_accuracy"]),
+        _minimum_check("ocr_quality_accuracy", metrics.get("ocr_quality_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["ocr_quality_accuracy"]),
+        _minimum_check("ocr_acceptable_rate", metrics.get("ocr_acceptable_rate"), DEFAULT_ACCEPTANCE_THRESHOLDS["ocr_acceptable_rate"]),
+        _minimum_check("placement_destination_accuracy", metrics.get("placement_destination_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["placement_destination_accuracy"]),
+        _minimum_check("placement_year_accuracy", metrics.get("placement_year_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["placement_year_accuracy"]),
+        _maximum_check("unsafe_placement_proposal_count", metrics.get("unsafe_placement_proposal_count"), DEFAULT_ACCEPTANCE_THRESHOLDS["unsafe_placement_proposal_count"]),
+        _minimum_check("privacy_accuracy", metrics.get("privacy_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["privacy_accuracy"]),
+        _minimum_check("high_confidence_primary_accuracy", metrics.get("high_confidence_primary_accuracy"), DEFAULT_ACCEPTANCE_THRESHOLDS["high_confidence_primary_accuracy"]),
+        _maximum_check("high_confidence_false_accepts", metrics.get("high_confidence_false_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["high_confidence_false_accepts"]),
+        _maximum_check("low_confidence_false_accepts", metrics.get("low_confidence_false_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["low_confidence_false_accepts"]),
+        _maximum_check("low_confidence_accepted_count", metrics.get("low_confidence_accepted_count"), DEFAULT_ACCEPTANCE_THRESHOLDS["low_confidence_accepted_count"]),
+        _maximum_check("medium_confidence_unexplained_count", metrics.get("medium_confidence_unexplained_count"), DEFAULT_ACCEPTANCE_THRESHOLDS["medium_confidence_unexplained_count"]),
+        _minimum_check("semantic_same_family_top5_rate", metrics.get("semantic_same_family_top5_rate"), DEFAULT_ACCEPTANCE_THRESHOLDS["semantic_same_family_top5_rate"]),
+        _minimum_check("llm_structured_output_validity_rate", metrics.get("llm_structured_output_validity_rate"), DEFAULT_ACCEPTANCE_THRESHOLDS["llm_structured_output_validity_rate"]),
+        _maximum_check("invalid_primary_tag_count", metrics.get("invalid_primary_tag_count"), DEFAULT_ACCEPTANCE_THRESHOLDS["invalid_primary_tag_count"]),
+        _minimum_check("tag_evidence_presence_rate", metrics.get("tag_evidence_presence_rate"), DEFAULT_ACCEPTANCE_THRESHOLDS["tag_evidence_presence_rate"]),
+        _minimum_check(
+            "model_usage_required_fields_tracked",
+            model_usage.get("required_field_completeness_rate"),
+            DEFAULT_ACCEPTANCE_THRESHOLDS["model_usage_required_fields_tracked"],
+        ),
+        _minimum_check(
+            "model_usage_cost_basis_tracked",
+            model_usage.get("cost_basis_completeness_rate"),
+            DEFAULT_ACCEPTANCE_THRESHOLDS["model_usage_cost_basis_tracked"],
+        ),
+        _maximum_check("sensitive_false_accepts", metrics.get("sensitive_false_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["sensitive_false_accepts"]),
+        _maximum_check("sensitive_medium_low_confidence_accepts", metrics.get("sensitive_medium_low_confidence_accepts"), DEFAULT_ACCEPTANCE_THRESHOLDS["sensitive_medium_low_confidence_accepts"]),
+        _maximum_check("source_file_mutations", metrics.get("source_file_mutations"), DEFAULT_ACCEPTANCE_THRESHOLDS["source_file_mutations"]),
+        _maximum_check("embedding_placeholder_calls", model_usage.get("embedding_placeholder_calls", 0), 0),
+        _maximum_check("embedding_failed_calls", model_usage.get("embedding_failed_calls", 0), 0),
+        _minimum_check(
+            "external_model_usage_tracked",
+            1.0 if model_usage.get("unknown_external_cost_calls", 0) == 0 else 0.0,
+            DEFAULT_ACCEPTANCE_THRESHOLDS["external_model_usage_tracked"],
+        ),
+    ]
+    blocking = [check for check in checks if check["status"] != "pass"]
+    return {
+        "status": "pass" if not blocking else "fail",
+        "thresholds": DEFAULT_ACCEPTANCE_THRESHOLDS,
+        "checks": checks,
+        "blocking_checks": blocking,
+    }
+
+
+def _golden_label_readiness(labels: list[GoldenEvalLabel], taxonomy_path: str | Path) -> dict[str, Any]:
+    taxonomy = load_taxonomy_options(taxonomy_path)
+    primary_counts = Counter(label.correct_primary_tag for label in labels if label.correct_primary_tag)
+    missing_primary_tags = [tag for tag in taxonomy.primary_tags if primary_counts.get(tag, 0) == 0]
+    high_risk_label_counts = {
+        tag: int(primary_counts.get(tag, 0))
+        for tag in sorted(HIGH_RISK_PRIMARY_TAGS)
+    }
+    underrepresented_high_risk_tags = [
+        tag
+        for tag, count in high_risk_label_counts.items()
+        if count < DEFAULT_ACCEPTANCE_THRESHOLDS["high_risk_label_min_count"]
+    ]
+    total_primary_tags = len(taxonomy.primary_tags)
+    covered_primary_count = total_primary_tags - len(missing_primary_tags)
+    label_count_ready = len(labels) >= DEFAULT_ACCEPTANCE_THRESHOLDS["golden_label_count"]
+    primary_coverage_ready = not missing_primary_tags
+    high_risk_ready = not underrepresented_high_risk_tags
+    return {
+        "ready": label_count_ready and primary_coverage_ready and high_risk_ready,
+        "minimum_label_count": DEFAULT_ACCEPTANCE_THRESHOLDS["golden_label_count"],
+        "total_golden_labels": len(labels),
+        "label_count_ready": label_count_ready,
+        "taxonomy_primary_count": total_primary_tags,
+        "covered_primary_count": covered_primary_count,
+        "primary_coverage_rate": _safe_divide(covered_primary_count, total_primary_tags),
+        "missing_primary_tags": missing_primary_tags,
+        "minimum_high_risk_labels_per_category": DEFAULT_ACCEPTANCE_THRESHOLDS["high_risk_label_min_count"],
+        "high_risk_label_counts": high_risk_label_counts,
+        "underrepresented_high_risk_tags": underrepresented_high_risk_tags,
+        "primary_label_counts": dict(sorted(primary_counts.items())),
+    }
+
+
+def _minimum_check(name: str, value: Any, threshold: float) -> dict[str, Any]:
+    if value is None:
+        status = "not_evaluated"
+    else:
+        status = "pass" if float(value) >= threshold else "fail"
+    return {"name": name, "operator": ">=", "value": value, "threshold": threshold, "status": status}
+
+
+def _maximum_check(name: str, value: Any, threshold: float) -> dict[str, Any]:
+    if value is None:
+        status = "not_evaluated"
+    else:
+        status = "pass" if float(value) <= threshold else "fail"
+    return {"name": name, "operator": "<=", "value": value, "threshold": threshold, "status": status}
+
+
+def _update_totals(totals: Counter, row: dict[str, Any], label: GoldenEvalLabel) -> None:
+    if row["primary_correct"]:
+        totals["primary_correct"] += 1
+    if row.get("predicted_primary_tag"):
+        totals["tag_evidence_expected"] += 1
+        if row.get("tag_evidence"):
+            totals["tag_evidence_present"] += 1
+    totals["secondary_true_positive"] += int(row["secondary_true_positive"])
+    totals["secondary_false_positive"] += int(row["secondary_false_positive"])
+    totals["secondary_false_negative"] += int(row["secondary_false_negative"])
+    if row["content_class_correct"] is not None:
+        totals["content_class_labeled"] += 1
+        if row["content_class_correct"]:
+            totals["content_class_correct"] += 1
+    if row["ocr_quality_correct"] is not None:
+        totals["ocr_quality_labeled"] += 1
+        if row["ocr_quality_correct"]:
+            totals["ocr_quality_correct"] += 1
+    if _ocr_quality_is_expected_acceptable(row.get("expected_ocr_quality")):
+        totals["ocr_acceptable_expected"] += 1
+        if _ocr_quality_is_predicted_acceptable(row.get("predicted_ocr_quality")):
+            totals["ocr_acceptable"] += 1
+    if row["review_routing_correct"] is not None:
+        totals["review_routing_labeled"] += 1
+        if row["review_routing_correct"]:
+            totals["review_routing_correct"] += 1
+        if row["expected_review_required"] and row["predicted_review_required"]:
+            totals["review_true_positive"] += 1
+        elif not row["expected_review_required"] and row["predicted_review_required"]:
+            totals["review_false_positive"] += 1
+        elif row["expected_review_required"] and not row["predicted_review_required"]:
+            totals["review_false_negative"] += 1
+        elif not row["expected_review_required"] and not row["predicted_review_required"]:
+            totals["review_true_negative"] += 1
+    if row.get("ocr_fallback_used"):
+        totals["ocr_fallback_used"] += 1
+    if row.get("ocr_fallback_failed"):
+        totals["ocr_fallback_failed"] += 1
+    if (row.get("source_file_mutation") or {}).get("mutated"):
+        totals["source_file_mutations"] += 1
+    if row.get("llm_structured_output_valid") is not None:
+        totals["llm_structured_output_attempted"] += 1
+        if row.get("llm_structured_output_valid"):
+            totals["llm_structured_output_valid"] += 1
+    if row["placement_destination_correct"] is not None:
+        totals["placement_destination_labeled"] += 1
+        if row["placement_destination_correct"]:
+            totals["placement_destination_correct"] += 1
+    if row["placement_year_correct"] is not None:
+        totals["placement_year_labeled"] += 1
+        if row["placement_year_correct"]:
+            totals["placement_year_correct"] += 1
+    if row.get("unsafe_placement_proposal"):
+        totals["unsafe_placement_proposal"] += 1
+    if row["privacy_correct"] is not None:
+        totals["privacy_labeled"] += 1
+        if row["privacy_correct"]:
+            totals["privacy_correct"] += 1
+    if row["predicted_review_required"]:
+        totals["review_required"] += 1
+    else:
+        totals["route_candidate"] += 1
+    if int(row.get("semantic_same_family_top5_count") or 0) > 0:
+        totals["semantic_same_family_top5"] += 1
+    if label.sensitive_record and row.get("expected_review_required") is True and not row["predicted_review_required"]:
+        totals["sensitive_false_accepts"] += 1
+    if label.sensitive_record and not row["predicted_review_required"] and row.get("confidence_bucket") in {"medium", "low"}:
+        totals["sensitive_medium_low_confidence_accepts"] += 1
+    if row.get("confidence_bucket") == "medium" and row.get("medium_confidence_uncertainty_explained") is False:
+        totals["medium_confidence_unexplained"] += 1
+
+
+def _primary_tag_metrics(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    by_tag: dict[str, Counter[str]] = {}
+    for row in rows:
+        tag = str(row.get("correct_primary_tag") or "unknown")
+        by_tag.setdefault(tag, Counter())
+        by_tag[tag]["total"] += 1
+        if row.get("primary_correct"):
+            by_tag[tag]["correct"] += 1
+        if row.get("predicted_review_required"):
+            by_tag[tag]["review_required"] += 1
+        else:
+            by_tag[tag]["accepted"] += 1
+        if row.get("expected_review_required") is True and row.get("predicted_review_required") is False:
+            by_tag[tag]["false_accept"] += 1
+        if row.get("expected_review_required") is False and row.get("predicted_review_required") is True:
+            by_tag[tag]["false_review"] += 1
+        by_tag[tag]["secondary_true_positive"] += int(row.get("secondary_true_positive") or 0)
+        by_tag[tag]["secondary_false_positive"] += int(row.get("secondary_false_positive") or 0)
+        by_tag[tag]["secondary_false_negative"] += int(row.get("secondary_false_negative") or 0)
+    return {
+        tag: {
+            "total": int(counts["total"]),
+            "correct": int(counts["correct"]),
+            "accuracy": _safe_divide(counts["correct"], counts["total"]),
+            "review_required": int(counts["review_required"]),
+            "accepted": int(counts["accepted"]),
+            "review_required_rate": _safe_divide(counts["review_required"], counts["total"]),
+            "false_accepts": int(counts["false_accept"]),
+            "false_reviews": int(counts["false_review"]),
+            "secondary_true_positive": int(counts["secondary_true_positive"]),
+            "secondary_false_positive": int(counts["secondary_false_positive"]),
+            "secondary_false_negative": int(counts["secondary_false_negative"]),
+            "secondary_precision": _safe_divide(
+                counts["secondary_true_positive"],
+                counts["secondary_true_positive"] + counts["secondary_false_positive"],
+            ),
+            "secondary_recall": _safe_divide(
+                counts["secondary_true_positive"],
+                counts["secondary_true_positive"] + counts["secondary_false_negative"],
+            ),
+        }
+        for tag, counts in sorted(by_tag.items())
+    }
+
+
+def _ocr_quality_is_expected_acceptable(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"ok", "good", "acceptable"}
+
+
+def _ocr_quality_is_predicted_acceptable(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"ok", "good", "acceptable"}
+
+
+def _invalid_primary_tag_count(rows: list[dict[str, Any]], taxonomy_path: str | Path) -> int:
+    taxonomy = load_taxonomy_options(taxonomy_path)
+    allowed = set(taxonomy.primary_tags)
+    return sum(
+        1
+        for row in rows
+        if row.get("predicted_primary_tag") and row.get("predicted_primary_tag") not in allowed
+    )
+
+
+def _confidence_bucket_metrics(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    by_bucket: dict[str, Counter[str]] = {}
+    for row in rows:
+        bucket = str(row.get("confidence_bucket") or "missing")
+        by_bucket.setdefault(bucket, Counter())
+        by_bucket[bucket]["total"] += 1
+        if row.get("primary_correct"):
+            by_bucket[bucket]["primary_correct"] += 1
+        if row.get("predicted_review_required"):
+            by_bucket[bucket]["review_required"] += 1
+        else:
+            by_bucket[bucket]["accepted"] += 1
+        if row.get("expected_review_required") is True and row.get("predicted_review_required") is False:
+            by_bucket[bucket]["false_accept"] += 1
+        if row.get("expected_review_required") is False and row.get("predicted_review_required") is True:
+            by_bucket[bucket]["false_review"] += 1
+    return {
+        bucket: {
+            "total": int(counts["total"]),
+            "primary_correct": int(counts["primary_correct"]),
+            "primary_accuracy": _safe_divide(counts["primary_correct"], counts["total"]),
+            "review_required": int(counts["review_required"]),
+            "accepted": int(counts["accepted"]),
+            "review_required_rate": _safe_divide(counts["review_required"], counts["total"]),
+            "false_accepts": int(counts["false_accept"]),
+            "false_reviews": int(counts["false_review"]),
+        }
+        for bucket, counts in sorted(by_bucket.items())
+    }
+
+
+def _confidence_bucket(value: Any) -> str:
+    if not isinstance(value, int | float):
+        return "missing"
+    confidence = float(value)
+    if confidence >= 0.85:
+        return "high"
+    if confidence >= 0.65:
+        return "medium"
+    return "low"
+
+
+def _update_eval_counters(counters: dict[str, Counter[str]], final_result: dict[str, Any]) -> None:
+    counters["by_route_status"][str(final_result.get("route_status") or "unknown")] += 1
+    counters["by_quality"][str(final_result.get("quality") or "unknown")] += 1
+    counters["by_embedding_status"][str(final_result.get("embedding_status") or "unknown")] += 1
+    counters["by_llm_status"][str(final_result.get("llm_status") or "unknown")] += 1
+
+
+def _update_missing_counters(counters: dict[str, Counter[str]]) -> None:
+    counters["by_route_status"]["review_failed_extraction"] += 1
+    counters["by_quality"]["missing"] += 1
+    counters["by_embedding_status"]["none"] += 1
+    counters["by_llm_status"]["none"] += 1
+
+
+def _model_usage_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    by_provider: Counter[str] = Counter()
+    by_purpose: Counter[str] = Counter()
+    by_cost_basis: Counter[str] = Counter()
+    runtime_ms = 0
+    input_tokens = 0
+    output_tokens = 0
+    total_tokens = 0
+    estimated_external_cost_usd = 0.0
+    unknown_external_cost_calls = 0
+    local_call_count = 0
+    external_call_count = 0
+    placeholder_call_count = 0
+    unknown_cost_basis_count = 0
+    embedding_attempted_calls = 0
+    embedding_successful_calls = 0
+    embedding_placeholder_calls = 0
+    embedding_failed_calls = 0
+    embedding_provider_models: Counter[str] = Counter()
+    embedding_dimensions: Counter[str] = Counter()
+    missing_required_fields: Counter[str] = Counter()
+    complete_required_field_rows = 0
+    for row in rows:
+        call_count = _model_usage_call_count(row)
+        row_missing_fields = _missing_model_usage_required_fields(row)
+        if row_missing_fields:
+            for field in row_missing_fields:
+                missing_required_fields[field] += 1
+        else:
+            complete_required_field_rows += 1
+        by_provider[str(row.get("provider") or "unknown")] += call_count
+        by_purpose[str(row.get("purpose") or "unknown")] += call_count
+        cost_basis = str(row.get("cost_basis") or "unknown")
+        by_cost_basis[cost_basis] += call_count
+        if cost_basis == "local":
+            local_call_count += call_count
+        elif cost_basis == "external":
+            external_call_count += call_count
+        elif cost_basis == "placeholder":
+            placeholder_call_count += call_count
+        else:
+            unknown_cost_basis_count += call_count
+        runtime_ms += int(row.get("runtime_ms") or 0)
+        input_tokens += int(row.get("input_tokens") or 0)
+        output_tokens += int(row.get("output_tokens") or 0)
+        total_tokens += int(row.get("total_tokens") or 0)
+        if cost_basis == "external" and row.get("estimated_cost_usd") is not None:
+            estimated_external_cost_usd += float(row.get("estimated_cost_usd") or 0)
+        if cost_basis == "external" and row.get("estimated_cost_usd") is None:
+            unknown_external_cost_calls += call_count
+        if str(row.get("purpose") or "").endswith("embedding"):
+            metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+            status = str(row.get("status") or "unknown")
+            provider_model = f"{row.get('provider') or 'unknown'}:{row.get('model') or 'unknown'}"
+            embedding_provider_models[provider_model] += call_count
+            if metadata.get("embedding_dimensions") is not None:
+                embedding_dimensions[str(metadata.get("embedding_dimensions"))] += call_count
+            embedding_attempted_calls += call_count
+            if status == "ok":
+                embedding_successful_calls += call_count
+            elif status == "placeholder":
+                embedding_placeholder_calls += call_count
+            elif status == "failed":
+                embedding_failed_calls += call_count
+    return {
+        "total_model_usage_rows": len(rows),
+        "by_provider": dict(sorted(by_provider.items())),
+        "by_purpose": dict(sorted(by_purpose.items())),
+        "by_cost_basis": dict(sorted(by_cost_basis.items())),
+        "local_call_count": local_call_count,
+        "external_call_count": external_call_count,
+        "placeholder_call_count": placeholder_call_count,
+        "unknown_cost_basis_count": unknown_cost_basis_count,
+        "unknown_external_cost_calls": unknown_external_cost_calls,
+        "required_field_completeness_rate": _safe_divide(complete_required_field_rows, len(rows)),
+        "cost_basis_completeness_rate": _safe_divide(len(rows) - unknown_cost_basis_count, len(rows)),
+        "missing_required_field_counts": dict(sorted(missing_required_fields.items())),
+        "embedding_attempted_calls": embedding_attempted_calls,
+        "embedding_successful_calls": embedding_successful_calls,
+        "embedding_placeholder_calls": embedding_placeholder_calls,
+        "embedding_failed_calls": embedding_failed_calls,
+        "embedding_provider_models": dict(sorted(embedding_provider_models.items())),
+        "embedding_dimensions": dict(sorted(embedding_dimensions.items())),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+        "total_runtime_ms": runtime_ms,
+        "estimated_external_cost_usd": round(estimated_external_cost_usd, 6),
+        "external_cost_note": "Known external costs are summed from model usage rows; unknown external cost calls are gated separately.",
+    }
+
+
+def _model_usage_call_count(row: dict[str, Any]) -> int:
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    raw_call_count = metadata.get("call_count")
+    if raw_call_count is None:
+        return 1
+    try:
+        return max(0, int(raw_call_count))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _missing_model_usage_required_fields(row: dict[str, Any]) -> list[str]:
+    missing = []
+    for field in ["provider", "model", "purpose", "status", "cost_basis"]:
+        value = str(row.get(field) or "").strip().lower()
+        if not value or value == "unknown":
+            missing.append(field)
+    if row.get("runtime_ms") is None:
+        missing.append("runtime_ms")
+    return missing
+
+
+def _eval_run_metadata(
+    *,
+    labels_db: str | Path,
+    output_dir: Path,
+    limit: int | None,
+    taxonomy_path: str | Path,
+    semantic_index_path: str | Path | None,
+    embedding_provider: EmbeddingProvider | None,
+    llm_tag_inspector: LLMTagInspector | None,
+    ocr_executor: OcrExecutor | None,
+    warnings: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "run_kind": "pipeline_eval",
+        "labels_db": str(labels_db),
+        "output_dir": str(output_dir),
+        "limit": limit,
+        "taxonomy_path": str(taxonomy_path),
+        "taxonomy_version": Path(taxonomy_path).name,
+        "semantic_index_path": str(semantic_index_path) if semantic_index_path else None,
+        "embedding_provider": _provider_name(embedding_provider),
+        "embedding_model": str(getattr(embedding_provider, "model", "")) if embedding_provider is not None else None,
+        "embedding_dimensions": getattr(embedding_provider, "dimensions", None),
+        "llm_provider": str(getattr(llm_tag_inspector, "provider_name", "")) if llm_tag_inspector is not None else "disabled",
+        "llm_model": str(getattr(llm_tag_inspector, "model", "disabled")) if llm_tag_inspector is not None else "disabled",
+        "ocr_mode": _ocr_mode(ocr_executor),
+        "ocr_primary_engine": _ocr_primary_engine(ocr_executor),
+        "ocr_fallback_mode": _ocr_fallback_mode(ocr_executor),
+        "ocr_fallback_model": _ocr_fallback_model(ocr_executor),
+        "git_commit": _git_commit(),
+        "warnings": warnings or [],
+    }
+
+
+def _resolve_eval_embedding_provider(provider: EmbeddingProvider | None, *, provider_name_override: str | None = None) -> tuple[EmbeddingProvider, list[str]]:
+    if provider is not None:
+        return provider, []
+    try:
+        return provider_from_env(provider_name_override), []
+    except EmbeddingConfigurationError as error:
+        return PlaceholderEmbeddingProvider(), [f"embedding_provider_configuration_failed:{error}"]
+
+
+def _resolve_eval_ocr_executor(executor: OcrExecutor | None, *, fallback_provider_override: str | None = None) -> tuple[OcrExecutor, list[str]]:
+    if executor is not None:
+        return executor, []
+    requested_fallback = (fallback_provider_override or os.environ.get("SUNSHINE_OCR_FALLBACK_PROVIDER", "disabled")).strip().lower()
+    active_executor = ocr_executor_from_env(fallback_provider_override=fallback_provider_override)
+    warnings: list[str] = []
+    if requested_fallback not in {"", "disabled", "none"} and _ocr_fallback_mode(active_executor) == "disabled":
+        warnings.append(f"ocr_fallback_configuration_failed:{requested_fallback}")
+    return active_executor, warnings
+
+
+def _ocr_mode(executor: OcrExecutor | None) -> str:
+    if executor is None:
+        return "disabled"
+    return str(getattr(executor, "engine_name", "") or executor.__class__.__name__)
+
+
+def _ocr_primary_engine(executor: OcrExecutor | None) -> str:
+    primary = getattr(executor, "primary", None)
+    active = primary or executor
+    if active is None:
+        return "disabled"
+    return str(getattr(active, "engine_name", "") or active.__class__.__name__)
+
+
+def _ocr_fallback_mode(executor: OcrExecutor | None) -> str:
+    fallback = getattr(executor, "fallback", None)
+    if fallback is None:
+        return "disabled"
+    return str(getattr(fallback, "engine_name", "") or fallback.__class__.__name__)
+
+
+def _ocr_fallback_model(executor: OcrExecutor | None) -> str | None:
+    fallback = getattr(executor, "fallback", None)
+    model = getattr(fallback, "model", None)
+    return str(model) if model else None
+
+
+def _provider_name(provider: Any) -> str | None:
+    if provider is None:
+        return None
+    return str(getattr(provider, "provider_name", "") or provider.__class__.__name__.replace("EmbeddingProvider", "").lower() or "unknown")
+
+
+def _git_commit() -> str | None:
+    try:
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=Path.cwd(), text=True).strip()
+    except Exception:  # noqa: BLE001 - metadata should not break eval runs.
+        return None
+
+
+def _write_eval_artifacts(
+    output_dir: Path,
+    summary: dict[str, Any],
+    evaluated: list[dict[str, Any]],
+    confusion: dict[str, dict[str, int]],
+    failures: list[dict[str, Any]],
+    model_usage_rows: list[dict[str, Any]],
+    failure_groups: list[dict[str, Any]],
+) -> None:
+    (output_dir / "eval-summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (output_dir / "eval-confusion-matrix.json").write_text(json.dumps(confusion, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (output_dir / "eval-failure-groups.json").write_text(json.dumps(failure_groups, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _write_jsonl(output_dir / "eval-results.jsonl", evaluated)
+    _write_jsonl(output_dir / "eval-failures.jsonl", failures)
+    _write_jsonl(output_dir / "eval-model-usage.jsonl", model_usage_rows)
+    with (output_dir / "eval-confusion-matrix.csv").open("w", encoding="utf-8", newline="") as output_file:
+        writer = csv.DictWriter(output_file, fieldnames=["correct_primary_tag", "predicted_primary_tag", "count"])
+        writer.writeheader()
+        for actual, predicted_counts in sorted(confusion.items()):
+            for predicted, count in sorted(predicted_counts.items()):
+                writer.writerow({"correct_primary_tag": actual, "predicted_primary_tag": predicted, "count": count})
+    _write_artifact_manifest(output_dir, summary)
+
+
+def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    with path.open("w", encoding="utf-8") as output_file:
+        for row in rows:
+            output_file.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def _write_artifact_manifest(output_dir: Path, summary: dict[str, Any]) -> None:
+    artifact_paths = {
+        key: Path(value)
+        for key, value in (summary.get("artifacts") or {}).items()
+        if key != "artifact_manifest" and value
+    }
+    manifest_rows = []
+    for key, path in sorted(artifact_paths.items()):
+        manifest_rows.append(_artifact_manifest_row(key, path))
+    manifest = {
+        "output_dir": str(output_dir),
+        "artifact_count": len(manifest_rows),
+        "artifacts": manifest_rows,
+    }
+    (output_dir / "eval-artifacts-manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _artifact_manifest_row(name: str, path: Path) -> dict[str, Any]:
+    exists = path.exists()
+    return {
+        "name": name,
+        "path": str(path),
+        "exists": exists,
+        "size_bytes": path.stat().st_size if exists else None,
+        "sha256": _sha256(path) if exists else None,
+    }
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as input_file:
+        for chunk in iter(lambda: input_file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _failure_groups(rows: list[dict[str, Any]], *, max_examples: int = 25) -> list[dict[str, Any]]:
+    groups: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        reasons = _string_list(row.get("failure_reasons"))
+        for reason in reasons:
+            group = groups.setdefault(
+                reason,
+                {
+                    "reason": reason,
+                    "count": 0,
+                    "affected_primary_tags": Counter(),
+                    "affected_route_statuses": Counter(),
+                    "examples": [],
+                },
+            )
+            group["count"] += 1
+            group["affected_primary_tags"][str(row.get("correct_primary_tag") or "unknown")] += 1
+            group["affected_route_statuses"][str(row.get("route_status") or "unknown")] += 1
+            if len(group["examples"]) < max_examples:
+                group["examples"].append(
+                    {
+                        "golden_label_id": row.get("golden_label_id"),
+                        "source_path": row.get("source_path"),
+                        "relative_path": row.get("relative_path"),
+                        "correct_primary_tag": row.get("correct_primary_tag"),
+                        "predicted_primary_tag": row.get("predicted_primary_tag"),
+                        "expected_content_class": row.get("correct_content_class"),
+                        "predicted_content_class": row.get("predicted_content_class"),
+                        "expected_ocr_quality": row.get("expected_ocr_quality"),
+                        "predicted_ocr_quality": row.get("predicted_ocr_quality"),
+                        "expected_review_required": row.get("expected_review_required"),
+                        "predicted_review_required": row.get("predicted_review_required"),
+                        "route_status": row.get("route_status"),
+                        "review_reason": row.get("review_reason"),
+                        "semantic_retrieval_quality": row.get("semantic_retrieval_quality"),
+                        "model_usage_summary": row.get("model_usage_summary"),
+                        "warnings": row.get("warnings", []),
+                    }
+                )
+
+    normalized = []
+    for group in groups.values():
+        normalized.append(
+            {
+                "reason": group["reason"],
+                "count": int(group["count"]),
+                "affected_primary_tags": dict(sorted(group["affected_primary_tags"].items())),
+                "affected_route_statuses": dict(sorted(group["affected_route_statuses"].items())),
+                "examples": group["examples"],
+            }
+        )
+    return sorted(normalized, key=lambda item: (-int(item["count"]), str(item["reason"])))
+
+
+def _label_input_path(label: GoldenEvalLabel) -> Path | None:
+    for candidate in [label.sample_path, label.source_path]:
+        if not candidate:
+            continue
+        path = Path(candidate)
+        if path.exists() and path.is_file():
+            return path
+    return None
+
+
+def _source_file_snapshot(path: Path) -> dict[str, Any]:
+    stat = path.stat()
+    return {
+        "path": str(path),
+        "size_bytes": stat.st_size,
+        "mtime_ns": stat.st_mtime_ns,
+        "sha256": _sha256(path),
+    }
+
+
+def _source_file_mutation(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
+    mutated_fields = [
+        field
+        for field in ("size_bytes", "mtime_ns", "sha256")
+        if before.get(field) != after.get(field)
+    ]
+    return {
+        "mutated": bool(mutated_fields),
+        "path": before.get("path"),
+        "mutated_fields": mutated_fields,
+        "before": before,
+        "after": after,
+    }
+
+
+def _missing_file_result(label: GoldenEvalLabel) -> dict[str, Any]:
+    return {
+        "golden_label_id": label.id,
+        "source_path": label.source_path,
+        "relative_path": label.relative_path,
+        "sample_path": label.sample_path,
+        "graph_output_dir": None,
+        "correct_content_class": label.content_class,
+        "predicted_content_class": None,
+        "content_class_correct": False if label.content_class else None,
+        "correct_primary_tag": label.correct_primary_tag,
+        "predicted_primary_tag": None,
+        "primary_correct": False,
+        "correct_secondary_tags": label.correct_secondary_tags,
+        "predicted_secondary_tags": [],
+        "secondary_true_positive": 0,
+        "secondary_false_positive": 0,
+        "secondary_false_negative": len(label.correct_secondary_tags),
+        "expected_ocr_quality": label.ocr_quality_label,
+        "predicted_ocr_quality": None,
+        "ocr_quality_correct": False if label.ocr_quality_label else None,
+        "ocr_fallback_used": False,
+        "ocr_fallback_failed": False,
+        "expected_review_required": label.expected_review_required,
+        "predicted_review_required": True,
+        "review_routing_correct": (label.expected_review_required is True) if label.expected_review_required is not None else None,
+        "expected_destination_path": label.correct_destination_path,
+        "predicted_destination_path": None,
+        "placement_destination_correct": False if label.correct_destination_path else None,
+        "expected_placement_year": label.correct_placement_year,
+        "predicted_placement_year": None,
+        "placement_year_correct": False if label.correct_placement_year else None,
+        "expected_privacy": label.correct_privacy,
+        "predicted_privacy": None,
+        "privacy_correct": False if label.correct_privacy else None,
+        "sensitive_record": label.sensitive_record,
+        "route_status": "review_failed_extraction",
+        "review_reason": "file_missing",
+        "tag_confidence": None,
+        "embedding_status": None,
+        "llm_status": None,
+        "semantic_example_count": 0,
+        "source_file_mutation": {"mutated": False, "reason": "missing_file"},
+        "model_usage_summary": {},
+        "warnings": ["file_missing"],
+        "failure_reasons": ["missing_file", "primary_tag_mismatch"],
+    }
+
+
+def _failure_row(label: GoldenEvalLabel, row: dict[str, Any], reason: str) -> dict[str, Any]:
+    return {
+        "golden_label_id": label.id,
+        "source_path": label.source_path,
+        "relative_path": label.relative_path,
+        "reason": reason,
+        "correct_primary_tag": label.correct_primary_tag,
+        "predicted_primary_tag": row.get("predicted_primary_tag"),
+        "route_status": row.get("route_status"),
+        "review_reason": row.get("review_reason"),
+        "model_usage_summary": row.get("model_usage_summary"),
+        "source_file_mutation": row.get("source_file_mutation"),
+        "warnings": row.get("warnings", []),
+    }
+
+
+def _model_usage_with_label(label: GoldenEvalLabel, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    enriched = []
+    for row in rows:
+        enriched.append(
+            {
+                "golden_label_id": label.id,
+                "source_path": label.source_path,
+                "relative_path": label.relative_path,
+                **row,
+            }
+        )
+    return enriched
+
+
+def _per_file_model_usage_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    missing_required_fields = Counter()
+    unknown_cost_basis_count = 0
+    unknown_external_cost_calls = 0
+    external_call_count = 0
+    local_call_count = 0
+    placeholder_call_count = 0
+    total_runtime_ms = 0
+    total_tokens = 0
+    for row in rows:
+        call_count = _model_usage_call_count(row)
+        for field in _missing_model_usage_required_fields(row):
+            missing_required_fields[field] += 1
+        cost_basis = str(row.get("cost_basis") or "unknown").lower()
+        if cost_basis == "external":
+            external_call_count += call_count
+            if row.get("estimated_cost_usd") is None:
+                unknown_external_cost_calls += call_count
+        elif cost_basis == "local":
+            local_call_count += call_count
+        elif cost_basis == "placeholder":
+            placeholder_call_count += call_count
+        else:
+            unknown_cost_basis_count += call_count
+        total_runtime_ms += int(row.get("runtime_ms") or 0)
+        total_tokens += int(row.get("total_tokens") or 0)
+    return {
+        "total_calls": sum(_model_usage_call_count(row) for row in rows),
+        "total_model_usage_rows": len(rows),
+        "external_calls": external_call_count,
+        "local_calls": local_call_count,
+        "placeholder_calls": placeholder_call_count,
+        "unknown_cost_basis_count": unknown_cost_basis_count,
+        "unknown_external_cost_calls": unknown_external_cost_calls,
+        "missing_required_field_counts": dict(sorted(missing_required_fields.items())),
+        "total_runtime_ms": total_runtime_ms,
+        "total_tokens": total_tokens,
+    }
+
+
+def _model_usage_failure_reasons(summary: dict[str, Any]) -> list[str]:
+    reasons = []
+    if summary.get("missing_required_field_counts"):
+        reasons.append("model_usage_missing_required_fields")
+    if int(summary.get("unknown_cost_basis_count") or 0) > 0:
+        reasons.append("model_usage_unknown_cost_basis")
+    if int(summary.get("unknown_external_cost_calls") or 0) > 0:
+        reasons.append("model_usage_external_cost_untracked")
+    return reasons
+
+
+def _record_confusion(confusion: dict[str, dict[str, int]], actual: str, predicted: Any) -> None:
+    predicted_key = str(predicted or "none")
+    confusion.setdefault(actual, {})
+    confusion[actual][predicted_key] = confusion[actual].get(predicted_key, 0) + 1
+
+
+def _table_columns(db_path: str | Path, table_name: str) -> set[str]:
+    with sqlite3.connect(db_path) as connection:
+        rows = connection.execute(f"pragma table_info({table_name})").fetchall()
+    return {str(row[1]) for row in rows}
+
+
+def _optional_column(columns: set[str], name: str) -> str:
+    return name if name in columns else f"null as {name}"
+
+
+def _optional_row_text(row: sqlite3.Row, key: str) -> str | None:
+    value = row[key]
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _optional_row_bool(row: sqlite3.Row, key: str) -> bool | None:
+    value = row[key]
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y"}:
+        return True
+    if text in {"0", "false", "no", "n"}:
+        return False
+    return None
+
+
+def _json_list(value: str | None) -> list[str]:
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return []
+    return _string_list(parsed)
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if str(item).strip()]
+
+
+def _has_warning_prefix(warnings: Any, prefix: str) -> bool:
+    return any(warning.startswith(prefix) for warning in _string_list(warnings))
+
+
+def _has_any_warning_prefix(warnings: Any, prefixes: list[str]) -> bool:
+    return any(any(warning.startswith(prefix) for prefix in prefixes) for warning in _string_list(warnings))
+
+
+def _semantic_examples(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _semantic_retrieval_quality(
+    examples: list[dict[str, Any]],
+    *,
+    correct_primary_tag: str,
+    predicted_primary_tag: Any,
+) -> str:
+    if not examples:
+        return "missing"
+    top5 = examples[:5]
+    same_family = [example for example in top5 if example.get("correct_primary_tag") == correct_primary_tag]
+    if same_family:
+        return "supportive"
+    predicted_matches = [example for example in top5 if example.get("correct_primary_tag") == predicted_primary_tag]
+    if predicted_matches:
+        return "misleading"
+    return "weak"
+
+
+def _safe_divide(numerator: int, denominator: int) -> float | None:
+    if denominator == 0:
+        return None
+    return numerator / denominator
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run the Sunshine graph against golden labels and emit eval artifacts.")
+    parser.add_argument("--labels", "--labels-db", "--golden-labels", dest="labels_db", default=DEFAULT_LABELS_DB)
+    parser.add_argument("--output-dir", default=DEFAULT_EVAL_OUTPUT_DIR)
+    parser.add_argument("--limit", type=int)
+    parser.add_argument("--taxonomy-path", default=DEFAULT_TAXONOMY_PATH)
+    parser.add_argument("--semantic-index-path", default=DEFAULT_INDEX_DB)
+    parser.add_argument("--disable-semantic-index", action="store_true")
+    parser.add_argument("--embedding-provider", choices=["placeholder", "gemini", "cortex", "openai"])
+    parser.add_argument("--enable-llm-tags", action="store_true")
+    parser.add_argument("--enable-ocr", action="store_true")
+    parser.add_argument("--ocr-fallback-provider", choices=["disabled", "openai", "cortex", "local", "openai-compatible"])
+    parser.add_argument("--progress", action="store_true")
+    return parser.parse_args()
+
+
+def main() -> None:
+    load_pipeline_env()
+    args = _parse_args()
+    summary = run_golden_pipeline_evaluation(
+        args.labels_db,
+        output_dir=args.output_dir,
+        limit=args.limit,
+        taxonomy_path=args.taxonomy_path,
+        embedding_provider_name=args.embedding_provider,
+        llm_tag_inspector=llm_tag_inspector_from_env() if args.enable_llm_tags else LLMTagInspector(),
+        ocr_executor=ocr_executor_from_env(fallback_provider_override=args.ocr_fallback_provider) if args.enable_ocr else None,
+        ocr_fallback_provider=args.ocr_fallback_provider,
+        semantic_index_path=None if args.disable_semantic_index else args.semantic_index_path,
+        progress=args.progress,
+    )
+    print(json.dumps({"ok": True, **summary}, indent=2, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()

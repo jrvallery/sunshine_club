@@ -4,7 +4,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from sunshine_extraction.embeddings import PlaceholderEmbeddingProvider
+from sunshine_extraction.embeddings import EmbeddingProviderError, PlaceholderEmbeddingProvider
 from sunshine_extraction.semantic_index import build_semantic_index
 from sunshine_extraction.langgraph_pipeline import run_document_batch, run_document_graph
 from sunshine_extraction.sample_pipeline import LLMTagInspector, OcrDocumentResult, OcrExecutor, OcrPageResult, SampleFile
@@ -25,6 +25,14 @@ class _KeywordEmbeddingProvider:
         return vectors
 
 
+class _FailingEmbeddingProvider:
+    model = "failing-test"
+    dimensions = 2
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        raise EmbeddingProviderError("embedding service unavailable")
+
+
 class _TeaLLMTagInspector(LLMTagInspector):
     model = "test-llm"
 
@@ -39,6 +47,42 @@ class _TeaLLMTagInspector(LLMTagInspector):
             "rationale": "Tea evidence is strong.",
             "needs_review": False,
             "warning": None,
+        }
+
+
+class _HistoryLLMTagInspector(LLMTagInspector):
+    model = "test-llm"
+
+    def inspect(self, **_kwargs):
+        return {
+            "llm_status": "inspected",
+            "model": self.model,
+            "primary_tag": "history_archive_general",
+            "secondary_tags": ["history_archive"],
+            "confidence": 0.94,
+            "evidence": ["file reads like a historical summary"],
+            "rationale": "History evidence is strong.",
+            "needs_review": False,
+            "warning": None,
+        }
+
+
+class _InvalidSecondaryLLMTagInspector(LLMTagInspector):
+    model = "test-llm"
+
+    def inspect(self, **_kwargs):
+        return {
+            "llm_status": "inspected_with_invalid_fields",
+            "model": self.model,
+            "provider": "test",
+            "primary_tag": "annual_spring_tea",
+            "secondary_tags": ["event_material"],
+            "confidence": 0.92,
+            "evidence": ["file text mentions tea"],
+            "rationale": "Tea evidence is strong but one secondary tag was invalid.",
+            "needs_review": False,
+            "review_reason": None,
+            "warnings": ["llm_invalid_secondary_tags:not_a_real_tag"],
         }
 
 
@@ -122,6 +166,8 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert final_result["route_status"] == "route_candidate"
     assert final_result["top_tag_candidate"] == "annual_spring_tea"
     assert final_result["tag_assignment_source"] == "deterministic+llm"
+    assert final_result["confidence_calibration"]["status"] == "calibrated"
+    assert "semantic_index_missing" in final_result["warnings"]
     assert graph_result["final_result"]["top_tag_candidate"] == "annual_spring_tea"
     assert pipeline_rows == [final_result]
     assert review_rows == []
@@ -143,9 +189,63 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
         "assign_deterministic_tags",
         "inspect_tags_with_llm",
         "combine_tag_evidence",
+        "calibrate_tag_confidence",
         "resolve_route_or_review",
         "persist_outputs",
     ]
+
+
+def test_langgraph_confidence_calibration_routes_llm_disagreement_to_review(tmp_path: Path) -> None:
+    source = tmp_path / "tea.txt"
+    source.write_text("Annual Sunshine Tea guest list and event notes.", encoding="utf-8")
+
+    result = run_document_graph(
+        source,
+        source_path="/source/tea.txt",
+        relative_path="Sunshine shared folders/Teas/tea.txt",
+        output_dir=tmp_path / "graph-out",
+        embedding_provider=PlaceholderEmbeddingProvider(dimensions=4),
+        llm_tag_inspector=_HistoryLLMTagInspector(),
+    )
+
+    final_result = result["final_result"]
+
+    assert final_result["top_tag_candidate"] == "annual_spring_tea"
+    assert final_result["route_status"] == "review_tag_confidence_calibration"
+    assert final_result["review_reason"] == "llm_tag_disagreement"
+    assert final_result["tag_confidence"] == 0.78
+    assert "llm_primary_disagrees:history_archive_general" in final_result["confidence_calibration"]["factors"]
+
+
+def test_langgraph_propagates_structured_llm_warnings_to_audit_and_review(tmp_path: Path) -> None:
+    source = tmp_path / "tea.txt"
+    source.write_text("Annual Sunshine Tea guest list and event notes.", encoding="utf-8")
+    output_dir = tmp_path / "graph-out"
+
+    result = run_document_graph(
+        source,
+        source_path="/source/tea.txt",
+        relative_path="Sunshine shared folders/Teas/tea.txt",
+        output_dir=output_dir,
+        embedding_provider=PlaceholderEmbeddingProvider(dimensions=4),
+        llm_tag_inspector=_InvalidSecondaryLLMTagInspector(),
+    )
+
+    final_result = result["final_result"]
+    audit_events = [json.loads(line) for line in (output_dir / "graph-audit-events.jsonl").read_text().splitlines()]
+    llm_event = next(event for event in audit_events if event["node"] == "inspect_tags_with_llm")
+    review_rows = [json.loads(line) for line in (output_dir / "sample-review-queue.jsonl").read_text().splitlines()]
+    model_usage_rows = [json.loads(line) for line in (output_dir / "sample-model-usage.jsonl").read_text().splitlines()]
+    llm_usage = next(row for row in model_usage_rows if row["purpose"] == "tag_inspection")
+
+    assert final_result["llm_status"] == "inspected_with_invalid_fields"
+    assert final_result["route_status"] == "review_tag_confidence_calibration"
+    assert final_result["review_reason"] == "llm_structured_output_invalid"
+    assert "llm_invalid_secondary_tags:not_a_real_tag" in final_result["warnings"]
+    assert "llm_invalid_secondary_tags:not_a_real_tag" in llm_event["warnings"]
+    assert review_rows[0]["review_reason"] == "llm_structured_output_invalid"
+    assert llm_usage["status"] == "inspected_with_invalid_fields"
+    assert llm_usage["error"] == "llm_invalid_secondary_tags:not_a_real_tag"
 
 
 def test_langgraph_retrieves_labeled_examples_and_uses_them_as_tag_evidence(tmp_path: Path) -> None:
@@ -203,6 +303,40 @@ def test_langgraph_retrieves_labeled_examples_and_uses_them_as_tag_evidence(tmp_
     assert final_result["semantic_example_count"] == 1
     assert final_result["tag_assignment_source"] == "deterministic+semantic"
     assert any("semantic_example_agreement:history_archive_general" in evidence for evidence in final_result["tag_evidence"])
+
+
+def test_langgraph_embedding_failure_mode_routes_to_review_without_placeholder_fallback(tmp_path: Path) -> None:
+    source = tmp_path / "tea.txt"
+    source.write_text("Annual Sunshine Tea guest list and event notes.", encoding="utf-8")
+    output_dir = tmp_path / "graph-out"
+
+    result = run_document_graph(
+        source,
+        source_path="/source/tea.txt",
+        relative_path="Sunshine shared folders/Teas/tea.txt",
+        output_dir=output_dir,
+        embedding_provider=_FailingEmbeddingProvider(),
+        embedding_failure_mode="review",
+        llm_tag_inspector=_TeaLLMTagInspector(),
+    )
+
+    final_result = result["final_result"]
+    embedding_rows = [json.loads(line) for line in (output_dir / "sample-embeddings.jsonl").read_text().splitlines()]
+    review_rows = [json.loads(line) for line in (output_dir / "sample-review-queue.jsonl").read_text().splitlines()]
+    model_usage_rows = [json.loads(line) for line in (output_dir / "sample-model-usage.jsonl").read_text().splitlines()]
+    chunk_embedding_usage = next(row for row in model_usage_rows if row["purpose"] == "chunk_embedding")
+
+    assert embedding_rows == []
+    assert final_result["embedding_status"] == "none"
+    assert final_result["route_status"] == "review_embedding_unavailable"
+    assert final_result["review_reason"] == "embedding_quality_unavailable"
+    assert "embedding_provider_failed" in final_result["warnings"]
+    assert "embedding_quality_unavailable" in final_result["warnings"]
+    assert review_rows[0]["review_reason"] == "embedding_quality_unavailable"
+    assert chunk_embedding_usage["status"] == "failed"
+    assert chunk_embedding_usage["metadata"]["call_count"] == 1
+    assert "EmbeddingProviderError" in chunk_embedding_usage["error"]
+    assert all(row.get("status") != "placeholder" for row in model_usage_rows)
 
 
 def test_langgraph_missing_file_persists_failure_state(tmp_path: Path) -> None:

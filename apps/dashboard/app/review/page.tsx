@@ -16,18 +16,13 @@ import { DataTable } from "../../components/data-table/DataTable";
 import { ActiveFilterChips } from "../../components/dashboard/ActiveFilterChips";
 import { DashboardSearchToolbar } from "../../components/dashboard/DashboardSearchToolbar";
 import { FacetPanel, type FacetDefinition } from "../../components/dashboard/FacetPanel";
-import { InspectorPanel } from "../../components/dashboard/InspectorPanel";
 import { PathCell } from "../../components/dashboard/PathCell";
 import { ProviderConfigBadge } from "../../components/dashboard/ProviderConfigBadge";
 import { QualityBadge } from "../../components/dashboard/QualityBadge";
 import { ResultTableShell } from "../../components/dashboard/ResultTableShell";
 import { RunContextBadge } from "../../components/dashboard/RunContextBadge";
-import { EmbeddedPreview } from "../../components/file-preview/EmbeddedPreview";
-import { Button } from "../../components/ui/Button";
-import { SelectInput, TextArea, TextInput } from "../../components/ui/FormControls";
-import { KeyValue } from "../../components/ui/KeyValue";
 import { StatusBadge } from "../../components/ui/StatusBadge";
-import { MultiTagPicker, TagPicker } from "../../components/ui/TagPicker";
+import { TagPicker } from "../../components/ui/TagPicker";
 import { fetchJson, queryString } from "../../lib/api";
 import { primaryTagOptions, secondaryTagOptions } from "../../lib/taxonomy";
 import type { ReviewFacets, ReviewItem, ReviewSummary } from "../../lib/types";
@@ -42,6 +37,7 @@ type Filters = {
   content_class: string;
   quality: string;
   placement_status: string;
+  confidence_bucket: string;
   warning_type: string;
   source_collection: string;
   run_id: string;
@@ -49,6 +45,7 @@ type Filters = {
   embedding_provider: string;
   llm_tag_provider: string;
   ocr_fallback_provider: string;
+  ocr_fallback_used: string;
   enable_llm_tags: string;
 };
 
@@ -62,6 +59,7 @@ const initialFilters: Filters = {
   content_class: "",
   quality: "",
   placement_status: "",
+  confidence_bucket: "",
   warning_type: "",
   source_collection: "",
   run_id: "",
@@ -69,6 +67,7 @@ const initialFilters: Filters = {
   embedding_provider: "",
   llm_tag_provider: "",
   ocr_fallback_provider: "",
+  ocr_fallback_used: "",
   enable_llm_tags: ""
 };
 
@@ -78,9 +77,11 @@ const savedReviewQueues: Array<{ label: string; filters: Partial<Filters> }> = [
   { label: "Open review queue", filters: { status: "open" } },
   { label: "All items for current run", filters: { status: "all" } },
   { label: "OCR poor / empty", filters: { status: "all", warning_type: "ocr_quality_below_threshold" } },
+  { label: "OCR fallback used", filters: { status: "all", ocr_fallback_used: "used" } },
   { label: "Fast run OCR failures", filters: { status: "all", ocr_fallback_provider: "disabled", warning_type: "ocr_quality_below_threshold" } },
   { label: "LLM tag disagreements", filters: { status: "all", review_reason: "llm_tag_disagreement" } },
   { label: "Low confidence tags", filters: { status: "all", review_reason: "tag_confidence_below_threshold" } },
+  { label: "Low confidence bucket", filters: { status: "all", confidence_bucket: "low" } },
   { label: "Placement / date review", filters: { status: "all", placement_status: "needs_review" } },
   { label: "Privacy-sensitive", filters: { status: "all", warning_type: "privacy" } },
   { label: "Route candidate audit sample", filters: { status: "all", review_reason: "qa_random_route_candidate_sample" } },
@@ -96,12 +97,14 @@ const reviewFacetDefinitions: Array<FacetDefinition<keyof Filters & string>> = [
   { key: "primary_tag", title: "Primary Tag", facetKey: "primary_tag", limit: 8 },
   { key: "content_class", title: "Class", facetKey: "content_class", limit: 8 },
   { key: "quality", title: "Quality", facetKey: "quality", limit: 8 },
+  { key: "confidence_bucket", title: "Confidence", facetKey: "confidence_bucket", limit: 8 },
   { key: "warning_type", title: "Warnings", facetKey: "warning_type", limit: 8 },
   { key: "placement_status", title: "Placement", facetKey: "placement_status", limit: 8 },
   { key: "source_collection", title: "Collection", facetKey: "source_collection", limit: 8 },
   { key: "embedding_provider", title: "Embedding", facetKey: "embedding_provider", limit: 8 },
   { key: "llm_tag_provider", title: "LLM Provider", facetKey: "llm_tag_provider", limit: 8 },
   { key: "ocr_fallback_provider", title: "OCR Fallback", facetKey: "ocr_fallback_provider", limit: 8 },
+  { key: "ocr_fallback_used", title: "Fallback Used", facetKey: "ocr_fallback_used", limit: 8 },
   { key: "enable_llm_tags", title: "LLM Tags", facetKey: "llm_tags", valueMap: { enabled: "true", disabled: "false" }, limit: 8 },
   { key: "status", title: "Review Status", facetKey: "review_status", limit: 8 }
 ];
@@ -183,6 +186,11 @@ export default function ReviewPage() {
         id: "run_config",
         header: "Run Config",
         cell: ({ row }) => <RunConfig item={row.original} />
+      },
+      {
+        id: "model_usage",
+        header: "Models",
+        cell: ({ row }) => <ModelUsageCell item={row.original} />
       },
       { accessorKey: "review_reason", header: "Reason" },
       { accessorKey: "proposed_class", header: "Class" },
@@ -298,154 +306,6 @@ export default function ReviewPage() {
   );
 }
 
-function ReviewDrawer({
-  item,
-  saving,
-  assigning,
-  onClose,
-  onSubmit,
-  onAssign
-}: {
-  item: ReviewItem;
-  saving: boolean;
-  assigning: boolean;
-  onClose: () => void;
-  onSubmit: (body: Record<string, unknown>) => void;
-  onAssign: (body: Record<string, unknown>) => void;
-}) {
-  const [decision, setDecision] = useState("accept");
-  const [correctClass, setCorrectClass] = useState(item.correct_class ?? item.proposed_class ?? "");
-  const [correctTag, setCorrectTag] = useState(item.correct_tag ?? item.proposed_tag ?? "");
-  const [secondary, setSecondary] = useState(item.correct_secondary_tags?.length ? item.correct_secondary_tags : item.secondary_tags);
-  const [destination, setDestination] = useState(item.correct_destination_path ?? item.result.destination_path ?? "");
-  const [placementYear, setPlacementYear] = useState(item.correct_placement_year ?? "");
-  const [privacy, setPrivacy] = useState(item.correct_privacy ?? item.result.default_privacy ?? "");
-  const [reviewStage, setReviewStage] = useState(item.review_stage ?? "");
-  const [assignedReviewer, setAssignedReviewer] = useState(item.assigned_reviewer ?? "");
-  const [priority, setPriority] = useState(item.priority ?? "");
-  const [notes, setNotes] = useState(item.notes ?? "");
-
-  return (
-    <InspectorPanel className="reviewInspector" eyebrow="Review Item" title={item.relative_path} onClose={onClose}>
-      <div className="drawerGrid">
-        <section>
-          <h3>File</h3>
-          <p className="pathText">{item.source_path}</p>
-          <a className="primaryButton" href={`/api/admin/review/items/${item.id}/file`} target="_blank">
-            Open File
-          </a>
-        </section>
-        <section>
-          <h3>Run Context</h3>
-          <KeyValue label="Run" value={item.run_id ? <Link href={`/runs/${item.run_id}/report`}>{item.run_key ?? `Run #${item.run_id}`}</Link> : "-"} />
-          <KeyValue label="Preset" value={item.run_preset_key ?? "-"} />
-          <KeyValue label="Embedding" value={item.embedding_provider ?? "-"} />
-          <KeyValue label="LLM tags" value={item.enable_llm_tags == null ? "-" : item.enable_llm_tags ? "enabled" : "disabled"} />
-          <KeyValue label="LLM provider" value={item.llm_tag_provider ?? "-"} />
-          <KeyValue label="OCR fallback" value={item.ocr_fallback_provider ?? "-"} />
-        </section>
-        <section className="wideSection">
-          <h3>Preview</h3>
-          <EmbeddedPreview previewUrl={`/api/admin/review/items/${item.id}/file`} filename={item.relative_path || item.source_path} />
-        </section>
-        <section>
-          <h3>OCR / Text</h3>
-          <div className="textPreview">{item.extraction_text_snippet || "No text snippet available."}</div>
-        </section>
-        <section>
-          <h3>Tagging</h3>
-          <KeyValue label="Primary" value={item.proposed_tag ?? "-"} />
-          <KeyValue label="Secondary" value={item.secondary_tags.join(", ") || "-"} />
-          <KeyValue label="Confidence" value={item.confidence == null ? "-" : item.confidence.toFixed(2)} />
-          <ul className="evidenceList">{(item.result.tag_evidence ?? []).map((evidence) => <li key={evidence}>{evidence}</li>)}</ul>
-        </section>
-        <section>
-          <h3>Placement</h3>
-          <KeyValue label="Destination" value={item.result.destination_path ?? "-"} />
-          <KeyValue label="Status" value={item.result.placement_status ?? "-"} />
-          <KeyValue label="Rule" value={item.result.placement_rule ?? "-"} />
-          <KeyValue label="Date confidence" value={item.result.placement_date_confidence ?? "-"} />
-          <KeyValue label="Privacy" value={item.result.default_privacy ?? "-"} />
-        </section>
-        <section>
-          <h3>Nearest Examples</h3>
-          {(item.result.semantic_examples ?? []).length ? (
-            <ul className="evidenceList">
-              {(item.result.semantic_examples ?? []).map((example, index) => (
-                <li key={`${example.relative_path}-${index}`}>
-                  {example.correct_primary_tag} {example.score?.toFixed(3)} {example.relative_path}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="muted">No semantic examples used.</p>
-          )}
-        </section>
-        <section>
-          <h3>Decision</h3>
-          <div className="formGrid">
-            <SelectInput label="Decision" value={decision} onChange={(event) => setDecision(event.target.value)}>
-              <option value="accept">Accept</option>
-              <option value="change">Change</option>
-              <option value="defer">Defer</option>
-              <option value="ignore">Ignore</option>
-              <option value="reject">Reject</option>
-              <option value="duplicate">Duplicate</option>
-            </SelectInput>
-            <TextInput label="Correct class" value={correctClass} onChange={(event) => setCorrectClass(event.target.value)} />
-            <TagPicker label="Correct primary tag" options={primaryTagOptions} value={correctTag} onChange={setCorrectTag} />
-            <MultiTagPicker label="Correct secondary tags" options={secondaryTagOptions} value={secondary} onChange={setSecondary} />
-            <TextInput label="Correct destination path" value={destination} onChange={(event) => setDestination(event.target.value)} />
-            <TextInput label="Correct placement year/range" value={placementYear} onChange={(event) => setPlacementYear(event.target.value)} />
-            <TextInput label="Correct privacy" value={privacy} onChange={(event) => setPrivacy(event.target.value)} />
-            <TextInput label="Review stage" value={reviewStage} onChange={(event) => setReviewStage(event.target.value)} />
-            <TextInput label="Assigned reviewer" value={assignedReviewer} onChange={(event) => setAssignedReviewer(event.target.value)} />
-            <TextInput label="Priority" value={priority} onChange={(event) => setPriority(event.target.value)} />
-            <TextArea label="Notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} />
-            <Button
-              disabled={assigning}
-              onClick={() =>
-                onAssign({
-                  assigned_reviewer: assignedReviewer || null,
-                  review_stage: reviewStage || null,
-                  priority: priority || null
-                })
-              }
-            >
-              {assigning ? "Assigning..." : "Save Assignment"}
-            </Button>
-            <Button
-              variant="primary"
-              disabled={saving}
-              onClick={() =>
-                onSubmit({
-                  decision,
-                  correct_class: correctClass || null,
-                  correct_tag: correctTag || null,
-                  correct_secondary_tags: secondary,
-                  correct_destination_path: destination || null,
-                  correct_placement_year: placementYear || null,
-                  correct_privacy: privacy || null,
-                  review_stage: reviewStage || null,
-                  notes,
-                  reviewer: "james",
-                  save_as_golden: decision === "accept" || decision === "change"
-                })
-              }
-            >
-              {saving ? "Saving..." : "Save Decision"}
-            </Button>
-          </div>
-        </section>
-        <section className="wideSection">
-          <h3>Raw JSON</h3>
-          <pre className="jsonPreview">{JSON.stringify(item.result, null, 2)}</pre>
-        </section>
-      </div>
-    </InspectorPanel>
-  );
-}
-
 function Metric({ label, value }: { label: string; value: number }) {
   return (
     <div className="miniMetric">
@@ -470,5 +330,19 @@ function RunConfig({ item }: { item: ReviewItem }) {
       llmProvider={item.llm_tag_provider}
       ocrProvider={item.ocr_fallback_provider}
     />
+  );
+}
+
+function ModelUsageCell({ item }: { item: ReviewItem }) {
+  const usage = item.model_usage_summary;
+  if (!usage?.total_calls) {
+    return <span className="muted">-</span>;
+  }
+  return (
+    <div className="cellStack">
+      <strong>{usage.total_calls} calls</strong>
+      <span>{usage.external_calls} external / {usage.local_calls} local</span>
+      <span>{usage.scope === "file" ? "file scoped" : "run scoped"}</span>
+    </div>
   );
 }

@@ -209,8 +209,8 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
         return vectors
 
 
-def provider_from_env() -> EmbeddingProvider:
-    provider_name = os.environ.get("SUNSHINE_EMBEDDING_PROVIDER", "placeholder").strip().lower()
+def provider_from_env(provider_name_override: str | None = None) -> EmbeddingProvider:
+    provider_name = (provider_name_override or os.environ.get("SUNSHINE_EMBEDDING_PROVIDER", "placeholder")).strip().lower()
     if provider_name in {"", "placeholder", "local"}:
         dimensions = _env_int("SUNSHINE_EMBEDDING_DIMENSIONS", DEFAULT_PLACEHOLDER_DIMENSIONS)
         return PlaceholderEmbeddingProvider(dimensions=dimensions)

@@ -26,6 +26,8 @@ export type ReviewItem = {
   confidence: number | null;
   warnings: string[];
   display_warnings?: string[];
+  ocr_evidence?: OcrEvidence;
+  ocr_quality_label?: string | null;
   run_id?: number | null;
   run_key?: string | null;
   run_preset_key?: string | null;
@@ -37,6 +39,8 @@ export type ReviewItem = {
   correct_class?: string | null;
   correct_tag?: string | null;
   correct_secondary_tags?: string[];
+  expected_review_required?: boolean | null;
+  sensitive_record?: boolean;
   correct_destination_path?: string | null;
   correct_placement_year?: string | null;
   correct_privacy?: string | null;
@@ -44,7 +48,30 @@ export type ReviewItem = {
   priority?: string | null;
   assigned_reviewer?: string | null;
   notes?: string | null;
+  model_usage_summary?: {
+    scope: string;
+    total_calls: number;
+    failed_calls: number;
+    external_calls: number;
+    local_calls: number;
+    unknown_external_cost_calls: number;
+    total_runtime_ms: number;
+    total_tokens: number;
+    estimated_external_cost_usd: number;
+    purposes: string[];
+    providers: string[];
+  };
   result: PipelineResult;
+};
+
+export type OcrEvidence = {
+  fallback_used?: boolean;
+  fallback_provider?: string | null;
+  fallback_reason?: string | null;
+  fallback_notes?: string[];
+  original_text_snippet?: string | null;
+  fallback_text_snippet?: string | null;
+  final_text_snippet?: string | null;
 };
 
 export type PipelineResult = {
@@ -70,6 +97,7 @@ export type PipelineResult = {
   semantic_examples?: SemanticExample[];
   competing_tags?: Array<Record<string, unknown>>;
   confidence_inputs?: Record<string, unknown>;
+  ocr_evidence?: OcrEvidence;
   warnings?: string[];
 };
 
@@ -187,6 +215,7 @@ export type PipelineRun = {
   id: number;
   run_key: string;
   preset_key: string;
+  run_role?: string | null;
   status: string;
   input_root?: string | null;
   output_dir?: string | null;
@@ -196,6 +225,7 @@ export type PipelineRun = {
   llm_tag_provider?: string | null;
   ocr_fallback_provider?: string | null;
   semantic_index_path?: string | null;
+  run_metadata?: Record<string, unknown>;
   started_at?: string | null;
   completed_at?: string | null;
   processed_count?: number | null;
@@ -255,6 +285,7 @@ export type RunArtifact = {
   size_bytes?: number | null;
   modified_at?: string | null;
   row_count?: number | null;
+  sha256?: string | null;
 };
 
 export type RunModelUsageCall = {
@@ -298,6 +329,7 @@ export type RunReport = {
   run: PipelineRun;
   progress: PipelineRunProgress;
   overview: Record<string, unknown>;
+  status_buckets: Record<string, number>;
   distributions: Record<string, Record<string, number>>;
   files: Array<Record<string, unknown>>;
   review_queue: {
@@ -323,13 +355,21 @@ export type GoldenLabel = {
   relative_path: string;
   sample_path?: string | null;
   extracted_text_snippet?: string | null;
+  content_class?: string | null;
   correct_primary_tag: string;
   correct_secondary_tags: string[];
+  ocr_quality_label?: string | null;
+  expected_review_required?: boolean | null;
+  sensitive_record?: boolean;
+  correct_destination_path?: string | null;
+  correct_placement_year?: string | null;
+  correct_privacy?: string | null;
   reviewer?: string | null;
   notes?: string | null;
   proposed_tag?: string | null;
   proposed_secondary_tags?: string[];
   proposed_confidence?: number | null;
+  reviewed_at?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -339,6 +379,9 @@ export type GoldenLabelSummary = {
   total_golden_labels: number;
   golden_by_primary_tag: Record<string, number>;
   golden_by_secondary_tag: Record<string, number>;
+  taxonomy_primary_tags?: string[];
+  missing_primary_tags?: string[];
+  primary_coverage_rate?: number | null;
 };
 
 export type SemanticIndexStatus = {
@@ -369,6 +412,191 @@ export type SemanticEvalReport = {
   confusion: Record<string, Record<string, number>>;
   mismatches: Array<Record<string, unknown>>;
   files_requiring_manual_review: Array<Record<string, unknown>>;
+};
+
+export type PipelineEvalRun = {
+  id: number;
+  eval_key: string;
+  labels_db?: string | null;
+  output_dir: string;
+  status: string;
+  total_golden_labels?: number | null;
+  evaluated_predictions?: number | null;
+  primary_accuracy?: number | null;
+  content_class_accuracy?: number | null;
+  secondary_precision?: number | null;
+  secondary_recall?: number | null;
+  ocr_quality_accuracy?: number | null;
+  ocr_acceptable_rate?: number | null;
+  review_routing_accuracy?: number | null;
+  review_false_accepts?: number | null;
+  embedding_success_rate?: number | null;
+  semantic_same_family_top5_rate?: number | null;
+  placement_destination_accuracy?: number | null;
+  source_file_mutations?: number | null;
+  acceptance_gate_status?: string | null;
+  production_readiness_status?: string | null;
+  failure_count?: number | null;
+  model_usage: Record<string, unknown>;
+  summary: PipelineEvalSummary;
+  run_metadata?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PipelineEvalSummary = {
+  labels_db?: string;
+  output_dir?: string;
+  total_golden_labels?: number;
+  evaluated_predictions?: number;
+  primary_accuracy?: number | null;
+  content_class_accuracy?: number | null;
+  secondary_precision?: number | null;
+  secondary_recall?: number | null;
+  ocr_quality_accuracy?: number | null;
+  ocr_acceptable_rate?: number | null;
+  review_routing_accuracy?: number | null;
+  review_routing_precision?: number | null;
+  review_routing_recall?: number | null;
+  review_false_accepts?: number;
+  review_false_reviews?: number;
+  ocr_fallback_rate?: number | null;
+  ocr_fallback_failed_count?: number;
+  llm_structured_output_validity_rate?: number | null;
+  placement_destination_accuracy?: number | null;
+  placement_year_accuracy?: number | null;
+  unsafe_placement_proposal_count?: number;
+  privacy_accuracy?: number | null;
+  sensitive_false_accepts?: number;
+  sensitive_medium_low_confidence_accepts?: number;
+  source_file_mutations?: number;
+  high_confidence_primary_accuracy?: number | null;
+  high_confidence_false_accepts?: number;
+  low_confidence_false_accepts?: number;
+  low_confidence_accepted_count?: number;
+  medium_confidence_unexplained_count?: number;
+  invalid_primary_tag_count?: number;
+  tag_evidence_presence_rate?: number | null;
+  embedding_success_rate?: number | null;
+  semantic_same_family_top5_rate?: number | null;
+  high_risk_primary_accuracy_min?: number | null;
+  failure_count?: number;
+  review_required_count?: number;
+  route_candidate_count?: number;
+  primary_tag_metrics?: Record<string, {
+    total: number;
+    correct: number;
+    accuracy: number | null;
+    review_required: number;
+    accepted?: number;
+    review_required_rate: number | null;
+    false_accepts?: number;
+    false_reviews?: number;
+    secondary_true_positive?: number;
+    secondary_false_positive?: number;
+    secondary_false_negative?: number;
+    secondary_precision?: number | null;
+    secondary_recall?: number | null;
+  }>;
+  high_risk_primary_tag_metrics?: Record<string, {
+    total: number;
+    correct: number;
+    accuracy: number | null;
+    review_required: number;
+    accepted?: number;
+    review_required_rate: number | null;
+    false_accepts?: number;
+    false_reviews?: number;
+    secondary_precision?: number | null;
+    secondary_recall?: number | null;
+  }>;
+  confidence_bucket_metrics?: Record<string, {
+    total: number;
+    primary_correct: number;
+    primary_accuracy: number | null;
+    review_required: number;
+    accepted: number;
+    review_required_rate: number | null;
+    false_accepts: number;
+    false_reviews: number;
+  }>;
+  golden_label_readiness?: {
+    ready: boolean;
+    minimum_label_count: number;
+    total_golden_labels: number;
+    label_count_ready: boolean;
+    taxonomy_primary_count: number;
+    covered_primary_count: number;
+    primary_coverage_rate: number | null;
+    missing_primary_tags: string[];
+    minimum_high_risk_labels_per_category: number;
+    high_risk_label_counts: Record<string, number>;
+    underrepresented_high_risk_tags: string[];
+    primary_label_counts: Record<string, number>;
+  };
+  by_failure_reason?: Record<string, number>;
+  by_quality?: Record<string, number>;
+  by_llm_status?: Record<string, number>;
+  model_usage?: Record<string, unknown>;
+  run_metadata?: Record<string, unknown>;
+  run_warnings?: string[];
+  artifacts?: Record<string, string>;
+  acceptance_gate?: {
+    status: string;
+    checks: Array<{ name: string; value: number | null; threshold: number; status: string; operator: string }>;
+    blocking_checks: Array<{ name: string; value: number | null; threshold: number; status: string; operator: string }>;
+  };
+  production_readiness?: {
+    status: string;
+    larger_batch_allowed: boolean;
+    customer_claims_allowed: boolean;
+    summary: string;
+    blocking_reasons: string[];
+    required_next_actions: string[];
+    reliable_categories: Array<{ tag: string; total: number; correct: number; accuracy: number | null }>;
+    unreliable_categories: Array<{ tag: string; total: number; correct: number; accuracy: number | null; reason?: string }>;
+    underrepresented_categories: Array<{ tag: string; total: number; correct: number; accuracy: number | null; reason?: string }>;
+    status_counts: Record<string, number>;
+    category_min_examples: number;
+    category_accuracy_threshold: number;
+  };
+  production_status_counts?: Record<string, number>;
+};
+
+export type PipelineEvalRunResponse = {
+  ok: boolean;
+  output_dir: string;
+  eval_run: PipelineEvalRun;
+  report: PipelineEvalSummary;
+};
+
+export type PipelineEvalDrilldown = {
+  eval_run: PipelineEvalRun;
+  result_type: string;
+  path: string;
+  count: number;
+  items: Array<Record<string, unknown>>;
+};
+
+export type PipelineEvalComparison = {
+  baseline_eval_run: PipelineEvalRun;
+  current_eval_run: PipelineEvalRun;
+  shared_file_count: number;
+  baseline_only_count: number;
+  current_only_count: number;
+  metric_deltas: Record<string, { baseline: number | null; current: number | null; delta: number | null }>;
+  changed_prediction_count: number;
+  changed_secondary_tag_count?: number;
+  fixed_failure_count: number;
+  regressed_failure_count: number;
+  changed_failure_reason_count?: number;
+  changed_review_route_count: number;
+  changed_predictions: Array<Record<string, unknown>>;
+  changed_secondary_tags?: Array<Record<string, unknown>>;
+  fixed_failures: Array<Record<string, unknown>>;
+  regressed_failures: Array<Record<string, unknown>>;
+  changed_failure_reasons?: Array<Record<string, unknown>>;
+  changed_review_routes: Array<Record<string, unknown>>;
 };
 
 export type PlacementReport = {

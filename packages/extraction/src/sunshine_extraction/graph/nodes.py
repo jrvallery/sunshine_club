@@ -24,6 +24,7 @@ from langgraph.graph import END, START, StateGraph
 from sunshine_extraction.embeddings import (
     EmbeddingConfigurationError,
     EmbeddingProvider,
+    EmbeddingProviderError,
     PlaceholderEmbeddingProvider,
     provider_from_env,
 )
@@ -47,7 +48,9 @@ from sunshine_extraction.sample_pipeline import (
     assign_tag_candidates,
     build_ocr_summary,
     chunk_content,
+    calibrate_tag_confidence,
     combine_tag_candidates,
+    embed_chunks,
     embed_chunks_with_fallback,
     extract_content,
     extraction_quality_gate,
@@ -295,16 +298,44 @@ def _chunk_content_node(state: DocumentPipelineState) -> dict[str, Any]:
 def _embed_chunks_node(state: DocumentPipelineState, deps: DocumentPipelineDeps) -> dict[str, Any]:
     chunks = state.get("chunks", [])
     started = time.monotonic()
-    embeddings, embedding_warnings = embed_chunks_with_fallback(chunks, deps["embedding_provider"])
+    provider = deps["embedding_provider"]
+    embedding_warnings: list[str] = []
+    if deps.get("embedding_failure_mode") == "review":
+        try:
+            embeddings = embed_chunks(chunks, provider)
+        except (EmbeddingConfigurationError, EmbeddingProviderError) as error:
+            embeddings = []
+            embedding_warnings = [
+                "embedding_provider_failed",
+                "embedding_quality_unavailable",
+            ]
+            error_message = f"{type(error).__name__}: {error}"
+        else:
+            error_message = None
+            if isinstance(provider, PlaceholderEmbeddingProvider) or any(row.get("embedding_status") == "placeholder" for row in embeddings):
+                embedding_warnings = [
+                    "embedding_placeholder_disallowed_in_eval",
+                    "embedding_quality_unavailable",
+                ]
+    else:
+        embeddings, embedding_warnings = embed_chunks_with_fallback(chunks, provider)
+        error_message = ";".join(embedding_warnings) if embedding_warnings else None
+
+    if isinstance(provider, PlaceholderEmbeddingProvider) or any(row.get("embedding_status") == "placeholder" for row in embeddings):
+        usage_status = "placeholder"
+    elif embedding_warnings:
+        usage_status = "failed"
+    else:
+        usage_status = "ok"
     usage_row = _embedding_model_usage_row(
         state,
-        deps["embedding_provider"],
+        provider,
         node="embed_chunks",
         purpose="chunk_embedding",
-        status="failed" if embedding_warnings else "ok",
+        status=usage_status,
         call_count=len(chunks),
         started=started,
-        error=";".join(embedding_warnings) if embedding_warnings else None,
+        error=error_message,
     )
     return {
         "embeddings": embeddings,
@@ -316,7 +347,35 @@ def _embed_chunks_node(state: DocumentPipelineState, deps: DocumentPipelineDeps)
 def _retrieve_labeled_examples_node(state: DocumentPipelineState, deps: DocumentPipelineDeps) -> dict[str, Any]:
     index_path = deps.get("semantic_index_path")
     if not index_path or not Path(index_path).exists():
-        return {"semantic_examples": []}
+        warnings = [*state.get("warnings", [])]
+        if index_path:
+            warnings.append("semantic_index_missing")
+        provider_name = str(
+            getattr(deps["embedding_provider"], "provider_name", "")
+            or deps["embedding_provider"].__class__.__name__.replace("EmbeddingProvider", "").lower()
+            or "embedding"
+        )
+        usage_row = _model_usage_row(
+            state,
+            node="retrieve_labeled_examples",
+            purpose="semantic_retrieval_embedding",
+            provider=provider_name,
+            model=str(getattr(deps["embedding_provider"], "model", "unknown")),
+            status="skipped",
+            runtime_ms=0,
+            cost_basis=_cost_basis(provider_name),
+            metadata={
+                "call_count": 0,
+                "reason": "semantic_index_missing",
+                "semantic_index_path": str(index_path) if index_path else None,
+                "cost_estimate": "unavailable",
+            },
+        )
+        return {
+            "semantic_examples": [],
+            "warnings": warnings,
+            "model_usage": [*state.get("model_usage", []), usage_row],
+        }
     extraction = state.get("extraction_result") or _empty_extraction(state)
     query_text = "\n".join(
         [
@@ -353,7 +412,7 @@ def _retrieve_labeled_examples_node(state: DocumentPipelineState, deps: Document
         deps["embedding_provider"],
         node="retrieve_labeled_examples",
         purpose="semantic_retrieval_embedding",
-        status="ok",
+        status="placeholder" if isinstance(deps["embedding_provider"], PlaceholderEmbeddingProvider) else "ok",
         call_count=1,
         started=started,
     )
@@ -383,10 +442,7 @@ def _inspect_tags_with_llm(state: DocumentPipelineState, deps: DocumentPipelineD
         deterministic_candidates=state.get("deterministic_tag_candidates", []),
         semantic_examples=state.get("semantic_examples", []),
     )
-    warning = inspection.get("warning")
-    warnings = [*state.get("warnings", [])]
-    if warning:
-        warnings.append(str(warning))
+    warnings = _unique_strings([*state.get("warnings", []), *_llm_inspection_warnings(inspection)])
     usage_row = _llm_tag_model_usage_row(state, inspection, started=started)
     return {
         "llm_tag_inspection": inspection,
@@ -405,7 +461,26 @@ def _combine_tag_evidence(state: DocumentPipelineState) -> dict[str, Any]:
     }
 
 
+def _calibrate_tag_confidence_node(state: DocumentPipelineState) -> dict[str, Any]:
+    tag_candidates, calibration = calibrate_tag_confidence(
+        state.get("tag_candidates", []),
+        state.get("extraction_quality", {"quality": "failed", "requires_review": True}),
+        state["extraction_plan"],
+        llm_inspection=state.get("llm_tag_inspection", {}),
+        semantic_examples=state.get("semantic_examples", []),
+        embeddings=state.get("embeddings", []),
+    )
+    return {"tag_candidates": tag_candidates, "confidence_calibration": calibration}
+
+
 def _resolve_route_or_review_node(state: DocumentPipelineState) -> dict[str, Any]:
+    if "embedding_quality_unavailable" in state.get("warnings", []):
+        return {
+            "route": {
+                "route_status": "review_embedding_unavailable",
+                "review_reason": "embedding_quality_unavailable",
+            }
+        }
     return {
         "route": resolve_route_or_review(
             state.get("tag_candidates", []),
@@ -537,6 +612,7 @@ def _llm_tag_model_usage_row(state: DocumentPipelineState, inspection: dict[str,
     status = str(inspection.get("llm_status") or "unknown")
     if provider == "disabled" and status == "skipped":
         return None
+    warnings = _llm_inspection_warnings(inspection)
     return _model_usage_row(
         state,
         node="inspect_tags_with_llm",
@@ -545,7 +621,11 @@ def _llm_tag_model_usage_row(state: DocumentPipelineState, inspection: dict[str,
         model=str(inspection.get("model") or "unknown"),
         status="ok" if status == "inspected" else status,
         runtime_ms=round((time.monotonic() - started) * 1000),
-        error=str(inspection.get("warning") or "") or None,
+        input_tokens=_optional_int(inspection.get("input_tokens")),
+        output_tokens=_optional_int(inspection.get("output_tokens")),
+        total_tokens=_optional_int(inspection.get("total_tokens")),
+        estimated_cost_usd=_optional_float(inspection.get("estimated_cost_usd")),
+        error=";".join(warnings) or None,
         cost_basis=_cost_basis(provider),
         metadata={"cost_estimate": "unavailable"},
     )
@@ -560,6 +640,10 @@ def _model_usage_row(
     model: str,
     status: str,
     runtime_ms: int | None = None,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+    total_tokens: int | None = None,
+    estimated_cost_usd: float | None = None,
     error: str | None = None,
     cost_basis: str | None = None,
     metadata: dict[str, Any] | None = None,
@@ -573,6 +657,10 @@ def _model_usage_row(
         "model": model,
         "status": status,
         "runtime_ms": runtime_ms,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+        "estimated_cost_usd": estimated_cost_usd,
         "cost_basis": cost_basis or _cost_basis(provider),
         "error": error,
         "metadata": metadata or {},
@@ -598,13 +686,32 @@ def _provider_model_from_engine(engine: str) -> tuple[str, str]:
 
 
 def _cost_basis(provider: str) -> str:
-    return "external" if provider.lower() in {"openai", "gemini", "google", "anthropic"} else "local"
+    normalized = provider.lower()
+    if normalized in {"placeholder", "local-placeholder"}:
+        return "placeholder"
+    return "external" if normalized in {"openai", "gemini", "google", "anthropic"} else "local"
 
 
 def _seconds_to_ms(value: Any) -> int | None:
     if not isinstance(value, int | float):
         return None
     return round(float(value) * 1000)
+
+
+def _optional_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return int(value)
+    return None
+
+
+def _optional_float(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    return None
 
 
 def _final_result_from_state(state: DocumentPipelineState) -> dict[str, Any]:
@@ -620,9 +727,11 @@ def _final_result_from_state(state: DocumentPipelineState) -> dict[str, Any]:
             state.get("tag_candidates", []),
             state.get("route", {"route_status": "review_failed_extraction", "review_reason": "unknown"}),
             state.get("llm_tag_inspection", {}),
+            state.get("confidence_calibration", {}),
         )
         result["semantic_example_count"] = len(state.get("semantic_examples", []))
         result["semantic_examples"] = state.get("semantic_examples", [])[:5]
+        result["warnings"] = _unique_strings([*result.get("warnings", []), *state.get("warnings", [])])
         return result
     return {
         "sample_path": state.get("input_path"),
@@ -653,10 +762,14 @@ def _final_result_from_state(state: DocumentPipelineState) -> dict[str, Any]:
         "llm_provider": state.get("llm_tag_inspection", {}).get("provider"),
         "llm_primary_tag": state.get("llm_tag_inspection", {}).get("primary_tag"),
         "llm_confidence": state.get("llm_tag_inspection", {}).get("confidence"),
+        "llm_competing_tags": state.get("llm_tag_inspection", {}).get("competing_tags", []),
+        "llm_review_reason": state.get("llm_tag_inspection", {}).get("review_reason"),
         "confidence_inputs": {
             "candidate_count": len(state.get("tag_candidates", [])),
             "llm_confidence": state.get("llm_tag_inspection", {}).get("confidence"),
             "llm_needs_review": state.get("llm_tag_inspection", {}).get("needs_review"),
+            "llm_competing_tags": state.get("llm_tag_inspection", {}).get("competing_tags", []),
+            "llm_review_reason": state.get("llm_tag_inspection", {}).get("review_reason"),
         },
         "semantic_example_count": len(state.get("semantic_examples", [])),
         "semantic_examples": state.get("semantic_examples", [])[:5],
@@ -677,6 +790,29 @@ def _empty_extraction(state: DocumentPipelineState) -> ExtractionResult:
         page_count=None,
         warnings=state.get("warnings", []),
     )
+
+
+def _unique_strings(values: list[Any]) -> list[str]:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value)
+        if text not in seen:
+            seen.add(text)
+            unique.append(text)
+    return unique
+
+
+def _llm_inspection_warnings(inspection: dict[str, Any]) -> list[str]:
+    warnings: list[Any] = []
+    raw_warnings = inspection.get("warnings")
+    if isinstance(raw_warnings, list):
+        warnings.extend(raw_warnings)
+    elif raw_warnings:
+        warnings.append(raw_warnings)
+    if inspection.get("warning"):
+        warnings.append(inspection["warning"])
+    return _unique_strings(warnings)
 
 
 def _after_load_file_context(state: DocumentPipelineState) -> str:
@@ -712,6 +848,8 @@ def _node_summary(name: str, updates: dict[str, Any]) -> str:
         return f"llm {updates['llm_tag_inspection'].get('llm_status')}"
     if name == "combine_tag_evidence":
         return f"tag candidates {len(updates.get('tag_candidates', []))}"
+    if name == "calibrate_tag_confidence" and updates.get("confidence_calibration"):
+        return f"calibrated {updates['confidence_calibration'].get('calibrated_confidence')}"
     if name == "resolve_route_or_review" and updates.get("route"):
         return f"route {updates['route'].get('route_status')}"
     if name == "persist_outputs":

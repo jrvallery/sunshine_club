@@ -208,6 +208,7 @@ def run_file_from_browser(file_id: int, request: FileRunRequest) -> dict[str, An
     )
     run = store.create_pipeline_run(
         preset_key="single_file_debug",
+        run_role="test",
         input_root=str(input_file),
         output_dir=output_dir,
         command=command,

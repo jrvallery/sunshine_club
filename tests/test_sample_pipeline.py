@@ -19,9 +19,12 @@ from sunshine_extraction.sample_pipeline import (
     OpenAICompatibleLLMTagInspector,
     SampleFile,
     TaxonomyOptions,
+    _chat_response_usage_fields,
+    _gemini_usage_fields,
     assign_tag_candidates,
     build_llm_tag_prompt,
     build_ocr_summary,
+    calibrate_tag_confidence,
     chunk_content,
     combine_tag_candidates,
     embed_chunks,
@@ -33,7 +36,9 @@ from sunshine_extraction.sample_pipeline import (
     ocr_executor_from_env,
     resolve_route_or_review,
     run_sample_pipeline,
+    validate_extracted_text,
     validate_and_repair_extraction,
+    write_pipeline_result,
 )
 
 
@@ -57,6 +62,34 @@ class _TeaLLMTagInspector(LLMTagInspector):
             "needs_review": False,
             "warning": None,
         }
+
+
+class _UsageResponse:
+    usage_metadata = {"input_tokens": 11, "output_tokens": 7, "total_tokens": 18}
+    response_metadata = {}
+
+
+class _TokenUsageResponse:
+    usage_metadata = None
+    response_metadata = {"token_usage": {"prompt_tokens": 13, "completion_tokens": 5, "total_tokens": 18}}
+
+
+def test_llm_usage_helpers_normalize_gemini_and_openai_compatible_tokens() -> None:
+    assert _gemini_usage_fields({"usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 4, "totalTokenCount": 14}}) == {
+        "input_tokens": 10,
+        "output_tokens": 4,
+        "total_tokens": 14,
+    }
+    assert _chat_response_usage_fields(_UsageResponse()) == {
+        "input_tokens": 11,
+        "output_tokens": 7,
+        "total_tokens": 18,
+    }
+    assert _chat_response_usage_fields(_TokenUsageResponse()) == {
+        "input_tokens": 13,
+        "output_tokens": 5,
+        "total_tokens": 18,
+    }
 
 
 class _MissingOcrExecutor(OcrExecutor):
@@ -270,6 +303,57 @@ def test_ocr_escalates_poor_local_result_to_fallback(tmp_path: Path) -> None:
     assert "Annual tea meeting minutes" in extraction.text
     assert "ocr_fallback_used:fallback-test-ocr" in extraction.warnings
     assert "ocr_fallback_reason:poor" in extraction.warnings
+    assert "ocr_original_snippet:xqz" in extraction.warnings
+    assert any(warning.startswith("ocr_fallback_snippet:Annual tea meeting minutes") for warning in extraction.warnings)
+    result = write_pipeline_result(
+        _sample(image),
+        {"final_class": "scanned_document"},
+        _plan("ocr_page_level"),
+        extraction,
+        quality,
+        chunks=[],
+        embeddings=[],
+        tag_candidates=[{"tag": "meeting_records", "confidence": 0.91, "evidence": [], "secondary_tags": []}],
+        route={"route_status": "route_candidate", "review_reason": None},
+        llm_inspection={"llm_status": "skipped"},
+    )
+    assert result["ocr_evidence"]["fallback_used"] is True
+    assert result["ocr_evidence"]["fallback_provider"] == "fallback-test-ocr"
+    assert result["ocr_evidence"]["fallback_reason"] == "poor"
+    assert result["ocr_evidence"]["original_text_snippet"] == "xqz"
+    assert "Annual tea meeting minutes" in result["ocr_evidence"]["fallback_text_snippet"]
+
+
+def test_write_pipeline_result_quarantines_placement_when_route_requires_review(tmp_path: Path) -> None:
+    source = tmp_path / "1992 minutes.txt"
+    source.write_text("1992 Sunshine Club meeting minutes.", encoding="utf-8")
+    extraction = ExtractionResult(
+        sample=_sample(source, relative_path="Minutes/1992 minutes.txt"),
+        plan=_plan("text_extraction"),
+        extraction_status="extracted",
+        text="1992 Sunshine Club meeting minutes.",
+        metadata={},
+        page_count=None,
+        warnings=[],
+    )
+    result = write_pipeline_result(
+        _sample(source, relative_path="Minutes/1992 minutes.txt"),
+        {"final_class": "document"},
+        _plan("text_extraction"),
+        extraction,
+        {"quality": "ok"},
+        chunks=[],
+        embeddings=[],
+        tag_candidates=[{"tag": "meeting_records", "confidence": 0.61, "evidence": ["minutes"], "secondary_tags": []}],
+        route={"route_status": "review_low_confidence_tag", "review_reason": "tag_confidence_below_threshold"},
+        llm_inspection={"llm_status": "skipped"},
+    )
+
+    assert result["placement_status"] == "needs_review"
+    assert result["destination_path"] == "90_Intake_Needs_Review/01_Governance_Admin"
+    assert result["placement"]["blocked_destination_path"] == "01_Governance_Admin/1992"
+    assert result["placement"]["placement_blocked_by_route"] is True
+    assert result["placement"]["review_reason"] == "tag_confidence_below_threshold"
 
 
 def test_ocr_does_not_escalate_good_local_result(tmp_path: Path) -> None:
@@ -312,6 +396,7 @@ def test_gibberish_pdf_text_layer_falls_back_to_ocr(tmp_path: Path) -> None:
 
     assert repaired.plan["strategy"] == "ocr_page_level"
     assert repaired.metadata["original_extraction"]["strategy"] == "text_extraction"
+    assert repaired.metadata["original_extraction"]["text_snippet"].startswith("• I r/l")
     assert "text_validation_failed:gibberish_suspected" in repaired.warnings
     assert "text_extraction_fallback_to_ocr:text_extraction" in repaired.warnings
     assert "Annual tea meeting minutes" in repaired.text
@@ -339,6 +424,43 @@ def test_gibberish_non_ocr_text_routes_to_text_quality_review(tmp_path: Path) ->
     assert repaired.plan["strategy"] == "text_extraction"
     assert quality["quality"] == "poor"
     assert route == {"route_status": "review_text_quality", "review_reason": "text_quality_not_trusted"}
+
+
+def test_table_distorted_text_layer_fails_validation(tmp_path: Path) -> None:
+    source = tmp_path / "budget.pdf"
+    source.write_text("fake pdf", encoding="utf-8")
+    distorted_table = "\n".join(
+        [
+            "__| __| wr Ler'ee | oreer've | eresy'ee | ossatre | oo'sey've | ELORb'ye |",
+            "ZS89V'ST_ LSBOV'ST | LL 09ST | LLO9H'ST | LLOSH'ST | SOESH'ST |",
+            "__| v8r | OBL _ wz | OL | 1982 Zo8t _ 350109U| = | 866TH'ST |",
+            "soueje Suwuidag| Runosoy suit Jojwadg| 820'% SeBzO | ET BLOG |",
+            "_SONVIVE ONIONS - if | ee | _ dl SAVILNO W101 (0068s) |",
+            "looses) Buppayp oy saysuedt | ISAVILNO| t t | vee wo wo v0 zo",
+            "WONT W101) vee 20 a |v0 wo | evo 0 | eo st0 eo wo 920",
+            "99IU| cose i_ | 00'sZ s[euOUlaW | x '3WOONI | Lesess's seez0e",
+        ]
+        * 3
+    )
+    extraction = ExtractionResult(
+        sample=_sample(source),
+        plan=_plan("text_extraction"),
+        extraction_status="extracted",
+        text=distorted_table,
+        metadata={},
+        page_count=1,
+        warnings=[],
+    )
+
+    validation = validate_extracted_text(extraction)
+    repaired = validate_and_repair_extraction(_sample(source), _plan("text_extraction"), extraction, ocr_executor=None)
+    quality = extraction_quality_gate(repaired)
+
+    assert validation == {"status": "failed", "reason": "table_distortion_suspected"}
+    assert repaired.plan["strategy"] == "ocr_page_level"
+    assert quality["quality"] == "deferred"
+    assert quality["requires_review"] is True
+    assert "text_validation_failed:table_distortion_suspected" in repaired.warnings
 
 
 def test_ocr_summary_records_failed_page_rate() -> None:
@@ -399,6 +521,8 @@ def test_ocr_text_is_passed_into_llm_tag_prompt(tmp_path: Path) -> None:
     prompt = build_llm_tag_prompt(sample, {"final_class": "scanned_document"}, _plan("ocr_page_level"), extraction, taxonomy, [])
 
     assert "OCR text about meeting minutes" in prompt
+    assert "competing_tags" in prompt
+    assert "review_reason" in prompt
 
 
 def test_spreadsheet_metadata_path(tmp_path: Path) -> None:
@@ -510,16 +634,174 @@ def test_llm_tag_schema_payload_is_normalized() -> None:
             "secondary_tags": ["event_material", "not_allowed"],
             "confidence": 1.2,
             "evidence": ["tea"],
+            "competing_tags": ["annual_spring_tea", "not_allowed"],
             "rationale": "Strong evidence",
-            "needs_review": False,
+            "needs_review": True,
+            "review_reason": "",
         },
         taxonomy,
         model="test-model",
     )
 
-    assert normalized["llm_status"] == "inspected"
+    assert normalized["llm_status"] == "inspected_with_invalid_fields"
     assert normalized["secondary_tags"] == ["event_material"]
+    assert normalized["invalid_secondary_tags"] == ["not_allowed"]
+    assert normalized["competing_tags"] == []
+    assert normalized["invalid_competing_tags"] == ["not_allowed"]
     assert normalized["confidence"] == 1.0
+    assert normalized["review_reason"] == "llm_requested_review"
+    assert normalized["warnings"] == [
+        "llm_invalid_secondary_tags:not_allowed",
+        "llm_invalid_competing_tags:not_allowed",
+    ]
+
+
+def test_invalid_llm_primary_tag_is_rejected_before_candidate_merge() -> None:
+    taxonomy = TaxonomyOptions(
+        primary_tags=["annual_spring_tea"],
+        secondary_tags=["event_material"],
+        primary_definitions={"annual_spring_tea": "Tea files"},
+    )
+    from sunshine_extraction.sample_pipeline import normalize_llm_inspection
+
+    normalized = normalize_llm_inspection(
+        {
+            "primary_tag": "not_a_real_primary",
+            "secondary_tags": ["event_material"],
+            "confidence": 0.99,
+            "evidence": ["model invented a tag"],
+            "competing_tags": ["annual_spring_tea"],
+            "rationale": "Invalid response",
+            "needs_review": False,
+            "review_reason": "",
+        },
+        taxonomy,
+        model="test-model",
+    )
+    deterministic = [
+        {
+            "source_path": "/source/tea.pdf",
+            "relative_path": "Sunshine shared folders/Teas/tea.pdf",
+            "tag": "annual_spring_tea",
+            "confidence": 0.88,
+            "evidence": ["tea/guest-list evidence"],
+            "secondary_tags": [],
+            "assignment_source": "deterministic",
+        }
+    ]
+
+    combined = combine_tag_candidates(deterministic, normalized)
+    calibrated, calibration = calibrate_tag_confidence(
+        combined,
+        {"quality": "ok"},
+        _plan("text_extraction"),
+        llm_inspection=normalized,
+    )
+    route = resolve_route_or_review(calibrated, {"quality": "ok"}, _plan("text_extraction"))
+
+    assert normalized["llm_status"] == "invalid"
+    assert normalized["primary_tag"] is None
+    assert normalized["review_reason"] == "llm_primary_tag_invalid"
+    assert normalized["warnings"] == ["llm_primary_tag_invalid"]
+    assert [candidate["tag"] for candidate in combined] == ["annual_spring_tea"]
+    assert "not_a_real_primary" not in json.dumps(combined)
+    assert calibration["requires_review"] is True
+    assert calibration["review_reason"] == "llm_primary_tag_invalid"
+    assert route["route_status"] == "review_tag_confidence_calibration"
+    assert route["review_reason"] == "llm_primary_tag_invalid"
+
+
+def test_invalid_llm_structured_fields_force_review() -> None:
+    deterministic = [
+        {
+            "source_path": "/source/tea.pdf",
+            "relative_path": "Sunshine shared folders/Teas/tea.pdf",
+            "tag": "annual_spring_tea",
+            "confidence": 0.88,
+            "evidence": ["tea/guest-list evidence"],
+            "secondary_tags": [],
+            "assignment_source": "deterministic",
+        }
+    ]
+    llm = {
+        "llm_status": "inspected_with_invalid_fields",
+        "primary_tag": "annual_spring_tea",
+        "secondary_tags": ["event_material"],
+        "confidence": 0.92,
+        "evidence": ["path contains Tea"],
+        "warnings": ["llm_invalid_secondary_tags:not_allowed"],
+    }
+
+    combined = combine_tag_candidates(deterministic, llm)
+    calibrated, calibration = calibrate_tag_confidence(
+        combined,
+        {"quality": "ok"},
+        _plan("text_extraction"),
+        llm_inspection=llm,
+    )
+    route = resolve_route_or_review(calibrated, {"quality": "ok"}, _plan("text_extraction"))
+    result = write_pipeline_result(
+        _sample(Path("tea.pdf"), relative_path="Sunshine shared folders/Teas/tea.pdf"),
+        {"final_class": "document"},
+        _plan("text_extraction"),
+        ExtractionResult(
+            _sample(Path("tea.pdf"), relative_path="Sunshine shared folders/Teas/tea.pdf"),
+            _plan("text_extraction"),
+            "extracted",
+            "Annual Sunshine Tea material.",
+            {},
+            None,
+            [],
+        ),
+        {"quality": "ok"},
+        chunks=[],
+        embeddings=[],
+        tag_candidates=calibrated,
+        route=route,
+        llm_inspection=llm,
+    )
+
+    assert calibrated[0]["tag"] == "annual_spring_tea"
+    assert calibration["requires_review"] is True
+    assert calibration["review_reason"] == "llm_structured_output_invalid"
+    assert route["route_status"] == "review_tag_confidence_calibration"
+    assert route["review_reason"] == "llm_structured_output_invalid"
+    assert result["llm_status"] == "inspected_with_invalid_fields"
+    assert result["warnings"] == ["llm_invalid_secondary_tags:not_allowed"]
+
+
+def test_failed_llm_tag_inspection_forces_review() -> None:
+    candidates = [
+        {
+            "source_path": "/source/tea.pdf",
+            "relative_path": "Sunshine shared folders/Teas/tea.pdf",
+            "tag": "annual_spring_tea",
+            "confidence": 0.91,
+            "evidence": ["tea/guest-list evidence"],
+            "secondary_tags": [],
+            "assignment_source": "deterministic",
+        }
+    ]
+    llm = {
+        "llm_status": "failed",
+        "primary_tag": None,
+        "confidence": 0.0,
+        "needs_review": True,
+        "warning": "llm_tag_inspection_failed:TimeoutError",
+    }
+
+    calibrated, calibration = calibrate_tag_confidence(
+        candidates,
+        {"quality": "ok"},
+        _plan("text_extraction"),
+        llm_inspection=llm,
+    )
+    route = resolve_route_or_review(calibrated, {"quality": "ok"}, _plan("text_extraction"))
+
+    assert calibration["requires_review"] is True
+    assert calibration["review_reason"] == "llm_structured_output_unusable"
+    assert route["route_status"] == "review_tag_confidence_calibration"
+    assert "llm_structured_output_unusable:failed" in calibrated[0]["confidence_calibration_factors"]
 
 
 def test_openai_compatible_llm_response_json_is_normalized() -> None:

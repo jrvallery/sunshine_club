@@ -40,6 +40,9 @@ class ReviewDecisionRequest(BaseModel):
     correct_class: str | None = None
     correct_tag: str | None = None
     correct_secondary_tags: list[str] | None = None
+    ocr_quality_label: str | None = None
+    expected_review_required: bool | None = None
+    sensitive_record: bool | None = None
     correct_destination_path: str | None = None
     correct_placement_year: str | None = None
     correct_privacy: str | None = None
@@ -65,8 +68,15 @@ class FileRunRequest(BaseModel):
 
 
 class GoldenLabelUpdateRequest(BaseModel):
+    content_class: str | None = None
     correct_primary_tag: str | None = None
     correct_secondary_tags: list[str] | None = None
+    ocr_quality_label: str | None = None
+    expected_review_required: bool | None = None
+    sensitive_record: bool | None = None
+    correct_destination_path: str | None = None
+    correct_placement_year: str | None = None
+    correct_privacy: str | None = None
     reviewer: str | None = None
     notes: str | None = None
 
@@ -77,8 +87,15 @@ class ReviewAssignRequest(BaseModel):
     priority: str | None = None
 
 
+class ReviewOcrQualityRequest(BaseModel):
+    ocr_quality_label: str = "poor"
+    review_stage: str | None = "needs_ocr_review"
+    notes: str | None = None
+
+
 class RunStartRequest(BaseModel):
     preset_key: str
+    run_role: Literal["baseline", "test", "evaluation"] | None = None
     input_root: str | None = None
     output_dir: str | None = None
     embedding_provider: Literal["cortex", "openai"] | None = None
@@ -100,3 +117,18 @@ class SemanticEvalRequest(BaseModel):
     labels_db: str | None = None
     output_dir: str | None = None
 
+
+class PipelineEvalRequest(BaseModel):
+    labels_db: str | None = None
+    output_dir: str | None = None
+    limit: int | None = Field(default=None, ge=1)
+    semantic_index_path: str | None = None
+    embedding_provider: Literal["placeholder", "gemini", "cortex", "openai"] | None = None
+    ocr_fallback_provider: Literal["disabled", "cortex", "openai"] | None = None
+    disable_semantic_index: bool = False
+    enable_llm_tags: bool = False
+    enable_ocr: bool = False
+
+
+class PipelineEvalImportRequest(BaseModel):
+    output_dir: str

@@ -23,6 +23,7 @@ from sunshine_api.schemas import (
     ReviewAssignRequest,
     ReviewDecisionRequest,
     ReviewImportRequest,
+    ReviewOcrQualityRequest,
     RunStartRequest,
     SemanticEvalRequest,
     SemanticIndexBuildRequest,
@@ -128,6 +129,80 @@ def golden_labels(limit: int = 100) -> list[dict[str, Any]]:
     return review_store().list_golden_labels(limit=limit)
 
 
+@router.get("/admin/review/golden-labels/export")
+def golden_labels_export(format: str = "csv", limit: int = 10000) -> StreamingResponse:
+    rows = review_store().golden_label_export_rows(limit=limit)
+    normalized_format = format.strip().lower()
+    if normalized_format == "jsonl":
+        payload = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
+        return StreamingResponse(
+            iter([payload]),
+            media_type="application/x-ndjson",
+            headers={"Content-Disposition": 'attachment; filename="sunshine-golden-labels.jsonl"'},
+        )
+    if normalized_format != "csv":
+        raise HTTPException(status_code=400, detail="format must be csv or jsonl")
+
+    output = io.StringIO()
+    fieldnames = [
+        "id",
+        "review_item_id",
+        "relative_path",
+        "source_path",
+        "sample_path",
+        "content_class",
+        "correct_primary_tag",
+        "correct_secondary_tags",
+        "ocr_quality_label",
+        "expected_review_required",
+        "sensitive_record",
+        "correct_destination_path",
+        "correct_placement_year",
+        "correct_privacy",
+        "proposed_tag",
+        "proposed_secondary_tags",
+        "proposed_confidence",
+        "reviewer",
+        "reviewed_at",
+        "notes",
+        "updated_at",
+    ]
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(
+            {
+                "id": row.get("id"),
+                "review_item_id": row.get("review_item_id"),
+                "relative_path": row.get("relative_path"),
+                "source_path": row.get("source_path"),
+                "sample_path": row.get("sample_path"),
+                "content_class": row.get("content_class"),
+                "correct_primary_tag": row.get("correct_primary_tag"),
+                "correct_secondary_tags": ";".join(row.get("correct_secondary_tags") or []),
+                "ocr_quality_label": row.get("ocr_quality_label"),
+                "expected_review_required": row.get("expected_review_required"),
+                "sensitive_record": row.get("sensitive_record"),
+                "correct_destination_path": row.get("correct_destination_path"),
+                "correct_placement_year": row.get("correct_placement_year"),
+                "correct_privacy": row.get("correct_privacy"),
+                "proposed_tag": row.get("proposed_tag"),
+                "proposed_secondary_tags": ";".join(row.get("proposed_secondary_tags") or []),
+                "proposed_confidence": row.get("proposed_confidence"),
+                "reviewer": row.get("reviewer"),
+                "reviewed_at": row.get("reviewed_at"),
+                "notes": row.get("notes"),
+                "updated_at": row.get("updated_at"),
+            }
+        )
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="sunshine-golden-labels.csv"'},
+    )
+
+
 @router.get("/admin/review/golden-labels/summary")
 def golden_label_summary() -> dict[str, Any]:
     return review_store().golden_label_summary()
@@ -138,8 +213,15 @@ def update_golden_label(label_id: int, request: GoldenLabelUpdateRequest) -> dic
     try:
         return review_store().update_golden_label(
             label_id,
+            content_class=request.content_class,
             correct_primary_tag=request.correct_primary_tag,
             correct_secondary_tags=request.correct_secondary_tags,
+            ocr_quality_label=request.ocr_quality_label,
+            expected_review_required=request.expected_review_required,
+            sensitive_record=request.sensitive_record,
+            correct_destination_path=request.correct_destination_path,
+            correct_placement_year=request.correct_placement_year,
+            correct_privacy=request.correct_privacy,
             reviewer=request.reviewer,
             notes=request.notes,
         )
@@ -180,6 +262,7 @@ def review_items(
     content_class: str | None = None,
     quality: str | None = None,
     placement_status: str | None = None,
+    confidence_bucket: str | None = None,
     warning_type: str | None = None,
     source_collection: str | None = None,
     run_id: int | None = None,
@@ -187,6 +270,7 @@ def review_items(
     embedding_provider: str | None = None,
     llm_tag_provider: str | None = None,
     ocr_fallback_provider: str | None = None,
+    ocr_fallback_used: str | None = None,
     enable_llm_tags: bool | None = None,
 ) -> list[dict[str, Any]]:
     return review_store().list_review_items(
@@ -200,6 +284,7 @@ def review_items(
         content_class=content_class,
         quality=quality,
         placement_status=placement_status,
+        confidence_bucket=confidence_bucket,
         warning_type=warning_type,
         source_collection=source_collection,
         run_id=run_id,
@@ -207,6 +292,7 @@ def review_items(
         embedding_provider=embedding_provider,
         llm_tag_provider=llm_tag_provider,
         ocr_fallback_provider=ocr_fallback_provider,
+        ocr_fallback_used=ocr_fallback_used,
         enable_llm_tags=enable_llm_tags,
     )
 
@@ -222,6 +308,7 @@ def review_facets(
     content_class: str | None = None,
     quality: str | None = None,
     placement_status: str | None = None,
+    confidence_bucket: str | None = None,
     warning_type: str | None = None,
     source_collection: str | None = None,
     run_id: int | None = None,
@@ -229,6 +316,7 @@ def review_facets(
     embedding_provider: str | None = None,
     llm_tag_provider: str | None = None,
     ocr_fallback_provider: str | None = None,
+    ocr_fallback_used: str | None = None,
     enable_llm_tags: bool | None = None,
 ) -> dict[str, dict[str, int]]:
     return review_store().review_facets(
@@ -241,6 +329,7 @@ def review_facets(
         content_class=content_class,
         quality=quality,
         placement_status=placement_status,
+        confidence_bucket=confidence_bucket,
         warning_type=warning_type,
         source_collection=source_collection,
         run_id=run_id,
@@ -248,6 +337,7 @@ def review_facets(
         embedding_provider=embedding_provider,
         llm_tag_provider=llm_tag_provider,
         ocr_fallback_provider=ocr_fallback_provider,
+        ocr_fallback_used=ocr_fallback_used,
         enable_llm_tags=enable_llm_tags,
     )
 
@@ -268,6 +358,9 @@ def record_review_decision(item_id: int, request: ReviewDecisionRequest) -> dict
         correct_class=request.correct_class,
         correct_tag=request.correct_tag,
         correct_secondary_tags=request.correct_secondary_tags,
+        ocr_quality_label=request.ocr_quality_label,
+        expected_review_required=request.expected_review_required,
+        sensitive_record=request.sensitive_record,
         correct_destination_path=request.correct_destination_path,
         correct_placement_year=request.correct_placement_year,
         correct_privacy=request.correct_privacy,
@@ -276,6 +369,19 @@ def record_review_decision(item_id: int, request: ReviewDecisionRequest) -> dict
         reviewer=request.reviewer,
         save_as_golden=request.save_as_golden,
     )
+
+
+@router.post("/admin/review/items/{item_id}/ocr-quality")
+def mark_review_ocr_quality(item_id: int, request: ReviewOcrQualityRequest) -> dict[str, Any]:
+    try:
+        return review_store().mark_ocr_quality(
+            item_id,
+            ocr_quality_label=request.ocr_quality_label,
+            review_stage=request.review_stage,
+            notes=request.notes,
+        )
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @router.post("/admin/review/items/{item_id}/assign")

@@ -296,9 +296,13 @@ class EscalatingOcrExecutor(OcrExecutor):
             return primary_document, primary_pages
 
         fallback_document, fallback_pages = self.fallback.ocr_sample(sample, plan)
+        primary_text = _shorten(_joined_page_text(primary_pages), 360)
+        fallback_text = _shorten(_joined_page_text(fallback_pages), 360)
         fallback_warnings = [
             f"ocr_fallback_used:{self.fallback.engine_name}",
             f"ocr_fallback_reason:{escalation_reason}",
+            *([f"ocr_original_snippet:{primary_text}"] if primary_text else []),
+            *([f"ocr_fallback_snippet:{fallback_text}"] if fallback_text else []),
             *fallback_document.warnings,
         ]
         return (
@@ -589,7 +593,9 @@ class GeminiLLMTagInspector(LLMTagInspector):
             with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
                 response_payload = json.loads(response.read().decode("utf-8"))
             text = response_payload["candidates"][0]["content"]["parts"][0]["text"]
-            return normalize_llm_inspection(json.loads(text), taxonomy, model=self.model, provider="gemini")
+            inspection = normalize_llm_inspection(json.loads(text), taxonomy, model=self.model, provider="gemini")
+            inspection.update(_gemini_usage_fields(response_payload))
+            return inspection
         except urllib.error.HTTPError as error:
             body = error.read().decode("utf-8", errors="replace")
             return {
@@ -667,7 +673,9 @@ class OpenAICompatibleLLMTagInspector(LLMTagInspector):
                 ]
             )
             payload = _extract_json_object(_message_content_to_text(response.content))
-            return normalize_llm_inspection(json.loads(payload), taxonomy, model=self.model, provider=self.provider_name)
+            inspection = normalize_llm_inspection(json.loads(payload), taxonomy, model=self.model, provider=self.provider_name)
+            inspection.update(_chat_response_usage_fields(response))
+            return inspection
         except Exception as error:  # noqa: BLE001 - every file needs an auditable failure row.
             return {
                 "llm_status": "failed",
@@ -813,8 +821,16 @@ def run_sample_pipeline(
             f"[{index}/{len(samples)}] llm_status={llm_inspection.get('llm_status')} llm_primary={llm_inspection.get('primary_tag') or 'none'} llm_confidence={llm_inspection.get('confidence')} llm_warning={llm_inspection.get('warning') or 'none'}",
         )
         tag_candidates = combine_tag_candidates(deterministic_candidates, llm_inspection)
+        tag_candidates, confidence_calibration = calibrate_tag_confidence(
+            tag_candidates,
+            quality,
+            plan,
+            llm_inspection=llm_inspection,
+            semantic_examples=[],
+            embeddings=embeddings,
+        )
         route = resolve_route_or_review(tag_candidates, quality, plan)
-        result = write_pipeline_result(sample, corrected, plan, extraction, quality, chunks, embeddings, tag_candidates, route, llm_inspection)
+        result = write_pipeline_result(sample, corrected, plan, extraction, quality, chunks, embeddings, tag_candidates, route, llm_inspection, confidence_calibration)
         _progress(
             progress,
             f"[{index}/{len(samples)}] top_tag={result.get('top_tag_candidate') or 'none'} confidence={result.get('tag_confidence')} route={result['route_status']}",
@@ -984,6 +1000,7 @@ def validate_and_repair_extraction(
             "strategy": plan.get("strategy"),
             "status": extraction.extraction_status,
             "text_length": len(extraction.text),
+            "text_snippet": _shorten(extraction.text, 360),
             "warnings": extraction.warnings,
         },
     }
@@ -1009,6 +1026,8 @@ def validate_extracted_text(extraction: ExtractionResult) -> dict[str, Any]:
         return {"status": "not_applicable", "reason": None}
     if len(text) < OCR_MIN_TEXT_LENGTH:
         return {"status": "ok", "reason": None}
+    if _looks_like_table_distortion(text):
+        return {"status": "failed", "reason": "table_distortion_suspected"}
     if _looks_like_gibberish(text):
         return {"status": "failed", "reason": "gibberish_suspected"}
     return {"status": "ok", "reason": None}
@@ -1203,8 +1222,9 @@ def build_llm_tag_prompt(
         "deterministic candidates, and nearest human-labeled examples. Treat human-labeled examples as precedent, "
         "but do not copy them when the current file evidence differs. If evidence is weak or examples conflict, "
         "lower confidence and set needs_review=true.\n\n"
-        "Return only a JSON object with these keys: primary_tag, secondary_tags, confidence, evidence, rationale, "
-        "needs_review. Do not include markdown or any text outside the JSON object.\n\n"
+        "Return only a JSON object with these keys: primary_tag, secondary_tags, confidence, evidence, competing_tags, "
+        "rationale, needs_review, review_reason. competing_tags must be zero to three alternate primary tag keys. "
+        "When needs_review is true, review_reason must briefly explain why. Do not include markdown or any text outside the JSON object.\n\n"
         f"Allowed primary tags:\n{primary_lines}\n\n"
         f"Allowed secondary tags:\n{', '.join(taxonomy.secondary_tags)}\n\n"
         f"File context JSON:\n{json.dumps(context, sort_keys=True)}"
@@ -1223,10 +1243,16 @@ def llm_tag_schema(taxonomy: TaxonomyOptions) -> dict[str, Any]:
             },
             "confidence": {"type": "number", "minimum": 0, "maximum": 1},
             "evidence": {"type": "array", "items": {"type": "string"}, "maxItems": 5},
+            "competing_tags": {
+                "type": "array",
+                "items": {"type": "string", "enum": taxonomy.primary_tags},
+                "maxItems": 3,
+            },
             "rationale": {"type": "string"},
             "needs_review": {"type": "boolean"},
+            "review_reason": {"type": "string"},
         },
-        "required": ["primary_tag", "secondary_tags", "confidence", "evidence", "rationale", "needs_review"],
+        "required": ["primary_tag", "secondary_tags", "confidence", "evidence", "competing_tags", "rationale", "needs_review", "review_reason"],
     }
 
 
@@ -1234,26 +1260,49 @@ def normalize_llm_inspection(payload: dict[str, Any], taxonomy: TaxonomyOptions,
     primary_tag = payload.get("primary_tag")
     if primary_tag not in taxonomy.primary_tags:
         primary_tag = None
-    secondary_tags = [
-        tag
-        for tag in payload.get("secondary_tags", [])
-        if isinstance(tag, str) and tag in taxonomy.secondary_tags
-    ][:5]
+    raw_secondary_tags = [tag for tag in payload.get("secondary_tags", []) if isinstance(tag, str)]
+    invalid_secondary_tags = [tag for tag in raw_secondary_tags if tag not in taxonomy.secondary_tags]
+    secondary_tags = [tag for tag in raw_secondary_tags if tag in taxonomy.secondary_tags][:5]
     confidence = payload.get("confidence", 0)
     if not isinstance(confidence, int | float):
         confidence = 0
     evidence = [str(item) for item in payload.get("evidence", [])[:5]]
+    raw_competing_tags = [tag for tag in payload.get("competing_tags", []) if isinstance(tag, str)]
+    invalid_competing_tags = [tag for tag in raw_competing_tags if tag not in taxonomy.primary_tags]
+    competing_tags = [tag for tag in raw_competing_tags if tag in taxonomy.primary_tags and tag != primary_tag][:3]
+    needs_review = bool(payload.get("needs_review", False))
+    review_reason = str(payload.get("review_reason") or "").strip()
+    warnings: list[str] = []
+    if primary_tag is None:
+        review_reason = review_reason or "llm_primary_tag_invalid"
+        warnings.append("llm_primary_tag_invalid")
+    elif needs_review:
+        review_reason = review_reason or "llm_requested_review"
+    if invalid_secondary_tags:
+        warnings.append(f"llm_invalid_secondary_tags:{','.join(invalid_secondary_tags[:5])}")
+    if invalid_competing_tags:
+        warnings.append(f"llm_invalid_competing_tags:{','.join(invalid_competing_tags[:5])}")
+    llm_status = "inspected"
+    if primary_tag is None:
+        llm_status = "invalid"
+    elif warnings:
+        llm_status = "inspected_with_invalid_fields"
     return {
-        "llm_status": "inspected" if primary_tag else "invalid",
+        "llm_status": llm_status,
         "model": model,
         "provider": provider,
         "primary_tag": primary_tag,
         "secondary_tags": secondary_tags,
+        "invalid_secondary_tags": invalid_secondary_tags[:5],
         "confidence": max(0.0, min(float(confidence), 1.0)),
         "evidence": evidence,
+        "competing_tags": competing_tags,
+        "invalid_competing_tags": invalid_competing_tags[:5],
         "rationale": str(payload.get("rationale", "")),
-        "needs_review": bool(payload.get("needs_review", False)),
-        "warning": None if primary_tag else "llm_primary_tag_invalid",
+        "needs_review": needs_review,
+        "review_reason": review_reason or None,
+        "warnings": warnings,
+        "warning": warnings[0] if warnings else None,
     }
 
 
@@ -1269,6 +1318,56 @@ def _message_content_to_text(content: Any) -> str:
                 parts.append(item["text"])
         return "\n".join(parts)
     return str(content)
+
+
+def _gemini_usage_fields(response_payload: dict[str, Any]) -> dict[str, int]:
+    usage = response_payload.get("usageMetadata")
+    if not isinstance(usage, dict):
+        return {}
+    fields: dict[str, int] = {}
+    prompt_tokens = _optional_positive_int(usage.get("promptTokenCount"))
+    output_tokens = _optional_positive_int(usage.get("candidatesTokenCount"))
+    total_tokens = _optional_positive_int(usage.get("totalTokenCount"))
+    if prompt_tokens is not None:
+        fields["input_tokens"] = prompt_tokens
+    if output_tokens is not None:
+        fields["output_tokens"] = output_tokens
+    if total_tokens is not None:
+        fields["total_tokens"] = total_tokens
+    elif prompt_tokens is not None or output_tokens is not None:
+        fields["total_tokens"] = int(prompt_tokens or 0) + int(output_tokens or 0)
+    return fields
+
+
+def _chat_response_usage_fields(response: Any) -> dict[str, int]:
+    usage = getattr(response, "usage_metadata", None)
+    if not isinstance(usage, dict):
+        metadata = getattr(response, "response_metadata", None)
+        if isinstance(metadata, dict):
+            usage = metadata.get("token_usage") or metadata.get("usage")
+    if not isinstance(usage, dict):
+        return {}
+    prompt_tokens = _optional_positive_int(usage.get("input_tokens") or usage.get("prompt_tokens"))
+    output_tokens = _optional_positive_int(usage.get("output_tokens") or usage.get("completion_tokens"))
+    total_tokens = _optional_positive_int(usage.get("total_tokens"))
+    fields: dict[str, int] = {}
+    if prompt_tokens is not None:
+        fields["input_tokens"] = prompt_tokens
+    if output_tokens is not None:
+        fields["output_tokens"] = output_tokens
+    if total_tokens is not None:
+        fields["total_tokens"] = total_tokens
+    elif prompt_tokens is not None or output_tokens is not None:
+        fields["total_tokens"] = int(prompt_tokens or 0) + int(output_tokens or 0)
+    return fields
+
+
+def _optional_positive_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float) and value >= 0:
+        return int(value)
+    return None
 
 
 def _extract_json_object(text: str) -> str:
@@ -1347,7 +1446,7 @@ def combine_tag_candidates(
     llm_inspection: dict[str, Any],
     semantic_examples: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    if llm_inspection.get("llm_status") != "inspected" or not llm_inspection.get("primary_tag"):
+    if not _llm_inspection_has_usable_primary(llm_inspection):
         return _apply_semantic_example_adjustments(deterministic_candidates, semantic_examples or [])
 
     primary_tag = llm_inspection["primary_tag"]
@@ -1380,6 +1479,10 @@ def combine_tag_candidates(
         )
     combined.sort(key=lambda row: row["confidence"], reverse=True)
     return _apply_semantic_example_adjustments(combined, semantic_examples or [])[:5]
+
+
+def _llm_inspection_has_usable_primary(llm_inspection: dict[str, Any]) -> bool:
+    return llm_inspection.get("llm_status") in {"inspected", "inspected_with_invalid_fields"} and bool(llm_inspection.get("primary_tag"))
 
 
 def _apply_semantic_example_adjustments(candidates: list[dict[str, Any]], semantic_examples: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1426,6 +1529,110 @@ def _apply_semantic_example_adjustments(candidates: list[dict[str, Any]], semant
     return adjusted
 
 
+def calibrate_tag_confidence(
+    tag_candidates: list[dict[str, Any]],
+    quality: dict[str, Any],
+    plan: dict[str, Any],
+    *,
+    llm_inspection: dict[str, Any] | None = None,
+    semantic_examples: list[dict[str, Any]] | None = None,
+    embeddings: list[dict[str, Any]] | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if not tag_candidates:
+        return [], {
+            "status": "no_candidates",
+            "base_confidence": None,
+            "calibrated_confidence": None,
+            "factors": ["no_tag_candidates"],
+            "requires_review": True,
+            "review_reason": "no_tag_candidate",
+        }
+
+    calibrated = [dict(candidate) for candidate in tag_candidates]
+    top = calibrated[0]
+    base_confidence = float(top.get("confidence") or 0)
+    confidence = base_confidence
+    factors: list[str] = []
+    requires_review = False
+    review_reason: str | None = None
+
+    quality_value = str(quality.get("quality") or "unknown")
+    if quality.get("requires_review") or quality_value in {"poor", "failed", "deferred", "empty"}:
+        confidence = min(confidence, 0.74)
+        factors.append(f"extraction_quality_requires_review:{quality_value}")
+        requires_review = True
+        review_reason = "extraction_quality_not_trusted"
+
+    if plan.get("strategy") == "ocr_page_level" and quality_value == "metadata_only":
+        confidence = min(confidence, 0.79)
+        factors.append("ocr_metadata_only")
+        requires_review = True
+        review_reason = "ocr_text_empty"
+
+    llm = llm_inspection or {}
+    llm_primary = llm.get("primary_tag")
+    llm_confidence = float(llm.get("confidence") or 0)
+    if llm.get("needs_review"):
+        confidence = min(confidence, 0.79)
+        factors.append("llm_requested_review")
+        requires_review = True
+        review_reason = "llm_requested_review"
+    if llm.get("llm_status") in {"failed", "invalid"}:
+        confidence = min(confidence, 0.79)
+        factors.append(f"llm_structured_output_unusable:{llm.get('llm_status')}")
+        requires_review = True
+        review_reason = llm.get("review_reason") or "llm_structured_output_unusable"
+    elif llm.get("llm_status") == "inspected_with_invalid_fields" or _llm_warning_list(llm):
+        confidence = min(confidence, 0.79)
+        factors.append("llm_structured_output_invalid_fields")
+        requires_review = True
+        review_reason = "llm_structured_output_invalid"
+    if llm.get("llm_status") == "inspected" and llm_primary and llm_primary != top.get("tag") and llm_confidence >= 0.7:
+        confidence = min(confidence, 0.78)
+        factors.append(f"llm_primary_disagrees:{llm_primary}")
+        requires_review = True
+        review_reason = "llm_tag_disagreement"
+
+    top_examples = (semantic_examples or [])[:3]
+    if top_examples:
+        matching = [example for example in top_examples if example.get("correct_primary_tag") == top.get("tag")]
+        conflicting = [example for example in top_examples if example.get("correct_primary_tag") != top.get("tag")]
+        strong_conflict = [example for example in conflicting if float(example.get("score") or 0) >= 0.72]
+        if matching:
+            factors.append(f"semantic_support:{len(matching)}")
+        if strong_conflict and len(strong_conflict) >= len(matching):
+            best = strong_conflict[0]
+            confidence = min(confidence, 0.8)
+            factors.append(f"semantic_conflict:{best.get('correct_primary_tag')}:{float(best.get('score') or 0):.3f}")
+            requires_review = True
+            review_reason = "semantic_example_conflict"
+
+    embedding_statuses = {str(row.get("embedding_status") or "") for row in (embeddings or [])}
+    if "placeholder" in embedding_statuses:
+        factors.append("embedding_placeholder_used")
+
+    confidence = round(max(0.0, min(confidence, 0.99)), 4)
+    top["pre_calibration_confidence"] = base_confidence
+    top["confidence"] = confidence
+    top["confidence_calibration_factors"] = factors
+    top["requires_review"] = requires_review
+    top["calibrated_review_reason"] = review_reason
+    top["evidence"] = [
+        *top.get("evidence", []),
+        *[f"confidence_calibration:{factor}" for factor in factors],
+    ]
+    calibrated[0] = top
+    return calibrated, {
+        "status": "calibrated",
+        "base_confidence": base_confidence,
+        "calibrated_confidence": confidence,
+        "factors": factors,
+        "requires_review": requires_review,
+        "review_reason": review_reason,
+        "top_tag": top.get("tag"),
+    }
+
+
 def resolve_route_or_review(tag_candidates: list[dict[str, Any]], quality: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
     if plan["strategy"] == "deferred_technical":
         return {"route_status": "technical_followup", "review_reason": plan.get("defer_reason")}
@@ -1443,6 +1650,8 @@ def resolve_route_or_review(tag_candidates: list[dict[str, Any]], quality: dict[
         return {"route_status": "review_no_tag_candidate", "review_reason": "no_tag_candidate"}
 
     top = tag_candidates[0]
+    if top.get("requires_review"):
+        return {"route_status": "review_tag_confidence_calibration", "review_reason": top.get("calibrated_review_reason") or "confidence_calibration_requires_review"}
     if top["confidence"] >= 0.85:
         return {"route_status": "route_candidate", "review_reason": None}
     if quality["quality"] == "metadata_only" and top["confidence"] >= 0.8:
@@ -1461,6 +1670,7 @@ def write_pipeline_result(
     tag_candidates: list[dict[str, Any]],
     route: dict[str, Any],
     llm_inspection: dict[str, Any],
+    confidence_calibration: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     top = tag_candidates[0] if tag_candidates else None
     embedding_statuses = sorted({row["embedding_status"] for row in embeddings})
@@ -1472,6 +1682,7 @@ def write_pipeline_result(
         text=extraction.text,
         metadata=extraction.metadata,
     )
+    placement = quarantine_placement_for_review_route(placement, route)
     return {
         "sample_path": str(sample.sample_path),
         "source_path": sample.source_path,
@@ -1503,15 +1714,49 @@ def write_pipeline_result(
         "llm_provider": llm_inspection.get("provider"),
         "llm_primary_tag": llm_inspection.get("primary_tag"),
         "llm_confidence": llm_inspection.get("confidence"),
+        "llm_competing_tags": llm_inspection.get("competing_tags", []),
+        "llm_review_reason": llm_inspection.get("review_reason"),
+        "llm_warnings": _llm_warning_list(llm_inspection),
         "confidence_inputs": {
             "top_candidate": top if top else None,
             "candidate_count": len(tag_candidates),
             "llm_confidence": llm_inspection.get("confidence"),
             "llm_needs_review": llm_inspection.get("needs_review"),
+            "llm_competing_tags": llm_inspection.get("competing_tags", []),
+            "llm_review_reason": llm_inspection.get("review_reason"),
         },
+        "confidence_calibration": confidence_calibration or {},
+        "ocr_evidence": _ocr_evidence(extraction),
         "route_status": route["route_status"],
         "review_reason": route.get("review_reason"),
-        "warnings": extraction.warnings,
+        "warnings": [*extraction.warnings, *_llm_warning_list(llm_inspection)],
+    }
+
+
+def _llm_warning_list(llm_inspection: dict[str, Any]) -> list[str]:
+    warnings = [str(warning) for warning in llm_inspection.get("warnings", []) if warning]
+    if llm_inspection.get("warning"):
+        warnings.append(str(llm_inspection["warning"]))
+    return sorted(dict.fromkeys(warnings))
+
+
+def quarantine_placement_for_review_route(placement: dict[str, Any], route: dict[str, Any]) -> dict[str, Any]:
+    if route.get("route_status") == "route_candidate":
+        return placement
+    if placement.get("placement_status") != "resolved":
+        return placement
+    destination_path = str(placement.get("destination_path") or "")
+    if not destination_path or destination_path.startswith("90_Intake_Needs_Review"):
+        return placement
+    drive_folder = str(placement.get("drive_folder") or "").strip("/")
+    review_destination = f"90_Intake_Needs_Review/{drive_folder}" if drive_folder else "90_Intake_Needs_Review"
+    return {
+        **placement,
+        "placement_status": "needs_review",
+        "destination_path": review_destination,
+        "blocked_destination_path": destination_path,
+        "placement_blocked_by_route": True,
+        "review_reason": route.get("review_reason") or "placement_requires_accepted_route",
     }
 
 
@@ -1846,6 +2091,10 @@ def _with_page_warning(page: OcrPageResult, warning: str) -> OcrPageResult:
     )
 
 
+def _joined_page_text(pages: list[OcrPageResult]) -> str:
+    return "\n\n".join(page.text for page in pages if page.text.strip())
+
+
 def _ocr_escalation_reason(document: OcrDocumentResult, pages: list[OcrPageResult]) -> str | None:
     if document.quality in {"poor", "metadata_only", "failed", "deferred"}:
         return document.quality
@@ -1853,6 +2102,37 @@ def _ocr_escalation_reason(document: OcrDocumentResult, pages: list[OcrPageResul
     if _looks_like_gibberish(text):
         return "gibberish_suspected"
     return None
+
+
+def _ocr_evidence(extraction: ExtractionResult) -> dict[str, Any]:
+    warnings = extraction.warnings
+    fallback_provider = _warning_value(warnings, "ocr_fallback_used:")
+    fallback_reason = _warning_value(warnings, "ocr_fallback_reason:")
+    original_extraction = extraction.metadata.get("original_extraction")
+    original_snippet = _warning_value(warnings, "ocr_original_snippet:")
+    if not original_snippet and isinstance(original_extraction, dict):
+        original_snippet = str(original_extraction.get("text_snippet") or "") or None
+    fallback_snippet = _warning_value(warnings, "ocr_fallback_snippet:")
+    if fallback_provider and not fallback_snippet:
+        fallback_snippet = _shorten(extraction.text, 360) or None
+    return {
+        "fallback_used": bool(fallback_provider),
+        "fallback_provider": fallback_provider,
+        "fallback_reason": fallback_reason,
+        "fallback_notes": _warning_values(warnings, "ocr_fallback_note:"),
+        "original_text_snippet": original_snippet,
+        "fallback_text_snippet": fallback_snippet,
+        "final_text_snippet": _shorten(extraction.text, 360) or None,
+    }
+
+
+def _warning_value(warnings: list[str], prefix: str) -> str | None:
+    values = _warning_values(warnings, prefix)
+    return values[0] if values else None
+
+
+def _warning_values(warnings: list[str], prefix: str) -> list[str]:
+    return [warning[len(prefix) :] for warning in warnings if isinstance(warning, str) and warning.startswith(prefix)]
 
 
 def _looks_like_gibberish(text: str) -> bool:
@@ -1868,6 +2148,28 @@ def _looks_like_gibberish(text: str) -> bool:
     vowel_token_ratio = len(vowel_tokens) / max(len(alpha_tokens), 1)
     long_token_ratio = len([token for token in tokens if len(token) > 18]) / len(tokens)
     return odd_character_ratio > 0.3 or (len(alpha_tokens) >= 15 and vowel_token_ratio < 0.2) or long_token_ratio > 0.3
+
+
+def _looks_like_table_distortion(text: str) -> bool:
+    compact = text.strip()
+    if len(compact) < 300:
+        return False
+    lines = [line.strip() for line in compact.splitlines() if line.strip()]
+    if len(lines) < 6:
+        return False
+    table_symbol_count = len(re.findall(r"[_|]{2,}|[|]{1}|[-=]{4,}", compact))
+    numeric_tokens = re.findall(r"\b\d[\d,.$%'-]*\b", compact)
+    alpha_words = re.findall(r"\b[A-Za-z]{3,}\b", compact)
+    sentence_markers = len(re.findall(r"[.!?]\s+[A-Z]", compact))
+    dense_symbol_lines = sum(1 for line in lines if len(re.findall(r"[_|=-]", line)) >= 4)
+    short_alpha_ratio = len(alpha_words) / max(len(numeric_tokens) + table_symbol_count, 1)
+    return (
+        dense_symbol_lines >= max(4, len(lines) // 3)
+        and table_symbol_count >= 18
+        and len(numeric_tokens) >= 15
+        and sentence_markers <= 2
+        and short_alpha_ratio < 0.8
+    )
 
 
 def _render_sample_images(sample: SampleFile) -> list[Image.Image]:

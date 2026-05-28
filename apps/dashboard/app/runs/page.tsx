@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { Button } from "../../components/ui/Button";
-import { CheckboxField, TextInput } from "../../components/ui/FormControls";
+import { CheckboxField, SelectInput, TextInput } from "../../components/ui/FormControls";
 import { KeyValue } from "../../components/ui/KeyValue";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { deleteJson, fetchJson, postJson } from "../../lib/api";
@@ -124,6 +124,7 @@ export default function RunsPage() {
             <thead>
               <tr>
                 <th>Run</th>
+                <th>Role</th>
                 <th>Preset</th>
                 <th>Status</th>
                 <th>Processed</th>
@@ -139,6 +140,9 @@ export default function RunsPage() {
                     <Link className="linkButton" href={`/runs/${run.id}/report`}>
                       {run.run_key}
                     </Link>
+                  </td>
+                  <td>
+                    <StatusBadge value={run.run_role ?? "test"} />
                   </td>
                   <td>{run.preset_key}</td>
                   <td>
@@ -209,6 +213,7 @@ export default function RunsPage() {
               </div>
               <RunProgressBar progress={progress.data} run={activeRun} />
               <KeyValue label="Preset" value={activeRun.preset_key} />
+              <KeyValue label="Role" value={activeRun.run_role ?? "test"} />
               <KeyValue label="Processed" value={formatRunProgress(progress.data, activeRun)} />
               <KeyValue label="Started" value={activeRun.started_at ?? "-"} />
               <KeyValue label="Updated" value={progress.data?.updated_at ?? activeRun.updated_at ?? "-"} />
@@ -265,6 +270,7 @@ function RunStartDialog({
 }) {
   const [inputRoot, setInputRoot] = useState(preset.input_root);
   const [outputDir, setOutputDir] = useState(preset.output_dir);
+  const [runRole, setRunRole] = useState("test");
   const [embeddingProvider, setEmbeddingProvider] = useState(preset.embedding_provider || "cortex");
   const [enableLlmTags, setEnableLlmTags] = useState(preset.enable_llm_tags);
   const [llmTagProvider, setLlmTagProvider] = useState(normalizeRunProvider(preset.llm_tag_provider));
@@ -286,6 +292,11 @@ function RunStartDialog({
       <div className="formGrid runStartForm">
         <TextInput label="Input root" value={inputRoot} onChange={(event) => setInputRoot(event.target.value)} />
         <TextInput label="Output dir" value={outputDir} onChange={(event) => setOutputDir(event.target.value)} />
+        <SelectInput label="Run role" value={runRole} onChange={(event) => setRunRole(event.target.value)}>
+          <option value="test">Test</option>
+          <option value="baseline">Baseline</option>
+          <option value="evaluation">Evaluation</option>
+        </SelectInput>
         <ProviderSelect label="Embedding path" value={embeddingProvider} onChange={setEmbeddingProvider} />
         <ProviderSelect label="LLM tag path" value={llmTagProvider} onChange={setLlmTagProvider} />
         <ProviderSelect label="OCR fallback path" value={ocrFallbackProvider} onChange={setOcrFallbackProvider} />
@@ -303,6 +314,7 @@ function RunStartDialog({
           onClick={() =>
             onStart({
               preset_key: preset.preset_key,
+              run_role: runRole,
               input_root: inputRoot,
               output_dir: outputDir,
               embedding_provider: embeddingProvider,

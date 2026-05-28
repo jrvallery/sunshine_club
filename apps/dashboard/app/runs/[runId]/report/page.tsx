@@ -126,6 +126,7 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
         <div className="runMetaGrid">
           <KeyValue label="Run" value={<RunContextBadge runId={run.id} runKey={run.run_key} preset={run.preset_key} />} />
           <KeyValue label="Preset" value={run.preset_key} />
+          <KeyValue label="Role" value={run.run_role ?? "test"} />
           <KeyValue label="Started" value={run.started_at ?? "-"} />
           <KeyValue label="Completed" value={run.completed_at ?? "-"} />
           <KeyValue label="Output" value={run.output_dir ?? "-"} />
@@ -146,8 +147,10 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
 
       <section className="metrics">
         <Metric label="Processed" value={formatProcessed(data)} />
+        <Metric label="Accepted" value={String(data.status_buckets.accepted ?? 0)} />
         <Metric label="Review required" value={String(data.overview.review_required_count ?? 0)} />
         <Metric label="Failed" value={String(data.overview.failed_count ?? 0)} />
+        <Metric label="Deferred" value={String(data.status_buckets.deferred ?? 0)} />
         <Metric label="Model calls" value={String(modelSummary?.total_calls ?? 0)} />
         <Metric label="External cost" value={formatCost(modelSummary?.estimated_external_cost_usd ?? 0)} />
       </section>
@@ -182,6 +185,7 @@ function OverviewTab({ report }: { report: RunReport }) {
         <h2>Run Overview</h2>
       </div>
       <div className="reportGrid">
+        <Breakdown title="Production Buckets" values={report.status_buckets ?? {}} />
         <Breakdown title="Routes" values={report.distributions.route_status ?? {}} />
         <Breakdown title="Quality" values={report.distributions.quality ?? {}} />
         <Breakdown title="Content Class" values={report.distributions.final_class ?? {}} />
@@ -323,7 +327,7 @@ function ReviewItemRows({ runId, rows }: { runId: number; rows: Array<Record<str
                     <td>{String(row.proposed_tag ?? row.top_tag_candidate ?? "-")}</td>
                     <td><QualityBadge value={String((row.result as Record<string, unknown> | undefined)?.quality ?? row.quality ?? "-")} /></td>
                     <td>
-                      <Link className="viewLink" href={`/review?run_id=${runId}&status=all&q=${encodeURIComponent(relativePath)}`}>
+                      <Link className="viewLink" href={reviewItemHref(row, runId, relativePath)}>
                         Open
                       </Link>
                     </td>
@@ -336,6 +340,15 @@ function ReviewItemRows({ runId, rows }: { runId: number; rows: Array<Record<str
       ) : null}
     </div>
   );
+}
+
+function reviewItemHref(row: Record<string, unknown>, runId: number, relativePath: string) {
+  const id = Number(row.id);
+  const params = `run_id=${runId}&status=all`;
+  if (Number.isFinite(id) && id > 0) {
+    return `/review/${id}?${params}`;
+  }
+  return `/review?${params}&q=${encodeURIComponent(relativePath)}`;
 }
 
 function TrainingCycleTab({ report }: { report: RunReport }) {

@@ -14,10 +14,13 @@ import os
 import random
 import shutil
 import sqlite3
+import subprocess
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from sunshine_extraction.sample_pipeline import DEFAULT_TAXONOMY_PATH, load_taxonomy_options
 
 
 DEFAULT_REVIEW_DB_PATH = ".local/sunshine-review.sqlite"
@@ -67,6 +70,8 @@ class ReviewStore:
                 route_status = str(result.get("route_status") or "unknown")
                 secondary_tags_json = json.dumps(result.get("secondary_tags", []), sort_keys=True)
                 extraction_text_snippet = _extraction_text_snippet(extraction_by_source.get(source_path))
+                if "ocr_evidence" not in result:
+                    result = {**result, "ocr_evidence": _ocr_evidence_from_result(result, extraction_text_snippet)}
                 review_row = review_by_source.get(source_path)
                 review_reason = str(
                     (review_row or {}).get("review_reason")
@@ -131,9 +136,9 @@ class ReviewStore:
                         """
                         insert into review_items (
                             source_path, relative_path, route_status, review_reason, status,
-                            proposed_class, proposed_tag, secondary_tags_json, extraction_text_snippet, confidence, warnings_json, result_json
+                            proposed_class, proposed_tag, secondary_tags_json, extraction_text_snippet, confidence, warnings_json, result_json, ocr_quality_label
                             , run_id, run_key, run_preset_key, embedding_provider, llm_tag_provider, ocr_fallback_provider, enable_llm_tags
-                        ) values (?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) values (?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         on conflict(source_path) do update set
                             relative_path=excluded.relative_path,
                             route_status=excluded.route_status,
@@ -145,6 +150,7 @@ class ReviewStore:
                             confidence=excluded.confidence,
                             warnings_json=excluded.warnings_json,
                             result_json=excluded.result_json,
+                            ocr_quality_label=coalesce(review_items.ocr_quality_label, excluded.ocr_quality_label),
                             run_id=excluded.run_id,
                             run_key=excluded.run_key,
                             run_preset_key=excluded.run_preset_key,
@@ -166,6 +172,7 @@ class ReviewStore:
                             result.get("tag_confidence"),
                             json.dumps(result.get("warnings", []), sort_keys=True),
                             json.dumps(result, sort_keys=True),
+                            result.get("quality"),
                             run_snapshot.get("run_id"),
                             run_snapshot.get("run_key"),
                             run_snapshot.get("run_preset_key"),
@@ -244,7 +251,7 @@ class ReviewStore:
                 select id, source_path, relative_path, route_status, review_reason, status,
                        proposed_class, proposed_tag, secondary_tags_json, extraction_text_snippet, confidence, warnings_json, result_json,
                        run_id, run_key, run_preset_key, embedding_provider, llm_tag_provider, ocr_fallback_provider, enable_llm_tags,
-                       decision, correct_class, correct_tag, correct_secondary_tags_json, correct_destination_path,
+                       ocr_quality_label, decision, correct_class, correct_tag, correct_secondary_tags_json, correct_destination_path,
                        correct_placement_year, correct_privacy, review_stage, priority, assigned_reviewer, notes, created_at, updated_at
                 from review_items
                 where coalesce(json_extract(result_json, '$.placement_status'), '') in ('missing_date', 'needs_review', 'unresolved')
@@ -255,6 +262,10 @@ class ReviewStore:
                 """,
                 (limit,),
             ).fetchall()
+            missing_date_queue = [
+                _review_item_from_row(row, model_usage_summary=_review_item_model_usage_summary(connection, row))
+                for row in missing_date_rows
+            ]
         total = sum(by_placement_status.values())
         resolved = sum(count for status, count in by_placement_status.items() if status in {"resolved", "proposed", "ok"})
         return {
@@ -264,7 +275,7 @@ class ReviewStore:
             "corrected_placement_decisions": int(corrected_placement),
             "by_placement_status": by_placement_status,
             "by_privacy": by_privacy,
-            "missing_date_queue": [_review_item_from_row(row) for row in missing_date_rows],
+            "missing_date_queue": missing_date_queue,
         }
 
     def review_export_rows(self, *, status: str = "all", limit: int = 1000) -> list[dict[str, Any]]:
@@ -283,6 +294,7 @@ class ReviewStore:
         content_class: str | None = None,
         quality: str | None = None,
         placement_status: str | None = None,
+        confidence_bucket: str | None = None,
         warning_type: str | None = None,
         source_collection: str | None = None,
         run_id: int | None = None,
@@ -290,13 +302,14 @@ class ReviewStore:
         embedding_provider: str | None = None,
         llm_tag_provider: str | None = None,
         ocr_fallback_provider: str | None = None,
+        ocr_fallback_used: str | None = None,
         enable_llm_tags: bool | None = None,
     ) -> list[dict[str, Any]]:
         query = """
             select id, source_path, relative_path, route_status, review_reason, status,
                    proposed_class, proposed_tag, secondary_tags_json, extraction_text_snippet, confidence, warnings_json, result_json,
                    run_id, run_key, run_preset_key, embedding_provider, llm_tag_provider, ocr_fallback_provider, enable_llm_tags,
-                   decision, correct_class, correct_tag, correct_secondary_tags_json, correct_destination_path,
+                   ocr_quality_label, decision, correct_class, correct_tag, correct_secondary_tags_json, correct_destination_path,
                    correct_placement_year, correct_privacy, review_stage, priority, assigned_reviewer, notes, created_at, updated_at
             from review_items
         """
@@ -330,6 +343,9 @@ class ReviewStore:
         if placement_status:
             predicates.append("json_extract(result_json, '$.placement_status') = ?")
             params.append(placement_status)
+        confidence_predicate = _confidence_bucket_predicate(confidence_bucket)
+        if confidence_predicate:
+            predicates.append(confidence_predicate)
         if warning_type:
             predicates.append("warnings_json like ?")
             params.append(f"%{warning_type}%")
@@ -352,6 +368,9 @@ class ReviewStore:
         if ocr_fallback_provider:
             predicates.append("ocr_fallback_provider = ?")
             params.append(ocr_fallback_provider)
+        fallback_used_predicate = _ocr_fallback_used_predicate(ocr_fallback_used, warnings_column="warnings_json")
+        if fallback_used_predicate:
+            predicates.append(fallback_used_predicate)
         if enable_llm_tags is not None:
             predicates.append("enable_llm_tags = ?")
             params.append(1 if enable_llm_tags else 0)
@@ -361,7 +380,10 @@ class ReviewStore:
         params.append(limit)
         with self._connect() as connection:
             rows = connection.execute(query, params).fetchall()
-        return [_review_item_from_row(row) for row in rows]
+            return [
+                _review_item_from_row(row, model_usage_summary=_review_item_model_usage_summary(connection, row))
+                for row in rows
+            ]
 
     def review_facets(
         self,
@@ -375,6 +397,7 @@ class ReviewStore:
         content_class: str | None = None,
         quality: str | None = None,
         placement_status: str | None = None,
+        confidence_bucket: str | None = None,
         warning_type: str | None = None,
         source_collection: str | None = None,
         run_id: int | None = None,
@@ -382,6 +405,7 @@ class ReviewStore:
         embedding_provider: str | None = None,
         llm_tag_provider: str | None = None,
         ocr_fallback_provider: str | None = None,
+        ocr_fallback_used: str | None = None,
         enable_llm_tags: bool | None = None,
     ) -> dict[str, dict[str, int]]:
         where_sql, params = _review_items_where(
@@ -394,6 +418,7 @@ class ReviewStore:
             content_class=content_class,
             quality=quality,
             placement_status=placement_status,
+            confidence_bucket=confidence_bucket,
             warning_type=warning_type,
             source_collection=source_collection,
             run_id=run_id,
@@ -401,6 +426,7 @@ class ReviewStore:
             embedding_provider=embedding_provider,
             llm_tag_provider=llm_tag_provider,
             ocr_fallback_provider=ocr_fallback_provider,
+            ocr_fallback_used=ocr_fallback_used,
             enable_llm_tags=enable_llm_tags,
         )
         source_collection_expression = """
@@ -422,6 +448,7 @@ class ReviewStore:
                 "embedding_provider": "coalesce(embedding_provider, 'unknown')",
                 "llm_tag_provider": "coalesce(llm_tag_provider, 'unknown')",
                 "ocr_fallback_provider": "coalesce(ocr_fallback_provider, 'unknown')",
+                "ocr_fallback_used": _ocr_fallback_used_expression("warnings_json"),
                 "llm_tags": "case when enable_llm_tags = 1 then 'enabled' when enable_llm_tags = 0 then 'disabled' else 'unknown' end",
                 "review_reason": "coalesce(review_reason, 'unknown')",
                 "route_status": "coalesce(route_status, 'unknown')",
@@ -429,6 +456,7 @@ class ReviewStore:
                 "content_class": "coalesce(proposed_class, 'unknown')",
                 "quality": "coalesce(json_extract(result_json, '$.quality'), 'unknown')",
                 "placement_status": "coalesce(json_extract(result_json, '$.placement_status'), 'unknown')",
+                "confidence_bucket": _confidence_bucket_expression(),
                 "review_status": "coalesce(status, 'unknown')",
                 "source_collection": source_collection_expression,
             }.items():
@@ -652,7 +680,7 @@ class ReviewStore:
                 select id, source_path, relative_path, route_status, review_reason, status,
                        proposed_class, proposed_tag, secondary_tags_json, extraction_text_snippet, confidence, warnings_json, result_json,
                        run_id, run_key, run_preset_key, embedding_provider, llm_tag_provider, ocr_fallback_provider, enable_llm_tags,
-                       decision, correct_class, correct_tag, correct_secondary_tags_json, correct_destination_path,
+                       ocr_quality_label, decision, correct_class, correct_tag, correct_secondary_tags_json, correct_destination_path,
                        correct_placement_year, correct_privacy, review_stage, priority, assigned_reviewer, notes, created_at, updated_at
                 from review_items
                 where source_path = ?
@@ -664,8 +692,10 @@ class ReviewStore:
             golden_row = connection.execute(
                 """
                 select id, review_item_id, source_path, relative_path, sample_path, extracted_text_snippet,
-                       correct_primary_tag, correct_secondary_tags_json, reviewer, notes, proposed_tag,
-                       proposed_secondary_tags_json, proposed_confidence, created_at, updated_at
+                       content_class, correct_primary_tag, correct_secondary_tags_json, ocr_quality_label,
+                       expected_review_required, sensitive_record, correct_destination_path, correct_placement_year,
+                       correct_privacy, reviewer, notes, proposed_tag,
+                       proposed_secondary_tags_json, proposed_confidence, reviewed_at, created_at, updated_at
                 from golden_labels
                 where source_path = ?
                 """,
@@ -677,7 +707,7 @@ class ReviewStore:
                     """
                     select id, run_key, preset_key, status, input_root, output_dir, command_json,
                            embedding_provider, enable_llm_tags, llm_tag_provider, ocr_fallback_provider, semantic_index_path,
-                           started_at, completed_at, processed_count, route_candidate_count,
+                           run_metadata_json, started_at, completed_at, processed_count, route_candidate_count,
                            review_required_count, failed_count, summary_json, error, created_at, updated_at
                     from pipeline_runs
                     where id = ?
@@ -697,6 +727,7 @@ class ReviewStore:
                 "ocr_status": latest_result.get("ocr_status"),
                 "mean_confidence": latest_result.get("mean_confidence"),
                 "fallback_provider": _ocr_fallback_provider(latest_result.get("warnings") or []),
+                "evidence": _ocr_evidence_from_result(latest_result, file_record.get("extraction_text_snippet")),
                 "warnings": latest_result.get("warnings") or [],
             },
             "text": {
@@ -831,6 +862,9 @@ class ReviewStore:
         correct_class: str | None = None,
         correct_tag: str | None = None,
         correct_secondary_tags: list[str] | None = None,
+        ocr_quality_label: str | None = None,
+        expected_review_required: bool | None = None,
+        sensitive_record: bool | None = None,
         correct_destination_path: str | None = None,
         correct_placement_year: str | None = None,
         correct_privacy: str | None = None,
@@ -843,8 +877,8 @@ class ReviewStore:
         with self._connect() as connection:
             existing = connection.execute(
                 """
-                select id, source_path, relative_path, proposed_class, proposed_tag, secondary_tags_json,
-                       extraction_text_snippet, confidence
+                select id, source_path, relative_path, route_status, proposed_class, proposed_tag,
+                       secondary_tags_json, extraction_text_snippet, confidence, ocr_quality_label, result_json
                 from review_items where id = ?
                 """,
                 (item_id,),
@@ -864,6 +898,7 @@ class ReviewStore:
                 """
                 update review_items
                 set decision = ?, correct_class = ?, correct_tag = ?, correct_secondary_tags_json = ?,
+                    ocr_quality_label = coalesce(?, ocr_quality_label),
                     correct_destination_path = ?, correct_placement_year = ?, correct_privacy = ?,
                     review_stage = ?, notes = ?, status = ?, updated_at = datetime('now')
                 where id = ?
@@ -873,6 +908,7 @@ class ReviewStore:
                     correct_class,
                     resolved_tag,
                     json.dumps(resolved_secondary_tags, sort_keys=True),
+                    ocr_quality_label,
                     correct_destination_path,
                     correct_placement_year,
                     correct_privacy,
@@ -883,25 +919,43 @@ class ReviewStore:
                 ),
             )
             if save_as_golden and decision in {"accept", "change"} and resolved_tag:
+                result = _json_object(existing["result_json"])
+                resolved_content_class = correct_class or existing["proposed_class"]
+                resolved_ocr_quality = ocr_quality_label or existing["ocr_quality_label"] or result.get("quality")
+                resolved_expected_review_required = (
+                    expected_review_required
+                    if expected_review_required is not None
+                    else existing["route_status"] != "route_candidate"
+                )
                 connection.execute(
                     """
                     insert into golden_labels (
                         review_item_id, source_path, relative_path, sample_path, extracted_text_snippet,
-                        correct_primary_tag, correct_secondary_tags_json, reviewer, notes, proposed_tag,
-                        proposed_secondary_tags_json, proposed_confidence, created_at, updated_at
-                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                        content_class, correct_primary_tag, correct_secondary_tags_json, ocr_quality_label,
+                        expected_review_required, sensitive_record, correct_destination_path, correct_placement_year,
+                        correct_privacy, reviewer, notes, proposed_tag,
+                        proposed_secondary_tags_json, proposed_confidence, reviewed_at, created_at, updated_at
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), datetime('now'))
                     on conflict(source_path) do update set
                         review_item_id=excluded.review_item_id,
                         relative_path=excluded.relative_path,
                         sample_path=excluded.sample_path,
                         extracted_text_snippet=excluded.extracted_text_snippet,
+                        content_class=excluded.content_class,
                         correct_primary_tag=excluded.correct_primary_tag,
                         correct_secondary_tags_json=excluded.correct_secondary_tags_json,
+                        ocr_quality_label=excluded.ocr_quality_label,
+                        expected_review_required=excluded.expected_review_required,
+                        sensitive_record=excluded.sensitive_record,
+                        correct_destination_path=excluded.correct_destination_path,
+                        correct_placement_year=excluded.correct_placement_year,
+                        correct_privacy=excluded.correct_privacy,
                         reviewer=excluded.reviewer,
                         notes=excluded.notes,
                         proposed_tag=excluded.proposed_tag,
                         proposed_secondary_tags_json=excluded.proposed_secondary_tags_json,
                         proposed_confidence=excluded.proposed_confidence,
+                        reviewed_at=datetime('now'),
                         updated_at=datetime('now')
                     """,
                     (
@@ -910,8 +964,15 @@ class ReviewStore:
                         existing["relative_path"],
                         _sample_path_from_result(connection, existing["source_path"]),
                         existing["extraction_text_snippet"],
+                        resolved_content_class,
                         resolved_tag,
                         json.dumps(resolved_secondary_tags, sort_keys=True),
+                        resolved_ocr_quality,
+                        1 if resolved_expected_review_required else 0,
+                        1 if sensitive_record else 0,
+                        correct_destination_path,
+                        correct_placement_year,
+                        correct_privacy,
                         reviewer,
                         notes,
                         existing["proposed_tag"],
@@ -924,15 +985,55 @@ class ReviewStore:
                 select id, source_path, relative_path, route_status, review_reason, status,
                        proposed_class, proposed_tag, secondary_tags_json, extraction_text_snippet, confidence, warnings_json, result_json,
                        run_id, run_key, run_preset_key, embedding_provider, llm_tag_provider, ocr_fallback_provider, enable_llm_tags,
-                       decision, correct_class, correct_tag, correct_secondary_tags_json, correct_destination_path,
+                       ocr_quality_label, decision, correct_class, correct_tag, correct_secondary_tags_json, correct_destination_path,
                        correct_placement_year, correct_privacy, review_stage, priority, assigned_reviewer, notes, created_at, updated_at
                 from review_items where id = ?
                 """,
                 (item_id,),
             ).fetchone()
-        if row is None:
-            raise KeyError(f"review item {item_id} not found")
-        return _review_item_from_row(row)
+            if row is None:
+                raise KeyError(f"review item {item_id} not found")
+            return _review_item_from_row(row, model_usage_summary=_review_item_model_usage_summary(connection, row))
+
+    def mark_ocr_quality(
+        self,
+        item_id: int,
+        *,
+        ocr_quality_label: str,
+        review_stage: str | None = "needs_ocr_review",
+        notes: str | None = None,
+    ) -> dict[str, Any]:
+        with self._connect() as connection:
+            existing = connection.execute("select id, notes from review_items where id = ?", (item_id,)).fetchone()
+            if existing is None:
+                raise KeyError(f"review item {item_id} not found")
+            merged_notes = _append_review_note(existing["notes"], notes)
+            connection.execute(
+                """
+                update review_items
+                set ocr_quality_label = ?,
+                    review_stage = coalesce(?, review_stage),
+                    notes = ?,
+                    status = 'open',
+                    updated_at = datetime('now')
+                where id = ?
+                """,
+                (ocr_quality_label, review_stage, merged_notes, item_id),
+            )
+            row = connection.execute(
+                """
+                select id, source_path, relative_path, route_status, review_reason, status,
+                       proposed_class, proposed_tag, secondary_tags_json, extraction_text_snippet, confidence, warnings_json, result_json,
+                       run_id, run_key, run_preset_key, embedding_provider, llm_tag_provider, ocr_fallback_provider, enable_llm_tags,
+                       ocr_quality_label, decision, correct_class, correct_tag, correct_secondary_tags_json, correct_destination_path,
+                       correct_placement_year, correct_privacy, review_stage, priority, assigned_reviewer, notes, created_at, updated_at
+                from review_items where id = ?
+                """,
+                (item_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"review item {item_id} not found")
+            return _review_item_from_row(row, model_usage_summary=_review_item_model_usage_summary(connection, row))
 
     def get_review_item(self, item_id: int) -> dict[str, Any]:
         with self._connect() as connection:
@@ -941,15 +1042,15 @@ class ReviewStore:
                 select id, source_path, relative_path, route_status, review_reason, status,
                        proposed_class, proposed_tag, secondary_tags_json, extraction_text_snippet, confidence, warnings_json, result_json,
                        run_id, run_key, run_preset_key, embedding_provider, llm_tag_provider, ocr_fallback_provider, enable_llm_tags,
-                       decision, correct_class, correct_tag, correct_secondary_tags_json, correct_destination_path,
+                       ocr_quality_label, decision, correct_class, correct_tag, correct_secondary_tags_json, correct_destination_path,
                        correct_placement_year, correct_privacy, review_stage, priority, assigned_reviewer, notes, created_at, updated_at
                 from review_items where id = ?
                 """,
                 (item_id,),
             ).fetchone()
-        if row is None:
-            raise KeyError(f"review item {item_id} not found")
-        return _review_item_from_row(row)
+            if row is None:
+                raise KeyError(f"review item {item_id} not found")
+            return _review_item_from_row(row, model_usage_summary=_review_item_model_usage_summary(connection, row))
 
     def assign_review_item(
         self,
@@ -991,8 +1092,10 @@ class ReviewStore:
             rows = connection.execute(
                 """
                 select id, review_item_id, source_path, relative_path, sample_path, extracted_text_snippet,
-                       correct_primary_tag, correct_secondary_tags_json, reviewer, notes, proposed_tag,
-                       proposed_secondary_tags_json, proposed_confidence, created_at, updated_at
+                       content_class, correct_primary_tag, correct_secondary_tags_json, ocr_quality_label,
+                       expected_review_required, sensitive_record, correct_destination_path, correct_placement_year,
+                       correct_privacy, reviewer, notes, proposed_tag,
+                       proposed_secondary_tags_json, proposed_confidence, reviewed_at, created_at, updated_at
                 from golden_labels
                 order by updated_at desc, id desc
                 limit ?
@@ -1001,13 +1104,18 @@ class ReviewStore:
             ).fetchall()
         return [_golden_label_from_row(row) for row in rows]
 
+    def golden_label_export_rows(self, *, limit: int = 10000) -> list[dict[str, Any]]:
+        return self.list_golden_labels(limit=limit)
+
     def get_golden_label(self, label_id: int) -> dict[str, Any]:
         with self._connect() as connection:
             row = connection.execute(
                 """
                 select id, review_item_id, source_path, relative_path, sample_path, extracted_text_snippet,
-                       correct_primary_tag, correct_secondary_tags_json, reviewer, notes, proposed_tag,
-                       proposed_secondary_tags_json, proposed_confidence, created_at, updated_at
+                       content_class, correct_primary_tag, correct_secondary_tags_json, ocr_quality_label,
+                       expected_review_required, sensitive_record, correct_destination_path, correct_placement_year,
+                       correct_privacy, reviewer, notes, proposed_tag,
+                       proposed_secondary_tags_json, proposed_confidence, reviewed_at, created_at, updated_at
                 from golden_labels
                 where id = ?
                 """,
@@ -1036,8 +1144,15 @@ class ReviewStore:
         self,
         label_id: int,
         *,
+        content_class: str | None = None,
         correct_primary_tag: str | None = None,
         correct_secondary_tags: list[str] | None = None,
+        ocr_quality_label: str | None = None,
+        expected_review_required: bool | None = None,
+        sensitive_record: bool | None = None,
+        correct_destination_path: str | None = None,
+        correct_placement_year: str | None = None,
+        correct_privacy: str | None = None,
         reviewer: str | None = None,
         notes: str | None = None,
     ) -> dict[str, Any]:
@@ -1050,16 +1165,35 @@ class ReviewStore:
             connection.execute(
                 """
                 update golden_labels
-                set correct_primary_tag = ?,
+                set content_class = ?,
+                    correct_primary_tag = ?,
                     correct_secondary_tags_json = ?,
+                    ocr_quality_label = ?,
+                    expected_review_required = ?,
+                    sensitive_record = ?,
+                    correct_destination_path = ?,
+                    correct_placement_year = ?,
+                    correct_privacy = ?,
                     reviewer = ?,
                     notes = ?,
+                    reviewed_at = coalesce(reviewed_at, datetime('now')),
                     updated_at = datetime('now')
                 where id = ?
                 """,
                 (
+                    content_class if content_class is not None else existing["content_class"],
                     resolved_primary,
                     json.dumps(resolved_secondary, sort_keys=True),
+                    ocr_quality_label if ocr_quality_label is not None else existing["ocr_quality_label"],
+                    (
+                        1
+                        if (expected_review_required if expected_review_required is not None else existing["expected_review_required"])
+                        else 0
+                    ),
+                    1 if (sensitive_record if sensitive_record is not None else existing["sensitive_record"]) else 0,
+                    correct_destination_path if correct_destination_path is not None else existing["correct_destination_path"],
+                    correct_placement_year if correct_placement_year is not None else existing["correct_placement_year"],
+                    correct_privacy if correct_privacy is not None else existing["correct_privacy"],
                     reviewer if reviewer is not None else existing["reviewer"],
                     notes if notes is not None else existing["notes"],
                     label_id,
@@ -1081,12 +1215,125 @@ class ReviewStore:
                 "select correct_primary_tag, count(*) from golden_labels group by correct_primary_tag",
             )
             by_secondary_tag = _golden_secondary_tag_counts(connection)
+        taxonomy_primary_tags = _taxonomy_primary_tags()
+        missing_primary_tags = [tag for tag in taxonomy_primary_tags if tag not in by_primary_tag]
         return {
             "db_path": str(self.db_path),
             "total_golden_labels": total,
             "golden_by_primary_tag": by_primary_tag,
             "golden_by_secondary_tag": by_secondary_tag,
+            "taxonomy_primary_tags": taxonomy_primary_tags,
+            "missing_primary_tags": missing_primary_tags,
+            "primary_coverage_rate": _safe_divide(len(taxonomy_primary_tags) - len(missing_primary_tags), len(taxonomy_primary_tags)),
         }
+
+    def record_pipeline_eval(self, summary: dict[str, Any]) -> dict[str, Any]:
+        output_dir = str(summary.get("output_dir") or "")
+        if not output_dir:
+            raise ValueError("pipeline eval summary requires output_dir")
+        run_metadata = summary.get("run_metadata") if isinstance(summary.get("run_metadata"), dict) else {}
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                insert into pipeline_eval_runs (
+                    eval_key, labels_db, output_dir, status, total_golden_labels, evaluated_predictions,
+                    primary_accuracy, content_class_accuracy, secondary_precision, secondary_recall,
+                    ocr_quality_accuracy, ocr_acceptable_rate, review_routing_accuracy, review_false_accepts,
+                    embedding_success_rate, semantic_same_family_top5_rate, placement_destination_accuracy,
+                    source_file_mutations, acceptance_gate_status, production_readiness_status, failure_count,
+                    model_usage_json, summary_json, run_metadata_json, created_at, updated_at
+                ) values (?, ?, ?, 'succeeded', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                on conflict(output_dir) do update set
+                    labels_db=excluded.labels_db,
+                    status=excluded.status,
+                    total_golden_labels=excluded.total_golden_labels,
+                    evaluated_predictions=excluded.evaluated_predictions,
+                    primary_accuracy=excluded.primary_accuracy,
+                    content_class_accuracy=excluded.content_class_accuracy,
+                    secondary_precision=excluded.secondary_precision,
+                    secondary_recall=excluded.secondary_recall,
+                    ocr_quality_accuracy=excluded.ocr_quality_accuracy,
+                    ocr_acceptable_rate=excluded.ocr_acceptable_rate,
+                    review_routing_accuracy=excluded.review_routing_accuracy,
+                    review_false_accepts=excluded.review_false_accepts,
+                    embedding_success_rate=excluded.embedding_success_rate,
+                    semantic_same_family_top5_rate=excluded.semantic_same_family_top5_rate,
+                    placement_destination_accuracy=excluded.placement_destination_accuracy,
+                    source_file_mutations=excluded.source_file_mutations,
+                    acceptance_gate_status=excluded.acceptance_gate_status,
+                    production_readiness_status=excluded.production_readiness_status,
+                    failure_count=excluded.failure_count,
+                    model_usage_json=excluded.model_usage_json,
+                    summary_json=excluded.summary_json,
+                    run_metadata_json=excluded.run_metadata_json,
+                    updated_at=datetime('now')
+                returning id
+                """,
+                (
+                    f"pipeline-eval-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}",
+                    summary.get("labels_db"),
+                    output_dir,
+                    summary.get("total_golden_labels"),
+                    summary.get("evaluated_predictions"),
+                    summary.get("primary_accuracy"),
+                    summary.get("content_class_accuracy"),
+                    summary.get("secondary_precision"),
+                    summary.get("secondary_recall"),
+                    summary.get("ocr_quality_accuracy"),
+                    summary.get("ocr_acceptable_rate"),
+                    summary.get("review_routing_accuracy"),
+                    summary.get("review_false_accepts"),
+                    summary.get("embedding_success_rate"),
+                    summary.get("semantic_same_family_top5_rate"),
+                    summary.get("placement_destination_accuracy"),
+                    summary.get("source_file_mutations"),
+                    (summary.get("acceptance_gate") or {}).get("status") if isinstance(summary.get("acceptance_gate"), dict) else None,
+                    (summary.get("production_readiness") or {}).get("status") if isinstance(summary.get("production_readiness"), dict) else None,
+                    summary.get("failure_count"),
+                    json.dumps(summary.get("model_usage") or {}, sort_keys=True),
+                    json.dumps(summary, sort_keys=True),
+                    json.dumps(run_metadata, sort_keys=True),
+                ),
+            )
+            row_id = int(cursor.fetchone()[0])
+        return self.get_pipeline_eval_run(row_id)
+
+    def list_pipeline_eval_runs(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                select id, eval_key, labels_db, output_dir, status, total_golden_labels, evaluated_predictions,
+                       primary_accuracy, content_class_accuracy, secondary_precision, secondary_recall,
+                       ocr_quality_accuracy, ocr_acceptable_rate, review_routing_accuracy, review_false_accepts,
+                       embedding_success_rate, semantic_same_family_top5_rate, placement_destination_accuracy,
+                       source_file_mutations, acceptance_gate_status, production_readiness_status, failure_count, model_usage_json,
+                       summary_json, run_metadata_json, created_at, updated_at
+                from pipeline_eval_runs
+                order by updated_at desc, id desc
+                limit ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [_pipeline_eval_run_from_row(row) for row in rows]
+
+    def get_pipeline_eval_run(self, eval_run_id: int) -> dict[str, Any]:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                select id, eval_key, labels_db, output_dir, status, total_golden_labels, evaluated_predictions,
+                       primary_accuracy, content_class_accuracy, secondary_precision, secondary_recall,
+                       ocr_quality_accuracy, ocr_acceptable_rate, review_routing_accuracy, review_false_accepts,
+                       embedding_success_rate, semantic_same_family_top5_rate, placement_destination_accuracy,
+                       source_file_mutations, acceptance_gate_status, production_readiness_status, failure_count, model_usage_json,
+                       summary_json, run_metadata_json, created_at, updated_at
+                from pipeline_eval_runs
+                where id = ?
+                """,
+                (eval_run_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(f"pipeline eval run {eval_run_id} not found")
+        return _pipeline_eval_run_from_row(row)
 
     def run_presets(self) -> list[dict[str, Any]]:
         base_manifest = "/mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25"
@@ -1163,6 +1410,7 @@ class ReviewStore:
         self,
         *,
         preset_key: str,
+        run_role: str | None = None,
         input_root: str,
         output_dir: str,
         command: list[str],
@@ -1173,14 +1421,24 @@ class ReviewStore:
         semantic_index_path: str | None = None,
     ) -> dict[str, Any]:
         run_key = f"{preset_key}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
+        run_metadata = _run_metadata(
+            input_root=input_root,
+            output_dir=output_dir,
+            run_role=run_role,
+            embedding_provider=embedding_provider,
+            enable_llm_tags=enable_llm_tags,
+            llm_tag_provider=llm_tag_provider,
+            ocr_fallback_provider=ocr_fallback_provider,
+            semantic_index_path=semantic_index_path,
+        )
         with self._connect() as connection:
             cursor = connection.execute(
                 """
                 insert into pipeline_runs (
                     run_key, preset_key, status, input_root, output_dir, command_json,
                     embedding_provider, enable_llm_tags, llm_tag_provider, ocr_fallback_provider, semantic_index_path,
-                    created_at, updated_at
-                ) values (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                    run_metadata_json, created_at, updated_at
+                ) values (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
                 """,
                 (
                     run_key,
@@ -1193,10 +1451,11 @@ class ReviewStore:
                     llm_tag_provider,
                     ocr_fallback_provider,
                     semantic_index_path,
+                    json.dumps(run_metadata, sort_keys=True),
                 ),
             )
             run_id = int(cursor.lastrowid)
-            self.add_pipeline_run_event(connection, run_id, level="info", message="Run queued.", payload={"command": command})
+            self.add_pipeline_run_event(connection, run_id, level="info", message="Run queued.", payload={"command": command, "run_metadata": run_metadata})
         return self.get_pipeline_run(run_id)
 
     def mark_pipeline_run_started(self, run_id: int) -> None:
@@ -1281,7 +1540,7 @@ class ReviewStore:
                 """
                 select id, run_key, preset_key, status, input_root, output_dir, command_json,
                        embedding_provider, enable_llm_tags, llm_tag_provider, ocr_fallback_provider, semantic_index_path,
-                       started_at, completed_at, processed_count, route_candidate_count,
+                       run_metadata_json, started_at, completed_at, processed_count, route_candidate_count,
                        review_required_count, failed_count, summary_json, error, created_at, updated_at
                 from pipeline_runs
                 order by created_at desc, id desc
@@ -1297,7 +1556,7 @@ class ReviewStore:
                 """
                 select id, run_key, preset_key, status, input_root, output_dir, command_json,
                        embedding_provider, enable_llm_tags, llm_tag_provider, ocr_fallback_provider, semantic_index_path,
-                       started_at, completed_at, processed_count, route_candidate_count,
+                       run_metadata_json, started_at, completed_at, processed_count, route_candidate_count,
                        review_required_count, failed_count, summary_json, error, created_at, updated_at
                 from pipeline_runs where id = ?
                 """,
@@ -1320,7 +1579,7 @@ class ReviewStore:
                 """
                 select id, run_key, preset_key, status, input_root, output_dir, command_json,
                        embedding_provider, enable_llm_tags, llm_tag_provider, ocr_fallback_provider, semantic_index_path,
-                       started_at, completed_at, processed_count, route_candidate_count,
+                       run_metadata_json, started_at, completed_at, processed_count, route_candidate_count,
                        review_required_count, failed_count, summary_json, error, created_at, updated_at
                 from pipeline_runs where id = ?
                 """,
@@ -1553,6 +1812,7 @@ class ReviewStore:
                     confidence real,
                     warnings_json text not null,
                     result_json text not null,
+                    ocr_quality_label text,
                     decision text,
                     correct_class text,
                     correct_tag text,
@@ -1582,9 +1842,17 @@ class ReviewStore:
                     relative_path text not null,
                     sample_path text,
                     extracted_text_snippet text,
+                    content_class text,
                     correct_primary_tag text not null,
                     correct_secondary_tags_json text not null default '[]',
+                    ocr_quality_label text,
+                    expected_review_required integer,
+                    sensitive_record integer not null default 0,
+                    correct_destination_path text,
+                    correct_placement_year text,
+                    correct_privacy text,
                     reviewer text,
+                    reviewed_at text,
                     notes text,
                     proposed_tag text,
                     proposed_secondary_tags_json text not null default '[]',
@@ -1625,6 +1893,7 @@ class ReviewStore:
                     llm_tag_provider text,
                     ocr_fallback_provider text,
                     semantic_index_path text,
+                    run_metadata_json text not null default '{}',
                     started_at text,
                     completed_at text,
                     processed_count integer,
@@ -1674,18 +1943,51 @@ class ReviewStore:
                     created_at text not null default (datetime('now'))
                 );
 
+                create table if not exists pipeline_eval_runs (
+                    id integer primary key autoincrement,
+                    eval_key text not null unique,
+                    labels_db text,
+                    output_dir text not null unique,
+                    status text not null,
+                    total_golden_labels integer,
+                    evaluated_predictions integer,
+                    primary_accuracy real,
+                    content_class_accuracy real,
+                    secondary_precision real,
+                    secondary_recall real,
+                    ocr_quality_accuracy real,
+                    ocr_acceptable_rate real,
+                    review_routing_accuracy real,
+                    review_false_accepts integer,
+                    embedding_success_rate real,
+                    semantic_same_family_top5_rate real,
+                    placement_destination_accuracy real,
+                    source_file_mutations integer,
+                    acceptance_gate_status text,
+                    production_readiness_status text,
+                    failure_count integer,
+                    model_usage_json text not null default '{}',
+                    summary_json text not null default '{}',
+                    run_metadata_json text not null default '{}',
+                    created_at text not null default (datetime('now')),
+                    updated_at text not null default (datetime('now'))
+                );
+
                 create index if not exists idx_model_usage_run_id
                     on pipeline_run_model_usage(run_id);
                 create index if not exists idx_model_usage_provider_model
                     on pipeline_run_model_usage(provider, model);
                 create index if not exists idx_model_usage_source_path
                     on pipeline_run_model_usage(source_path);
+                create index if not exists idx_pipeline_eval_runs_updated_at
+                    on pipeline_eval_runs(updated_at);
                 """
             )
             _ensure_column(connection, "pipeline_results", "secondary_tags_json", "secondary_tags_json text not null default '[]'")
             _ensure_column(connection, "pipeline_results", "extraction_text_snippet", "extraction_text_snippet text")
             _ensure_column(connection, "review_items", "secondary_tags_json", "secondary_tags_json text not null default '[]'")
             _ensure_column(connection, "review_items", "extraction_text_snippet", "extraction_text_snippet text")
+            _ensure_column(connection, "review_items", "ocr_quality_label", "ocr_quality_label text")
             _ensure_column(connection, "review_items", "correct_secondary_tags_json", "correct_secondary_tags_json text not null default '[]'")
             _ensure_column(connection, "review_items", "correct_destination_path", "correct_destination_path text")
             _ensure_column(connection, "review_items", "correct_placement_year", "correct_placement_year text")
@@ -1701,6 +2003,24 @@ class ReviewStore:
             _ensure_column(connection, "review_items", "ocr_fallback_provider", "ocr_fallback_provider text")
             _ensure_column(connection, "review_items", "enable_llm_tags", "enable_llm_tags integer")
             _ensure_column(connection, "pipeline_runs", "embedding_provider", "embedding_provider text")
+            _ensure_column(connection, "pipeline_runs", "run_metadata_json", "run_metadata_json text not null default '{}'")
+            _ensure_column(connection, "pipeline_eval_runs", "run_metadata_json", "run_metadata_json text not null default '{}'")
+            _ensure_column(connection, "pipeline_eval_runs", "ocr_acceptable_rate", "ocr_acceptable_rate real")
+            _ensure_column(connection, "pipeline_eval_runs", "review_false_accepts", "review_false_accepts integer")
+            _ensure_column(connection, "pipeline_eval_runs", "embedding_success_rate", "embedding_success_rate real")
+            _ensure_column(connection, "pipeline_eval_runs", "semantic_same_family_top5_rate", "semantic_same_family_top5_rate real")
+            _ensure_column(connection, "pipeline_eval_runs", "placement_destination_accuracy", "placement_destination_accuracy real")
+            _ensure_column(connection, "pipeline_eval_runs", "source_file_mutations", "source_file_mutations integer")
+            _ensure_column(connection, "pipeline_eval_runs", "acceptance_gate_status", "acceptance_gate_status text")
+            _ensure_column(connection, "pipeline_eval_runs", "production_readiness_status", "production_readiness_status text")
+            _ensure_column(connection, "golden_labels", "content_class", "content_class text")
+            _ensure_column(connection, "golden_labels", "ocr_quality_label", "ocr_quality_label text")
+            _ensure_column(connection, "golden_labels", "expected_review_required", "expected_review_required integer")
+            _ensure_column(connection, "golden_labels", "sensitive_record", "sensitive_record integer not null default 0")
+            _ensure_column(connection, "golden_labels", "correct_destination_path", "correct_destination_path text")
+            _ensure_column(connection, "golden_labels", "correct_placement_year", "correct_placement_year text")
+            _ensure_column(connection, "golden_labels", "correct_privacy", "correct_privacy text")
+            _ensure_column(connection, "golden_labels", "reviewed_at", "reviewed_at text")
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.db_path)
@@ -1773,6 +2093,71 @@ def _golden_secondary_tag_counts(connection: sqlite3.Connection) -> dict[str, in
         for tag in _json_list(row["correct_secondary_tags_json"]):
             counts[str(tag)] = counts.get(str(tag), 0) + 1
     return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
+
+
+def _taxonomy_primary_tags() -> list[str]:
+    try:
+        return load_taxonomy_options(DEFAULT_TAXONOMY_PATH).primary_tags
+    except Exception:  # noqa: BLE001 - coverage summary should not break review CRUD.
+        return []
+
+
+def _run_metadata(
+    *,
+    input_root: str,
+    output_dir: str,
+    run_role: str | None,
+    embedding_provider: str | None,
+    enable_llm_tags: bool,
+    llm_tag_provider: str | None,
+    ocr_fallback_provider: str | None,
+    semantic_index_path: str | None,
+) -> dict[str, Any]:
+    resolved_run_role = run_role or _run_role_for_preset(Path(output_dir), input_root=input_root)
+    return {
+        "run_kind": "pipeline_batch",
+        "run_role": resolved_run_role,
+        "input_root": input_root,
+        "output_dir": output_dir,
+        "taxonomy_path": str(DEFAULT_TAXONOMY_PATH),
+        "taxonomy_version": Path(DEFAULT_TAXONOMY_PATH).name,
+        "embedding_provider": embedding_provider,
+        "enable_llm_tags": enable_llm_tags,
+        "llm_tag_provider": llm_tag_provider,
+        "ocr_fallback_provider": ocr_fallback_provider,
+        "semantic_index_path": semantic_index_path,
+        "git_commit": _git_commit(),
+    }
+
+
+def _run_role_for_preset(output_dir: Path, *, input_root: str) -> str:
+    output_text = str(output_dir).lower()
+    input_text = str(input_root).lower()
+    if "qa_samples_full" in output_text or "qa samples" in input_text and "full" in output_text:
+        return "baseline"
+    return "test"
+
+
+def _git_commit() -> str | None:
+    try:
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=Path.cwd(), text=True).strip()
+    except Exception:  # noqa: BLE001 - metadata should not block dashboard runs.
+        return None
+
+
+def _safe_divide(numerator: int, denominator: int) -> float | None:
+    if denominator <= 0:
+        return None
+    return round(numerator / denominator, 4)
+
+
+def _append_review_note(existing: str | None, note: str | None) -> str | None:
+    clean_note = (note or "").strip()
+    if not clean_note:
+        return existing
+    if not existing:
+        return clean_note
+    return f"{existing.rstrip()}\n{clean_note}"
 
 
 def _extraction_text_snippet(extraction_row: dict[str, Any] | None, *, max_chars: int = 360) -> str | None:
@@ -1922,7 +2307,7 @@ def _sample_routed_sources(results: list[dict[str, Any]], *, per_bucket: int, se
     return sampled
 
 
-def _review_item_from_row(row: sqlite3.Row) -> dict[str, Any]:
+def _review_item_from_row(row: sqlite3.Row, *, model_usage_summary: dict[str, Any] | None = None) -> dict[str, Any]:
     result = json.loads(row["result_json"])
     return {
         "id": row["id"],
@@ -1938,6 +2323,8 @@ def _review_item_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "confidence": row["confidence"],
         "warnings": _json_list(row["warnings_json"]),
         "display_warnings": _display_warnings(_json_list(row["warnings_json"])),
+        "ocr_evidence": _ocr_evidence_from_result(result, row["extraction_text_snippet"]),
+        "ocr_quality_label": _row_value(row, "ocr_quality_label"),
         "run_id": _row_value(row, "run_id"),
         "run_key": _row_value(row, "run_key"),
         "run_preset_key": _row_value(row, "run_preset_key"),
@@ -1958,7 +2345,86 @@ def _review_item_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "notes": row["notes"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+        "model_usage_summary": model_usage_summary or _empty_review_item_model_usage_summary(),
         "result": result,
+    }
+
+
+def _review_item_model_usage_summary(connection: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
+    run_id = _row_value(row, "run_id")
+    if run_id is None:
+        return _empty_review_item_model_usage_summary()
+
+    source_path = str(row["source_path"] or "")
+    relative_path = str(row["relative_path"] or "")
+    rows = connection.execute(
+        """
+        select purpose, provider, model, status, runtime_ms, total_tokens, estimated_cost_usd, cost_basis
+        from pipeline_run_model_usage
+        where run_id = ?
+          and (
+                source_path = ?
+             or relative_path = ?
+          )
+        order by id asc
+        """,
+        (run_id, source_path, relative_path),
+    ).fetchall()
+    scope = "file"
+    if not rows:
+        rows = connection.execute(
+            """
+            select purpose, provider, model, status, runtime_ms, total_tokens, estimated_cost_usd, cost_basis
+            from pipeline_run_model_usage
+            where run_id = ?
+            order by id asc
+            """,
+            (run_id,),
+        ).fetchall()
+        scope = "run" if rows else "none"
+
+    total_calls = len(rows)
+    failed_calls = sum(1 for usage in rows if str(usage["status"] or "").lower() in {"failed", "error"})
+    external_calls = sum(1 for usage in rows if str(usage["cost_basis"] or "").lower() == "external")
+    local_calls = sum(1 for usage in rows if str(usage["cost_basis"] or "").lower() == "local")
+    unknown_external_cost_calls = sum(
+        1
+        for usage in rows
+        if str(usage["cost_basis"] or "").lower() == "external" and usage["estimated_cost_usd"] is None
+    )
+    purposes = sorted({str(usage["purpose"] or "unknown") for usage in rows})
+    providers = sorted({
+        f"{str(usage['provider'] or 'unknown')}:{str(usage['model'] or 'unknown')}"
+        for usage in rows
+    })
+    return {
+        "scope": scope,
+        "total_calls": total_calls,
+        "failed_calls": failed_calls,
+        "external_calls": external_calls,
+        "local_calls": local_calls,
+        "unknown_external_cost_calls": unknown_external_cost_calls,
+        "total_runtime_ms": sum(int(usage["runtime_ms"] or 0) for usage in rows),
+        "total_tokens": sum(int(usage["total_tokens"] or 0) for usage in rows),
+        "estimated_external_cost_usd": round(sum(float(usage["estimated_cost_usd"] or 0) for usage in rows), 6),
+        "purposes": purposes,
+        "providers": providers,
+    }
+
+
+def _empty_review_item_model_usage_summary() -> dict[str, Any]:
+    return {
+        "scope": "none",
+        "total_calls": 0,
+        "failed_calls": 0,
+        "external_calls": 0,
+        "local_calls": 0,
+        "unknown_external_cost_calls": 0,
+        "total_runtime_ms": 0,
+        "total_tokens": 0,
+        "estimated_external_cost_usd": 0.0,
+        "purposes": [],
+        "providers": [],
     }
 
 
@@ -2183,6 +2649,7 @@ def _review_items_where(
     content_class: str | None = None,
     quality: str | None = None,
     placement_status: str | None = None,
+    confidence_bucket: str | None = None,
     warning_type: str | None = None,
     source_collection: str | None = None,
     run_id: int | None = None,
@@ -2190,6 +2657,7 @@ def _review_items_where(
     embedding_provider: str | None = None,
     llm_tag_provider: str | None = None,
     ocr_fallback_provider: str | None = None,
+    ocr_fallback_used: str | None = None,
     enable_llm_tags: bool | None = None,
 ) -> tuple[str, list[Any]]:
     predicates: list[str] = []
@@ -2222,6 +2690,9 @@ def _review_items_where(
     if placement_status:
         predicates.append("json_extract(result_json, '$.placement_status') = ?")
         params.append(placement_status)
+    confidence_predicate = _confidence_bucket_predicate(confidence_bucket)
+    if confidence_predicate:
+        predicates.append(confidence_predicate)
     if warning_type:
         predicates.append("warnings_json like ?")
         params.append(f"%{warning_type}%")
@@ -2244,12 +2715,61 @@ def _review_items_where(
     if ocr_fallback_provider:
         predicates.append("ocr_fallback_provider = ?")
         params.append(ocr_fallback_provider)
+    fallback_used_predicate = _ocr_fallback_used_predicate(ocr_fallback_used, warnings_column="warnings_json")
+    if fallback_used_predicate:
+        predicates.append(fallback_used_predicate)
     if enable_llm_tags is not None:
         predicates.append("enable_llm_tags = ?")
         params.append(1 if enable_llm_tags else 0)
     if not predicates:
         return "", params
     return "where " + " and ".join(predicates), params
+
+
+def _confidence_bucket_expression() -> str:
+    return """
+        case
+            when confidence is null then 'missing'
+            when confidence >= 0.85 then 'high'
+            when confidence >= 0.70 then 'medium'
+            else 'low'
+        end
+    """
+
+
+def _confidence_bucket_predicate(bucket: str | None) -> str | None:
+    if not bucket:
+        return None
+    normalized = bucket.strip().lower()
+    if normalized == "high":
+        return "confidence >= 0.85"
+    if normalized == "medium":
+        return "confidence >= 0.70 and confidence < 0.85"
+    if normalized == "low":
+        return "confidence < 0.70"
+    if normalized == "missing":
+        return "confidence is null"
+    return None
+
+
+def _ocr_fallback_used_expression(warnings_column: str) -> str:
+    return f"""
+        case
+            when {warnings_column} like '%ocr_fallback_used:%' then 'used'
+            else 'not_used'
+        end
+    """
+
+
+def _ocr_fallback_used_predicate(value: str | None, *, warnings_column: str) -> str | None:
+    if not value:
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"used", "true", "yes", "1"}:
+        return f"{warnings_column} like '%ocr_fallback_used:%'"
+    if normalized in {"not_used", "false", "no", "0"}:
+        return f"({warnings_column} is null or {warnings_column} not like '%ocr_fallback_used:%')"
+    return None
 
 
 def _file_search_order(sort: str) -> str:
@@ -2401,19 +2921,28 @@ def _golden_label_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "relative_path": row["relative_path"],
         "sample_path": row["sample_path"],
         "extracted_text_snippet": row["extracted_text_snippet"],
+        "content_class": row["content_class"],
         "correct_primary_tag": row["correct_primary_tag"],
         "correct_secondary_tags": _json_list(row["correct_secondary_tags_json"]),
+        "ocr_quality_label": row["ocr_quality_label"],
+        "expected_review_required": bool(row["expected_review_required"]) if row["expected_review_required"] is not None else None,
+        "sensitive_record": bool(row["sensitive_record"]),
+        "correct_destination_path": row["correct_destination_path"],
+        "correct_placement_year": row["correct_placement_year"],
+        "correct_privacy": row["correct_privacy"],
         "reviewer": row["reviewer"],
         "notes": row["notes"],
         "proposed_tag": row["proposed_tag"],
         "proposed_secondary_tags": _json_list(row["proposed_secondary_tags_json"]),
         "proposed_confidence": row["proposed_confidence"],
+        "reviewed_at": row["reviewed_at"] or row["updated_at"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
 
 
 def _pipeline_run_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    run_metadata = _json_object(row["run_metadata_json"])
     return {
         "id": row["id"],
         "run_key": row["run_key"],
@@ -2427,6 +2956,8 @@ def _pipeline_run_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "llm_tag_provider": row["llm_tag_provider"],
         "ocr_fallback_provider": row["ocr_fallback_provider"],
         "semantic_index_path": row["semantic_index_path"],
+        "run_metadata": run_metadata,
+        "run_role": run_metadata.get("run_role") or "test",
         "started_at": row["started_at"],
         "completed_at": row["completed_at"],
         "processed_count": row["processed_count"],
@@ -2435,6 +2966,38 @@ def _pipeline_run_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "failed_count": row["failed_count"],
         "summary": _json_object(row["summary_json"]),
         "error": row["error"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _pipeline_eval_run_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "eval_key": row["eval_key"],
+        "labels_db": row["labels_db"],
+        "output_dir": row["output_dir"],
+        "status": row["status"],
+        "total_golden_labels": row["total_golden_labels"],
+        "evaluated_predictions": row["evaluated_predictions"],
+        "primary_accuracy": row["primary_accuracy"],
+        "content_class_accuracy": row["content_class_accuracy"],
+        "secondary_precision": row["secondary_precision"],
+        "secondary_recall": row["secondary_recall"],
+        "ocr_quality_accuracy": row["ocr_quality_accuracy"],
+        "ocr_acceptable_rate": row["ocr_acceptable_rate"],
+        "review_routing_accuracy": row["review_routing_accuracy"],
+        "review_false_accepts": row["review_false_accepts"],
+        "embedding_success_rate": row["embedding_success_rate"],
+        "semantic_same_family_top5_rate": row["semantic_same_family_top5_rate"],
+        "placement_destination_accuracy": row["placement_destination_accuracy"],
+        "source_file_mutations": row["source_file_mutations"],
+        "acceptance_gate_status": row["acceptance_gate_status"],
+        "production_readiness_status": row["production_readiness_status"],
+        "failure_count": row["failure_count"],
+        "model_usage": _json_object(row["model_usage_json"]),
+        "summary": _json_object(row["summary_json"]),
+        "run_metadata": _json_object(row["run_metadata_json"]),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
@@ -2492,4 +3055,37 @@ def _json_object(value: str | None) -> dict[str, Any]:
 
 
 def _display_warnings(warnings: list[str]) -> list[str]:
-    return [warning for warning in warnings if not str(warning).startswith("ocr_fallback_note:")]
+    hidden_prefixes = ("ocr_fallback_note:", "ocr_original_snippet:", "ocr_fallback_snippet:")
+    return [warning for warning in warnings if not str(warning).startswith(hidden_prefixes)]
+
+
+def _ocr_evidence_from_result(result: dict[str, Any], fallback_final_snippet: str | None = None) -> dict[str, Any]:
+    evidence = result.get("ocr_evidence")
+    if isinstance(evidence, dict):
+        return evidence
+    warnings = result.get("warnings") or []
+    if not isinstance(warnings, list):
+        warnings = []
+    fallback_provider = _warning_value(warnings, "ocr_fallback_used:")
+    fallback_reason = _warning_value(warnings, "ocr_fallback_reason:")
+    fallback_snippet = _warning_value(warnings, "ocr_fallback_snippet:")
+    if fallback_provider and not fallback_snippet:
+        fallback_snippet = fallback_final_snippet
+    return {
+        "fallback_used": bool(fallback_provider),
+        "fallback_provider": fallback_provider,
+        "fallback_reason": fallback_reason,
+        "fallback_notes": _warning_values(warnings, "ocr_fallback_note:"),
+        "original_text_snippet": _warning_value(warnings, "ocr_original_snippet:"),
+        "fallback_text_snippet": fallback_snippet,
+        "final_text_snippet": result.get("extraction_text_snippet") or fallback_final_snippet,
+    }
+
+
+def _warning_value(warnings: list[Any], prefix: str) -> str | None:
+    values = _warning_values(warnings, prefix)
+    return values[0] if values else None
+
+
+def _warning_values(warnings: list[Any], prefix: str) -> list[str]:
+    return [str(warning)[len(prefix) :] for warning in warnings if str(warning).startswith(prefix)]

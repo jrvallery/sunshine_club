@@ -5,15 +5,16 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 
+import { OcrEvidencePanel } from "../../../components/dashboard/OcrEvidencePanel";
 import { ProviderConfigBadge } from "../../../components/dashboard/ProviderConfigBadge";
 import { RunContextBadge } from "../../../components/dashboard/RunContextBadge";
 import { EmbeddedPreview } from "../../../components/file-preview/EmbeddedPreview";
 import { Button } from "../../../components/ui/Button";
-import { SelectInput, TextArea, TextInput } from "../../../components/ui/FormControls";
+import { CheckboxField, SelectInput, TextArea, TextInput } from "../../../components/ui/FormControls";
 import { KeyValue } from "../../../components/ui/KeyValue";
 import { MultiTagPicker, TagPicker } from "../../../components/ui/TagPicker";
 import { fetchJson, postJson } from "../../../lib/api";
-import { primaryTagOptions, secondaryTagOptions } from "../../../lib/taxonomy";
+import { contentClassOptions, ocrQualityOptions, primaryTagOptions, privacyOptions, secondaryTagOptions } from "../../../lib/taxonomy";
 import type { ReviewItem } from "../../../lib/types";
 
 export default function ReviewItemPage() {
@@ -66,6 +67,16 @@ function ReviewItemPageContent() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["review-item", reviewId] }),
         queryClient.invalidateQueries({ queryKey: ["review-items"] })
+      ]);
+    }
+  });
+  const ocrQualityMutation = useMutation({
+    mutationFn: (body: Record<string, unknown>) => postJson<ReviewItem>(`/api/admin/review/items/${reviewId}/ocr-quality`, body),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["review-item", reviewId] }),
+        queryClient.invalidateQueries({ queryKey: ["review-items"] }),
+        queryClient.invalidateQueries({ queryKey: ["review-facets"] })
       ]);
     }
   });
@@ -128,6 +139,16 @@ function ReviewItemPageContent() {
         </section>
 
         <section className="drawerSection">
+          <h2>OCR Evidence</h2>
+          <KeyValue label="Reviewer OCR label" value={item.ocr_quality_label ?? "-"} />
+          <OcrEvidencePanel
+            evidence={item.ocr_evidence ?? item.result.ocr_evidence}
+            fallbackText={item.extraction_text_snippet}
+            finalText={extractedText}
+          />
+        </section>
+
+        <section className="drawerSection">
           <h2>Placement</h2>
           <KeyValue label="Destination" value={item.result.destination_path ?? "-"} />
           <KeyValue label="Status" value={item.result.placement_status ?? "-"} />
@@ -139,9 +160,10 @@ function ReviewItemPageContent() {
         <ReviewDecisionPanel
           item={item}
           saving={decisionMutation.isPending}
-          assigning={assignmentMutation.isPending}
+          assigning={assignmentMutation.isPending || ocrQualityMutation.isPending}
           onSubmit={(body) => decisionMutation.mutate(body)}
           onAssign={(body) => assignmentMutation.mutate(body)}
+          onMarkOcrPoor={(body) => ocrQualityMutation.mutate(body)}
         />
       </section>
 
@@ -178,18 +200,23 @@ function ReviewDecisionPanel({
   saving,
   assigning,
   onSubmit,
-  onAssign
+  onAssign,
+  onMarkOcrPoor
 }: {
   item: ReviewItem;
   saving: boolean;
   assigning: boolean;
   onSubmit: (body: Record<string, unknown>) => void;
   onAssign: (body: Record<string, unknown>) => void;
+  onMarkOcrPoor: (body: Record<string, unknown>) => void;
 }) {
   const [decision, setDecision] = useState("accept");
   const [correctClass, setCorrectClass] = useState(item.correct_class ?? item.proposed_class ?? "");
   const [correctTag, setCorrectTag] = useState(item.correct_tag ?? item.proposed_tag ?? "");
   const [secondary, setSecondary] = useState(item.correct_secondary_tags?.length ? item.correct_secondary_tags : item.secondary_tags);
+  const [ocrQuality, setOcrQuality] = useState(item.ocr_quality_label ?? String(item.result.quality ?? ""));
+  const [expectedReviewRequired, setExpectedReviewRequired] = useState(item.expected_review_required ?? item.route_status !== "route_candidate");
+  const [sensitiveRecord, setSensitiveRecord] = useState(Boolean(item.sensitive_record));
   const [destination, setDestination] = useState(item.correct_destination_path ?? item.result.destination_path ?? "");
   const [placementYear, setPlacementYear] = useState(item.correct_placement_year ?? "");
   const [privacy, setPrivacy] = useState(item.correct_privacy ?? item.result.default_privacy ?? "");
@@ -197,12 +224,22 @@ function ReviewDecisionPanel({
   const [assignedReviewer, setAssignedReviewer] = useState(item.assigned_reviewer ?? "");
   const [priority, setPriority] = useState(item.priority ?? "");
   const [notes, setNotes] = useState(item.notes ?? "");
+  const [reviewer, setReviewer] = useState("james");
+  const [saveAsGolden, setSaveAsGolden] = useState(decision === "accept" || decision === "change");
 
   return (
     <section className="drawerSection">
       <h2>Decision</h2>
       <div className="formGrid">
-        <SelectInput label="Decision" value={decision} onChange={(event) => setDecision(event.target.value)}>
+        <SelectInput
+          label="Decision"
+          value={decision}
+          onChange={(event) => {
+            const nextDecision = event.target.value;
+            setDecision(nextDecision);
+            setSaveAsGolden(nextDecision === "accept" || nextDecision === "change");
+          }}
+        >
           <option value="accept">Accept</option>
           <option value="change">Change</option>
           <option value="defer">Defer</option>
@@ -210,16 +247,51 @@ function ReviewDecisionPanel({
           <option value="reject">Reject</option>
           <option value="duplicate">Duplicate</option>
         </SelectInput>
-        <TextInput label="Correct class" value={correctClass} onChange={(event) => setCorrectClass(event.target.value)} />
+        <SelectInput label="Correct class" value={correctClass} onChange={(event) => setCorrectClass(event.target.value)}>
+          <option value="">Unset</option>
+          {contentClassOptions.map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
+        </SelectInput>
         <TagPicker label="Correct primary tag" options={primaryTagOptions} value={correctTag} onChange={setCorrectTag} />
         <MultiTagPicker label="Correct secondary tags" options={secondaryTagOptions} value={secondary} onChange={setSecondary} />
+        <SelectInput label="OCR quality label" value={ocrQuality} onChange={(event) => setOcrQuality(event.target.value)}>
+          <option value="">Unset</option>
+          {ocrQualityOptions.map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
+        </SelectInput>
         <TextInput label="Correct destination path" value={destination} onChange={(event) => setDestination(event.target.value)} />
         <TextInput label="Correct placement year/range" value={placementYear} onChange={(event) => setPlacementYear(event.target.value)} />
-        <TextInput label="Correct privacy" value={privacy} onChange={(event) => setPrivacy(event.target.value)} />
+        <SelectInput label="Correct privacy" value={privacy} onChange={(event) => setPrivacy(event.target.value)}>
+          <option value="">Unset</option>
+          {privacyOptions.map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
+        </SelectInput>
+        <CheckboxField label="Expected review required" checked={expectedReviewRequired} onChange={(event) => setExpectedReviewRequired(event.target.checked)} />
+        <CheckboxField label="Sensitive record" checked={sensitiveRecord} onChange={(event) => setSensitiveRecord(event.target.checked)} />
+        <CheckboxField label="Promote decision to golden label" checked={saveAsGolden} onChange={(event) => setSaveAsGolden(event.target.checked)} />
         <TextInput label="Review stage" value={reviewStage} onChange={(event) => setReviewStage(event.target.value)} />
         <TextInput label="Assigned reviewer" value={assignedReviewer} onChange={(event) => setAssignedReviewer(event.target.value)} />
         <TextInput label="Priority" value={priority} onChange={(event) => setPriority(event.target.value)} />
+        <TextInput label="Reviewer" value={reviewer} onChange={(event) => setReviewer(event.target.value)} />
         <TextArea label="Notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} />
+        <Button
+          disabled={assigning}
+          onClick={() => {
+            setOcrQuality("poor");
+            setExpectedReviewRequired(true);
+            setReviewStage("needs_ocr_review");
+            onMarkOcrPoor({
+              ocr_quality_label: "poor",
+              review_stage: "needs_ocr_review",
+              notes: "Marked OCR poor from review dashboard."
+            });
+          }}
+        >
+          Mark OCR Poor
+        </Button>
         <Button
           disabled={assigning}
           onClick={() =>
@@ -241,13 +313,16 @@ function ReviewDecisionPanel({
               correct_class: correctClass || null,
               correct_tag: correctTag || null,
               correct_secondary_tags: secondary,
+              ocr_quality_label: ocrQuality || null,
+              expected_review_required: expectedReviewRequired,
+              sensitive_record: sensitiveRecord,
               correct_destination_path: destination || null,
               correct_placement_year: placementYear || null,
               correct_privacy: privacy || null,
               review_stage: reviewStage || null,
               notes,
-              reviewer: "james",
-              save_as_golden: decision === "accept" || decision === "change"
+              reviewer: reviewer || null,
+              save_as_golden: saveAsGolden
             })
           }
         >

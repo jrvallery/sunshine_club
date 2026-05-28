@@ -90,6 +90,8 @@ def test_model_usage_report_infers_calls_from_legacy_artifacts(tmp_path: Path) -
     assert report["summary"]["total_calls"] == 3
     assert report["summary"]["external_calls"] == 2
     assert report["summary"]["local_calls"] == 1
+    assert report["summary"]["unknown_cost_basis_calls"] == 0
+    assert report["summary"]["cost_basis_completeness_rate"] == 1.0
     assert report["summary"]["unknown_external_cost_calls"] == 2
     assert report["by_purpose"]["ocr_fallback"]["calls"] == 1
     assert report["by_purpose"]["tag_inspection"]["calls"] == 1
@@ -196,6 +198,7 @@ def test_api_pipeline_run_file_missing_file_returns_review_result(tmp_path: Path
 def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SUNSHINE_REVIEW_DB_PATH", str(tmp_path / "review.sqlite"))
     monkeypatch.setenv("SUNSHINE_EMBEDDING_PROVIDER", "placeholder")
+    monkeypatch.setenv("SUNSHINE_OCR_FALLBACK_PROVIDER", "disabled")
     output_dir = tmp_path / "langgraph-out"
     output_dir.mkdir()
     sample_file = tmp_path / "review.pdf"
@@ -218,7 +221,12 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
         "placement_date_confidence": "missing",
         "default_privacy": "club_internal",
         "destination_path": "01_Governance_Admin/needs-date",
-        "warnings": ["ocr_fallback_note:mostly clear", "ocr_fallback_used:openai:gpt-4.1-mini"],
+        "warnings": [
+            "ocr_fallback_note:mostly clear",
+            "ocr_fallback_used:openai:gpt-4.1-mini",
+            "ocr_original_snippet:xqz",
+            "ocr_fallback_snippet:Extracted meeting minutes OCR snippet for review.",
+        ],
     }
     (output_dir / "sample-pipeline-results.jsonl").write_text(json.dumps(result) + "\n", encoding="utf-8")
     (output_dir / "sample-review-queue.jsonl").write_text(json.dumps(result) + "\n", encoding="utf-8")
@@ -237,8 +245,15 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
         "/admin/review/items",
         params={"warning_type": "ocr_fallback_used", "source_collection": "sunshine_shared_folders"},
     )
+    fallback_used_items = client.get("/admin/review/items", params={"status": "all", "ocr_fallback_used": "used"})
+    fallback_not_used_items = client.get("/admin/review/items", params={"status": "all", "ocr_fallback_used": "not_used"})
+    low_confidence_items = client.get("/admin/review/items", params={"status": "all", "confidence_bucket": "low"})
     item_id = items.json()[0]["id"]
     item_detail = client.get(f"/admin/review/items/{item_id}")
+    ocr_poor = client.post(
+        f"/admin/review/items/{item_id}/ocr-quality",
+        json={"ocr_quality_label": "poor", "review_stage": "needs_ocr_review", "notes": "OCR is unreadable."},
+    )
     review_facets = client.get("/admin/review/facets", params={"status": "all"})
     assigned_item = client.post(
         f"/admin/review/items/{item_id}/assign",
@@ -260,13 +275,22 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
         },
     )
     golden_labels = client.get("/admin/review/golden-labels")
+    golden_export_csv = client.get("/admin/review/golden-labels/export")
+    golden_export_jsonl = client.get("/admin/review/golden-labels/export", params={"format": "jsonl"})
     label_id = golden_labels.json()[0]["id"]
     golden_file = client.get(f"/admin/review/golden-labels/{label_id}/file")
     edited_label = client.patch(
         f"/admin/review/golden-labels/{label_id}",
         json={
+            "content_class": "document",
             "correct_primary_tag": "meeting_records",
             "correct_secondary_tags": ["meeting_minutes"],
+            "ocr_quality_label": "ok",
+            "expected_review_required": False,
+            "sensitive_record": True,
+            "correct_destination_path": "01_Governance_Admin/2025",
+            "correct_placement_year": "2025",
+            "correct_privacy": "restricted",
             "reviewer": "auditor",
             "notes": "Corrected from dashboard.",
         },
@@ -280,6 +304,29 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     eval_output_dir = tmp_path / "semantic-eval"
     semantic_eval = client.post("/admin/semantic-eval/run", json={"output_dir": str(eval_output_dir)})
     semantic_eval_latest = client.get("/admin/semantic-eval/latest", params={"output_dir": str(eval_output_dir)})
+    pipeline_eval_output_dir = tmp_path / "pipeline-eval"
+    pipeline_eval = client.post(
+        "/admin/pipeline-eval/run",
+        json={"output_dir": str(pipeline_eval_output_dir), "disable_semantic_index": True, "embedding_provider": "placeholder"},
+    )
+    pipeline_eval_latest = client.get("/admin/pipeline-eval/latest", params={"output_dir": str(pipeline_eval_output_dir)})
+    pipeline_eval_import = client.post("/admin/pipeline-eval/import", json={"output_dir": str(pipeline_eval_output_dir)})
+    pipeline_eval_runs = client.get("/admin/pipeline-eval/runs")
+    pipeline_eval_run_id = pipeline_eval.json()["eval_run"]["id"]
+    pipeline_eval_results = client.get(f"/admin/pipeline-eval/runs/{pipeline_eval_run_id}/results")
+    pipeline_eval_failures = client.get(f"/admin/pipeline-eval/runs/{pipeline_eval_run_id}/results", params={"result_type": "failures"})
+    pipeline_eval_failure_groups = client.get(f"/admin/pipeline-eval/runs/{pipeline_eval_run_id}/results", params={"result_type": "failure_groups"})
+    pipeline_eval_model_usage = client.get(f"/admin/pipeline-eval/runs/{pipeline_eval_run_id}/results", params={"result_type": "model_usage"})
+    pipeline_eval_artifact_manifest = client.get(f"/admin/pipeline-eval/runs/{pipeline_eval_run_id}/results", params={"result_type": "artifact_manifest"})
+    pipeline_eval_output_dir_2 = tmp_path / "pipeline-eval-2"
+    pipeline_eval_2 = client.post(
+        "/admin/pipeline-eval/run",
+        json={"output_dir": str(pipeline_eval_output_dir_2), "disable_semantic_index": True},
+    )
+    pipeline_eval_comparison = client.get(
+        f"/admin/pipeline-eval/runs/{pipeline_eval_2.json()['eval_run']['id']}/compare",
+        params={"baseline_eval_run_id": pipeline_eval_run_id},
+    )
     deleted_label = client.delete(f"/admin/review/golden-labels/{label_id}")
     file_response = client.get(f"/admin/review/items/{item_id}/file")
     files = client.get("/admin/files", params={"q": "meeting minutes"})
@@ -302,6 +349,7 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
         "/admin/runs",
         json={
             "preset_key": "qa_samples_fast",
+            "run_role": "evaluation",
             "input_root": str(tmp_path / "input"),
             "output_dir": str(tmp_path / "run-output"),
             "embedding_provider": "openai",
@@ -311,6 +359,8 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
             "start": False,
         },
     )
+    assert run.json()["run_role"] == "evaluation"
+    assert run.json()["run_metadata"]["run_role"] == "evaluation"
     failed_empty_run = client.post(
         "/admin/runs",
         json={
@@ -403,12 +453,27 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert items.json()[0]["secondary_tags"] == ["meeting_minutes", "financial_report"]
     assert items.json()[0]["extraction_text_snippet"] == "Extracted meeting minutes OCR snippet for review."
     assert items.json()[0]["display_warnings"] == ["ocr_fallback_used:openai:gpt-4.1-mini"]
+    assert items.json()[0]["ocr_evidence"]["fallback_used"] is True
+    assert items.json()[0]["ocr_evidence"]["original_text_snippet"] == "xqz"
+    assert items.json()[0]["ocr_evidence"]["fallback_text_snippet"] == "Extracted meeting minutes OCR snippet for review."
     assert filtered_items.status_code == 200
     assert len(filtered_items.json()) == 1
+    assert fallback_used_items.status_code == 200
+    assert len(fallback_used_items.json()) == 1
+    assert fallback_not_used_items.status_code == 200
+    assert fallback_not_used_items.json() == []
+    assert low_confidence_items.status_code == 200
+    assert low_confidence_items.json()[0]["confidence"] == 0.52
     assert item_detail.status_code == 200
     assert item_detail.json()["id"] == item_id
+    assert ocr_poor.status_code == 200
+    assert ocr_poor.json()["ocr_quality_label"] == "poor"
+    assert ocr_poor.json()["review_stage"] == "needs_ocr_review"
+    assert "OCR is unreadable." in ocr_poor.json()["notes"]
     assert review_facets.status_code == 200
     assert review_facets.json()["review_reason"]["tag_confidence_below_threshold"] == 1
+    assert review_facets.json()["confidence_bucket"]["low"] == 1
+    assert review_facets.json()["ocr_fallback_used"]["used"] == 1
     assert review_facets.json()["primary_tag"]["meeting_records"] == 1
     assert assigned_item.status_code == 200
     assert assigned_item.json()["assigned_reviewer"] == "reviewer-a"
@@ -423,11 +488,26 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert golden_labels.status_code == 200
     assert golden_labels.json()[0]["correct_primary_tag"] == "annual_spring_tea"
     assert golden_labels.json()[0]["correct_secondary_tags"] == ["event_material"]
+    assert golden_labels.json()[0]["ocr_quality_label"] == "poor"
+    assert golden_labels.json()[0]["reviewed_at"]
+    assert golden_export_csv.status_code == 200
+    assert "correct_primary_tag" in golden_export_csv.text
+    assert "reviewed_at" in golden_export_csv.text
+    assert "annual_spring_tea" in golden_export_csv.text
+    assert golden_export_jsonl.status_code == 200
+    assert json.loads(golden_export_jsonl.text.splitlines()[0])["correct_primary_tag"] == "annual_spring_tea"
     assert golden_file.status_code == 200
     assert golden_file.content == b"review pdf bytes"
     assert edited_label.status_code == 200
+    assert edited_label.json()["content_class"] == "document"
     assert edited_label.json()["correct_primary_tag"] == "meeting_records"
     assert edited_label.json()["correct_secondary_tags"] == ["meeting_minutes"]
+    assert edited_label.json()["ocr_quality_label"] == "ok"
+    assert edited_label.json()["expected_review_required"] is False
+    assert edited_label.json()["sensitive_record"] is True
+    assert edited_label.json()["correct_destination_path"] == "01_Governance_Admin/2025"
+    assert edited_label.json()["correct_placement_year"] == "2025"
+    assert edited_label.json()["correct_privacy"] == "restricted"
     assert golden_summary.json()["total_golden_labels"] == 1
     assert semantic_status_before.status_code == 200
     assert semantic_status_before.json()["exists"] is False
@@ -438,12 +518,48 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert semantic_eval.json()["report"]["total_golden_labels"] == 1
     assert semantic_eval_latest.status_code == 200
     assert semantic_eval_latest.json()["exists"] is True
+    assert pipeline_eval.status_code == 200
+    assert pipeline_eval.json()["report"]["total_golden_labels"] == 1
+    assert pipeline_eval.json()["report"]["evaluated_predictions"] == 1
+    assert pipeline_eval.json()["report"]["run_metadata"]["taxonomy_version"].endswith(".json")
+    assert pipeline_eval.json()["report"]["run_metadata"]["embedding_provider"] == "placeholder"
+    assert pipeline_eval.json()["report"]["run_metadata"]["ocr_fallback_mode"] == "disabled"
+    assert "git_commit" in pipeline_eval.json()["eval_run"]["run_metadata"]
+    assert pipeline_eval.json()["eval_run"]["evaluated_predictions"] == 1
+    assert (pipeline_eval_output_dir / "eval-summary.json").exists()
+    assert pipeline_eval_latest.status_code == 200
+    assert pipeline_eval_latest.json()["exists"] is True
+    assert pipeline_eval_import.status_code == 200
+    assert pipeline_eval_import.json()["eval_run"]["output_dir"] == str(pipeline_eval_output_dir)
+    assert pipeline_eval_import.json()["report"]["artifacts"]["summary"] == str(pipeline_eval_output_dir / "eval-summary.json")
+    assert pipeline_eval_runs.status_code == 200
+    assert pipeline_eval_runs.json()[0]["output_dir"] == str(pipeline_eval_output_dir)
+    assert pipeline_eval_results.status_code == 200
+    assert pipeline_eval_results.json()["result_type"] == "results"
+    assert pipeline_eval_results.json()["count"] == 1
+    assert pipeline_eval_failures.status_code == 200
+    assert pipeline_eval_failures.json()["result_type"] == "failures"
+    assert pipeline_eval_failure_groups.status_code == 200
+    assert pipeline_eval_failure_groups.json()["result_type"] == "failure_groups"
+    assert pipeline_eval_model_usage.status_code == 200
+    assert pipeline_eval_model_usage.json()["result_type"] == "model_usage"
+    assert pipeline_eval_artifact_manifest.status_code == 200
+    assert pipeline_eval_artifact_manifest.json()["result_type"] == "artifact_manifest"
+    assert any(item["name"] == "summary" and len(item["sha256"]) == 64 for item in pipeline_eval_artifact_manifest.json()["items"])
+    assert pipeline_eval_2.status_code == 200
+    assert pipeline_eval_comparison.status_code == 200
+    assert pipeline_eval_comparison.json()["shared_file_count"] == 1
+    assert "primary_accuracy" in pipeline_eval_comparison.json()["metric_deltas"]
+    assert pipeline_eval_comparison.json()["changed_prediction_count"] == 0
+    assert pipeline_eval_comparison.json()["changed_secondary_tag_count"] == 0
+    assert pipeline_eval_comparison.json()["changed_secondary_tags"] == []
     assert deleted_label.status_code == 200
     assert deleted_label.json()["deleted"] is True
     assert file_response.status_code == 200
     assert file_response.content == b"review pdf bytes"
     assert files.status_code == 200
     assert files.json()[0]["latest_result"]["top_tag_candidate"] == "meeting_records"
+    assert files.json()[0]["latest_result"]["ocr_evidence"]["fallback_provider"] == "openai:gpt-4.1-mini"
     assert file_text.json()["text"] == "Extracted meeting minutes OCR snippet for review."
     assert file_review.status_code == 200
     assert file_review.json()["review_reason"] == "manual_file_review"
@@ -473,6 +589,8 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert previous_run.status_code == 200
     assert current_run.status_code == 200
     assert current_run.json()["embedding_provider"] == "openai"
+    assert current_run.json()["run_metadata"]["embedding_provider"] == "openai"
+    assert current_run.json()["run_metadata"]["taxonomy_version"].endswith(".json")
     assert imported_run_results.status_code == 200
     assert imported_run_results.json()["imported_model_usage"] == 2
     assert run_comparison.status_code == 200
@@ -481,13 +599,24 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert "top_tag_candidate" in run_comparison.json()["changed"][0]["changed_fields"]
     assert run_artifacts.status_code == 200
     assert any(artifact["name"] == "sample-pipeline-results.jsonl" and artifact["exists"] for artifact in run_artifacts.json()["artifacts"])
+    result_artifact = next(artifact for artifact in run_artifacts.json()["artifacts"] if artifact["name"] == "sample-pipeline-results.jsonl")
+    assert len(result_artifact["sha256"]) == 64
     assert run_model_usage.status_code == 200
     assert run_model_usage.json()["summary"]["total_calls"] == 2
     assert run_model_usage.json()["summary"]["failed_calls"] == 1
+    assert run_model_usage.json()["summary"]["local_calls"] == 1
+    assert run_model_usage.json()["summary"]["external_calls"] == 1
+    assert run_model_usage.json()["summary"]["unknown_cost_basis_calls"] == 0
+    assert run_model_usage.json()["summary"]["cost_basis_completeness_rate"] == 1.0
     assert run_model_usage.json()["summary"]["total_tokens"] == 370
     assert run_model_usage.json()["summary"]["estimated_external_cost_usd"] == 0.0123
     assert run_report.status_code == 200
     assert run_report.json()["model_usage"]["summary"]["total_calls"] == 2
+    assert run_report.json()["status_buckets"]["accepted"] == 1
+    assert run_report.json()["status_buckets"]["review_required"] == 0
+    assert run_report.json()["status_buckets"]["failed"] == 0
+    assert run_report.json()["status_buckets"]["deferred"] == 0
+    assert run_report.json()["overview"]["status_buckets"]["accepted"] == 1
     assert run_report.json()["distributions"]["primary_tag"]["annual_spring_tea"] == 1
     assert run_report.json()["review_queue"]["links"]["all"] == f"/review?run_id={current_run.json()['id']}&status=all"
     assert "tag_disagreements" in run_report.json()["review_queue"]["links"]
