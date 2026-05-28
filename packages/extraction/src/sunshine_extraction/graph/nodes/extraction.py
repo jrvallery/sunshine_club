@@ -23,9 +23,15 @@ def _extract_content_node(state: DocumentPipelineState, deps: DocumentPipelineDe
         ocr_executor=deps["ocr_executor"],
         ocr_artifacts=ocr_artifacts,
     )
+    provider_attempt_row = {
+        "source_path": state["sample"].source_path,
+        "relative_path": state["sample"].relative_path,
+        "sample_path": str(state["sample"].sample_path),
+        **provider_attempt.as_row(),
+    }
     updates: dict[str, Any] = {
         "extraction_result": extraction,
-        "provider_attempts": [*state.get("provider_attempts", []), provider_attempt.as_row()],
+        "provider_attempts": [*state.get("provider_attempts", []), provider_attempt_row],
         "ocr_pages": ocr_artifacts.pages,
         "warnings": [*state.get("warnings", []), *extraction.warnings],
     }

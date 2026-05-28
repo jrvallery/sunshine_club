@@ -165,6 +165,57 @@ def test_run_report_reads_live_graph_run_artifacts_before_batch_finalize(tmp_pat
         + "\n",
         encoding="utf-8",
     )
+    (second_run_dir / "sample-provider-attempts.jsonl").write_text(
+        json.dumps(
+            {
+                "source_path": "/source/review.pdf",
+                "relative_path": "Review/review.pdf",
+                "provider": "current",
+                "capability": "extraction",
+                "status": "extracted",
+                "strategy": "ocr_page_level",
+                "seconds": 0.5,
+                "warnings": [],
+                "metadata": {"local_only": True},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (second_run_dir / "sample-document-segments.jsonl").write_text(
+        json.dumps(
+            {
+                "source_path": "/source/review.pdf",
+                "relative_path": "Review/review.pdf",
+                "segment_id": "review:1:segment-001",
+                "page_start": 1,
+                "page_end": 12,
+                "segment_index": 1,
+                "segment_type": "scrapbook_page_group",
+                "segment_confidence": 0.55,
+                "requires_segment_review": True,
+                "segment_boundary_evidence": ["matched:scrapbook"],
+                "metadata": {"policy": "conservative_single_segment"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (second_run_dir / "sample-indexing.jsonl").write_text(
+        json.dumps(
+            {
+                "provider": "noop",
+                "collection": None,
+                "status": "skipped",
+                "indexed_count": 0,
+                "skipped_count": 1,
+                "warnings": ["vector_store_not_configured"],
+                "metadata": {"local_only": True},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     client = TestClient(app)
     run = client.post(
@@ -182,6 +233,12 @@ def test_run_report_reads_live_graph_run_artifacts_before_batch_finalize(tmp_pat
     assert payload["ocr"]["document_count"] == 1
     assert payload["ocr"]["page_count"] == 1
     assert payload["extraction"]["count"] == 1
+    assert payload["provider_attempts"]["count"] == 1
+    assert payload["provider_attempts"]["by_provider"]["current"] == 1
+    assert payload["segments"]["count"] == 1
+    assert payload["segments"]["requires_review_count"] == 1
+    assert payload["segments"]["by_type"]["scrapbook_page_group"] == 1
+    assert payload["indexing"]["by_status"]["skipped"] == 1
     assert payload["model_usage"]["summary"]["total_calls"] == 1
     assert payload["model_usage"]["summary"]["external_calls"] == 1
     assert payload["distributions"]["primary_tag"]["meeting_records"] == 1
@@ -228,6 +285,42 @@ def test_delete_run_removes_run_owned_dashboard_rows_and_artifacts(tmp_path: Pat
         + "\n",
         encoding="utf-8",
     )
+    (output_dir / "sample-provider-attempts.jsonl").write_text(
+        json.dumps(
+            {
+                "source_path": "/source/delete-me.pdf",
+                "relative_path": "Review/delete-me.pdf",
+                "provider": "current",
+                "capability": "extraction",
+                "status": "extracted",
+                "strategy": "ocr_page_level",
+                "seconds": 0.2,
+                "warnings": [],
+                "metadata": {"local_only": True},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (output_dir / "sample-document-segments.jsonl").write_text(
+        json.dumps(
+            {
+                "source_path": "/source/delete-me.pdf",
+                "relative_path": "Review/delete-me.pdf",
+                "segment_id": "delete:segment-001",
+                "page_start": 1,
+                "page_end": 4,
+                "segment_index": 1,
+                "segment_type": "single_document",
+                "segment_confidence": 0.8,
+                "requires_segment_review": False,
+                "segment_boundary_evidence": ["default:single_document"],
+                "metadata": {},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     client = TestClient(app)
 
     run = client.post(
@@ -248,6 +341,8 @@ def test_delete_run_removes_run_owned_dashboard_rows_and_artifacts(tmp_path: Pat
     assert imported.status_code == 200
     assert imported.json()["imported_review_items"] == 1
     assert imported.json()["imported_model_usage"] == 1
+    assert imported.json()["imported_provider_attempts"] == 1
+    assert imported.json()["imported_document_segments"] == 1
     assert len(items_before.json()) == 1
     assert files_before.json()["items"][0]["source_path"] == "/source/delete-me.pdf"
     assert usage_before.json()["summary"]["total_calls"] == 1
@@ -256,6 +351,8 @@ def test_delete_run_removes_run_owned_dashboard_rows_and_artifacts(tmp_path: Pat
     assert deleted.json()["deleted_counts"]["file_index"] == 1
     assert deleted.json()["deleted_counts"]["pipeline_results"] == 1
     assert deleted.json()["deleted_counts"]["model_usage"] == 1
+    assert deleted.json()["deleted_counts"]["provider_attempts"] == 1
+    assert deleted.json()["deleted_counts"]["document_segments"] == 1
     assert deleted.json()["deleted_counts"]["pipeline_runs"] == 1
     assert deleted.json()["artifacts"]["deleted"] is True
     assert run_after.status_code == 404

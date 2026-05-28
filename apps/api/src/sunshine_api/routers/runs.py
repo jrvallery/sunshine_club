@@ -215,6 +215,9 @@ def run_report(run_id: int) -> dict[str, Any]:
     ocr_documents = _read_run_jsonl_with_live_fallback(output_dir, "sample-ocr-documents.jsonl", limit=200)
     ocr_pages = _read_run_jsonl_with_live_fallback(output_dir, "sample-ocr-pages.jsonl", limit=200)
     extraction_results = _read_run_jsonl_with_live_fallback(output_dir, "sample-extraction-results.jsonl", limit=200)
+    provider_attempts = store.list_provider_attempts(run_id) or _read_run_jsonl_with_live_fallback(output_dir, "sample-provider-attempts.jsonl", limit=500)
+    document_segments = store.list_document_segments(run_id) or _read_run_jsonl_with_live_fallback(output_dir, "sample-document-segments.jsonl", limit=500)
+    indexing_rows = _read_run_jsonl_with_live_fallback(output_dir, "sample-indexing.jsonl", limit=200)
     model_usage_rows = store.list_model_usage(run_id) or _read_model_usage_artifact(output_dir, run_id=run_id)
     comparison = run_compare_previous(run_id)
     artifacts = _run_artifacts(output_dir)
@@ -266,6 +269,24 @@ def run_report(run_id: int) -> dict[str, Any]:
             "pages": ocr_pages[:100],
         },
         "extraction": {"count": len(extraction_results), "items": extraction_results[:100]},
+        "provider_attempts": {
+            "count": len(provider_attempts),
+            "by_provider": _count_values(provider_attempts, "provider"),
+            "by_status": _count_values(provider_attempts, "status"),
+            "items": provider_attempts[:100],
+        },
+        "segments": {
+            "count": len(document_segments),
+            "requires_review_count": sum(1 for row in document_segments if row.get("requires_segment_review")),
+            "by_type": _count_values(document_segments, "segment_type"),
+            "items": document_segments[:100],
+        },
+        "indexing": {
+            "count": len(indexing_rows),
+            "by_provider": _count_values(indexing_rows, "provider"),
+            "by_status": _count_values(indexing_rows, "status"),
+            "items": indexing_rows[:100],
+        },
         "tags": {
             "primary": _count_values(results, "top_tag_candidate"),
             "secondary": _count_list_values(results, "secondary_tags"),

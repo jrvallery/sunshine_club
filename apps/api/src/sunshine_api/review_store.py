@@ -186,12 +186,16 @@ class ReviewStore:
                     if is_routed_sample and route_status == "route_candidate":
                         imported_sample_items += 1
             imported_model_usage = self.import_model_usage_artifact(connection, run_id, output_path)
+            imported_provider_attempts = self.import_provider_attempts_artifact(connection, run_id, output_path)
+            imported_document_segments = self.import_document_segments_artifact(connection, run_id, output_path)
         return {
             "output_dir": str(output_path),
             "imported_results": imported_results,
             "imported_review_items": imported_review_items,
             "imported_sample_items": imported_sample_items,
             "imported_model_usage": imported_model_usage,
+            "imported_provider_attempts": imported_provider_attempts,
+            "imported_document_segments": imported_document_segments,
             "db_path": str(self.db_path),
         }
 
@@ -1602,6 +1606,8 @@ class ReviewStore:
                 counts["golden_labels"] = _delete_count(connection, f"delete from golden_labels where source_path in ({placeholders})", tuple(source_paths))
             counts["file_index"] = _delete_count(connection, "delete from file_index where latest_run_id = ?", (run_id,))
             counts["model_usage"] = _delete_count(connection, "delete from pipeline_run_model_usage where run_id = ?", (run_id,))
+            counts["provider_attempts"] = _delete_count(connection, "delete from pipeline_run_provider_attempts where run_id = ?", (run_id,))
+            counts["document_segments"] = _delete_count(connection, "delete from pipeline_run_document_segments where run_id = ?", (run_id,))
             counts["events"] = _delete_count(connection, "delete from pipeline_run_events where run_id = ?", (run_id,))
 
             sibling_count = 0
@@ -1712,6 +1718,100 @@ class ReviewStore:
                 (run_id,),
             ).fetchall()
         return [_model_usage_from_row(row) for row in rows]
+
+    def import_provider_attempts_artifact(self, connection: sqlite3.Connection, run_id: int | None, output_path: Path) -> int:
+        rows = _read_jsonl(output_path / "sample-provider-attempts.jsonl")
+        if run_id is not None:
+            connection.execute("delete from pipeline_run_provider_attempts where run_id = ?", (run_id,))
+        imported = 0
+        for row in rows:
+            connection.execute(
+                """
+                insert into pipeline_run_provider_attempts (
+                    run_id, source_path, relative_path, provider, capability, status, strategy,
+                    runtime_ms, warnings_json, metadata_json
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    row.get("source_path"),
+                    row.get("relative_path"),
+                    str(row.get("provider") or "unknown"),
+                    str(row.get("capability") or "extraction"),
+                    str(row.get("status") or "unknown"),
+                    row.get("strategy"),
+                    _seconds_to_runtime_ms(row.get("seconds")),
+                    json.dumps(row.get("warnings") or [], sort_keys=True),
+                    json.dumps(row.get("metadata") or {}, sort_keys=True),
+                ),
+            )
+            imported += 1
+        return imported
+
+    def list_provider_attempts(self, run_id: int, *, limit: int = 500) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                select id, run_id, source_path, relative_path, provider, capability, status, strategy,
+                       runtime_ms, warnings_json, metadata_json, created_at
+                from pipeline_run_provider_attempts
+                where run_id = ?
+                order by id asc
+                limit ?
+                """,
+                (run_id, limit),
+            ).fetchall()
+        return [_provider_attempt_from_row(row) for row in rows]
+
+    def import_document_segments_artifact(self, connection: sqlite3.Connection, run_id: int | None, output_path: Path) -> int:
+        rows = _read_jsonl(output_path / "sample-document-segments.jsonl")
+        if run_id is not None:
+            connection.execute("delete from pipeline_run_document_segments where run_id = ?", (run_id,))
+        imported = 0
+        for row in rows:
+            connection.execute(
+                """
+                insert into pipeline_run_document_segments (
+                    run_id, source_path, relative_path, segment_id, parent_file_id,
+                    page_start, page_end, segment_index, segment_type, segment_title,
+                    segment_confidence, requires_segment_review, boundary_evidence_json, metadata_json
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    row.get("source_path"),
+                    row.get("relative_path"),
+                    str(row.get("segment_id") or ""),
+                    row.get("parent_file_id"),
+                    _optional_int(row.get("page_start")),
+                    _optional_int(row.get("page_end")),
+                    _optional_int(row.get("segment_index")) or 0,
+                    str(row.get("segment_type") or "unknown"),
+                    row.get("segment_title"),
+                    _optional_float(row.get("segment_confidence")) or 0,
+                    1 if row.get("requires_segment_review") else 0,
+                    json.dumps(row.get("segment_boundary_evidence") or row.get("boundary_evidence") or [], sort_keys=True),
+                    json.dumps(row.get("metadata") or {}, sort_keys=True),
+                ),
+            )
+            imported += 1
+        return imported
+
+    def list_document_segments(self, run_id: int, *, limit: int = 500) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                select id, run_id, source_path, relative_path, segment_id, parent_file_id,
+                       page_start, page_end, segment_index, segment_type, segment_title,
+                       segment_confidence, requires_segment_review, boundary_evidence_json, metadata_json, created_at
+                from pipeline_run_document_segments
+                where run_id = ?
+                order by id asc
+                limit ?
+                """,
+                (run_id, limit),
+            ).fetchall()
+        return [_document_segment_from_row(row) for row in rows]
 
     def _upsert_file_index_from_result(
         self,
@@ -1943,6 +2043,40 @@ class ReviewStore:
                     created_at text not null default (datetime('now'))
                 );
 
+                create table if not exists pipeline_run_provider_attempts (
+                    id integer primary key autoincrement,
+                    run_id integer,
+                    source_path text,
+                    relative_path text,
+                    provider text not null,
+                    capability text not null,
+                    status text not null,
+                    strategy text,
+                    runtime_ms integer,
+                    warnings_json text not null default '[]',
+                    metadata_json text not null default '{}',
+                    created_at text not null default (datetime('now'))
+                );
+
+                create table if not exists pipeline_run_document_segments (
+                    id integer primary key autoincrement,
+                    run_id integer,
+                    source_path text,
+                    relative_path text,
+                    segment_id text not null,
+                    parent_file_id text,
+                    page_start integer,
+                    page_end integer,
+                    segment_index integer not null,
+                    segment_type text not null,
+                    segment_title text,
+                    segment_confidence real not null default 0,
+                    requires_segment_review integer not null default 0,
+                    boundary_evidence_json text not null default '[]',
+                    metadata_json text not null default '{}',
+                    created_at text not null default (datetime('now'))
+                );
+
                 create table if not exists pipeline_eval_runs (
                     id integer primary key autoincrement,
                     eval_key text not null unique,
@@ -1979,6 +2113,10 @@ class ReviewStore:
                     on pipeline_run_model_usage(provider, model);
                 create index if not exists idx_model_usage_source_path
                     on pipeline_run_model_usage(source_path);
+                create index if not exists idx_provider_attempts_run_id
+                    on pipeline_run_provider_attempts(run_id);
+                create index if not exists idx_document_segments_run_id
+                    on pipeline_run_document_segments(run_id);
                 create index if not exists idx_pipeline_eval_runs_updated_at
                     on pipeline_eval_runs(updated_at);
                 """
@@ -2070,6 +2208,9 @@ def _looks_like_dashboard_run_output(output_dir: Path) -> bool:
     known_artifacts = {
         "sample-pipeline-summary.json",
         "sample-pipeline-results.jsonl",
+        "sample-provider-attempts.jsonl",
+        "sample-document-segments.jsonl",
+        "sample-indexing.jsonl",
         "graph-result.json",
         "graph-audit-events.jsonl",
     }
@@ -2278,6 +2419,13 @@ def _optional_float(value: Any) -> float | None:
         except ValueError:
             return None
     return None
+
+
+def _seconds_to_runtime_ms(value: Any) -> int | None:
+    seconds = _optional_float(value)
+    if seconds is None:
+        return None
+    return int(round(seconds * 1000))
 
 
 def _sample_routed_sources(results: list[dict[str, Any]], *, per_bucket: int, seed: int) -> set[str]:
@@ -3039,6 +3187,44 @@ def _model_usage_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "request_id": row["request_id"],
         "trace_id": row["trace_id"],
         "error": row["error"],
+        "metadata": _json_object(row["metadata_json"]),
+        "created_at": row["created_at"],
+    }
+
+
+def _provider_attempt_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "run_id": row["run_id"],
+        "source_path": row["source_path"],
+        "relative_path": row["relative_path"],
+        "provider": row["provider"],
+        "capability": row["capability"],
+        "status": row["status"],
+        "strategy": row["strategy"],
+        "runtime_ms": row["runtime_ms"],
+        "warnings": _json_list(row["warnings_json"]),
+        "metadata": _json_object(row["metadata_json"]),
+        "created_at": row["created_at"],
+    }
+
+
+def _document_segment_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "run_id": row["run_id"],
+        "source_path": row["source_path"],
+        "relative_path": row["relative_path"],
+        "segment_id": row["segment_id"],
+        "parent_file_id": row["parent_file_id"],
+        "page_start": row["page_start"],
+        "page_end": row["page_end"],
+        "segment_index": row["segment_index"],
+        "segment_type": row["segment_type"],
+        "segment_title": row["segment_title"],
+        "segment_confidence": row["segment_confidence"],
+        "requires_segment_review": bool(row["requires_segment_review"]),
+        "boundary_evidence": _json_list(row["boundary_evidence_json"]),
         "metadata": _json_object(row["metadata_json"]),
         "created_at": row["created_at"],
     }

@@ -107,6 +107,42 @@ def test_review_store_imports_langgraph_results_and_records_decision(tmp_path: P
             },
         ],
     )
+    _write_jsonl(
+        output_dir / "sample-provider-attempts.jsonl",
+        [
+            {
+                "source_path": "/source/b.pdf",
+                "relative_path": "Sunshine/b.pdf",
+                "provider": "current",
+                "capability": "extraction",
+                "status": "extracted",
+                "strategy": "ocr_page_level",
+                "seconds": 0.25,
+                "warnings": [],
+                "metadata": {"local_only": True},
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-document-segments.jsonl",
+        [
+            {
+                "source_path": "/source/b.pdf",
+                "relative_path": "Sunshine/b.pdf",
+                "segment_id": "test:2:segment-001",
+                "parent_file_id": "file-2",
+                "page_start": 1,
+                "page_end": 12,
+                "segment_index": 1,
+                "segment_type": "scrapbook_page_group",
+                "segment_title": "b.pdf",
+                "segment_confidence": 0.55,
+                "requires_segment_review": True,
+                "segment_boundary_evidence": ["matched:scrapbook"],
+                "metadata": {"policy": "conservative_single_segment"},
+            }
+        ],
+    )
     store = ReviewStore(tmp_path / "review.sqlite")
     lineage_run = store.create_pipeline_run(
         preset_key="qa_samples_fast",
@@ -133,6 +169,8 @@ def test_review_store_imports_langgraph_results_and_records_decision(tmp_path: P
     )
 
     imported = store.import_langgraph_output(output_dir, sample_routed_per_bucket=1, sample_seed=7, run_id=lineage_run["id"])
+    provider_attempts = store.list_provider_attempts(lineage_run["id"])
+    document_segments = store.list_document_segments(lineage_run["id"])
     summary = store.summary()
     items = store.list_review_items()
     items_for_run = store.list_review_items(run_id=lineage_run["id"])
@@ -197,6 +235,12 @@ def test_review_store_imports_langgraph_results_and_records_decision(tmp_path: P
     assert imported["imported_results"] == 2
     assert imported["imported_review_items"] == 2
     assert imported["imported_sample_items"] == 1
+    assert imported["imported_provider_attempts"] == 1
+    assert imported["imported_document_segments"] == 1
+    assert provider_attempts[0]["provider"] == "current"
+    assert provider_attempts[0]["runtime_ms"] == 250
+    assert document_segments[0]["segment_type"] == "scrapbook_page_group"
+    assert document_segments[0]["requires_segment_review"] is True
     assert summary["total_results"] == 2
     assert summary["total_review_items"] == 2
     assert summary["review_by_status"]["open"] == 2
