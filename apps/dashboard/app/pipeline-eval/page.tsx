@@ -22,6 +22,7 @@ type ProviderBenchmarkLatest = {
   recommendations?: Array<Record<string, unknown>>;
   results?: Array<Record<string, unknown>>;
   parser_results?: Array<Record<string, unknown>>;
+  artifact_manifest?: Record<string, unknown> | null;
 };
 
 const EXTRACTION_PROVIDERS: ExtractionProviderName[] = ["current", "docling", "mineru", "ragflow_deepdoc", "unstructured"];
@@ -254,6 +255,7 @@ export default function PipelineEvalPage() {
               <KeyValue label="Recommended" value={recommendedProvider(providerBenchmark.data.recommendations)} />
               <KeyValue label="Filter" value={benchmarkFilter(providerBenchmark.data.summary)} />
               <KeyValue label="Runtime threshold" value={benchmarkRuntimeThreshold(providerBenchmark.data.summary)} />
+              <KeyValue label="Artifacts" value={benchmarkArtifactSummary(providerBenchmark.data.artifact_manifest)} />
             </section>
             <section>
               <h3>Promotion Notes</h3>
@@ -762,6 +764,16 @@ function benchmarkRuntimeThreshold(summary: Record<string, unknown> | undefined)
   }
   const maxAverageSeconds = (policy as Record<string, unknown>).max_average_seconds;
   return maxAverageSeconds === null || maxAverageSeconds === undefined ? "disabled" : `${String(maxAverageSeconds)} sec avg`;
+}
+
+function benchmarkArtifactSummary(manifest: Record<string, unknown> | null | undefined) {
+  if (!manifest) {
+    return "-";
+  }
+  const existing = Number(manifest.existing_artifact_count ?? 0);
+  const missing = Number(manifest.missing_artifact_count ?? 0);
+  const size = Number(manifest.total_size_bytes ?? 0);
+  return `${existing} present; ${missing} missing; ${size} bytes`;
 }
 
 function recommendationValue(row: Record<string, unknown>) {

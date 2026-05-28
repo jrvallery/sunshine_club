@@ -283,6 +283,7 @@ def test_provider_benchmark_api_runs_current_provider(tmp_path: Path) -> None:
     assert latest.json()["results"][0]["provider"] == "current"
     assert latest.json()["parser_results"][0]["parser_provider"] == "current"
     assert latest.json()["parser_results"][0]["text_snippet"] == "Meeting minutes and Sunshine Club notes."
+    assert latest.json()["artifact_manifest"]["existing_artifact_count"] == 5
 
 
 def test_review_items_can_read_postgres_v2_source(monkeypatch) -> None:

@@ -14,9 +14,17 @@ from sunshine_extraction.providers.extraction import (
     RAGFlowDeepDocExtractionProvider,
     UnstructuredExtractionProvider,
 )
+from sunshine_extraction.services.artifact_manifest import write_artifact_manifest
 from sunshine_extraction.services.content import SampleFile
 from sunshine_extraction.services.extraction import OcrArtifacts, ocr_executor_from_env, extraction_quality_gate
 from sunshine_extraction.evals.provider_benchmark_samples import load_provider_benchmark_samples
+
+PROVIDER_BENCHMARK_ARTIFACTS = [
+    "provider-benchmark-results.jsonl",
+    "sample-parser-results.jsonl",
+    "provider-benchmark-recommendations.jsonl",
+    "provider-benchmark-summary.json",
+]
 
 
 def benchmark_extraction_providers(
@@ -53,6 +61,7 @@ def benchmark_extraction_providers(
             if output_path is not None:
                 _append_jsonl(output_path / "provider-benchmark-results.jsonl", row)
                 _append_jsonl(output_path / "sample-parser-results.jsonl", parser_row)
+                _write_provider_benchmark_manifest(output_path)
     summary = _summary(rows)
     summary["sample_count"] = len(samples)
     summary["sample_manifest"] = str(sample_manifest) if sample_manifest else None
@@ -67,6 +76,7 @@ def benchmark_extraction_providers(
     if output_path is not None:
         _write_jsonl(output_path / "provider-benchmark-recommendations.jsonl", recommendations)
         (output_path / "provider-benchmark-summary.json").write_text(_json_dumps(summary), encoding="utf-8")
+        _write_provider_benchmark_manifest(output_path)
     return {"summary": summary, "results": rows, "parser_results": parser_rows, "recommendations": recommendations}
 
 
@@ -509,6 +519,15 @@ def _append_jsonl(path: Path, row: dict[str, Any]) -> None:
 def _reset_incremental_artifacts(output_path: Path) -> None:
     for name in ("provider-benchmark-results.jsonl", "sample-parser-results.jsonl"):
         (output_path / name).write_text("", encoding="utf-8")
+    for name in ("provider-benchmark-recommendations.jsonl", "provider-benchmark-summary.json", "artifact-manifest.json"):
+        path = output_path / name
+        if path.exists():
+            path.unlink()
+    _write_provider_benchmark_manifest(output_path)
+
+
+def _write_provider_benchmark_manifest(output_path: Path) -> dict[str, Any]:
+    return write_artifact_manifest(output_path, expected_names=PROVIDER_BENCHMARK_ARTIFACTS)
 
 
 def _json_dumps(value: Any) -> str:

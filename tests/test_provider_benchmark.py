@@ -29,6 +29,7 @@ def test_provider_benchmark_runs_current_provider_and_writes_artifacts(tmp_path:
     parser_rows = [json.loads(line) for line in (output_dir / "sample-parser-results.jsonl").read_text(encoding="utf-8").splitlines()]
     recommendations = [json.loads(line) for line in (output_dir / "provider-benchmark-recommendations.jsonl").read_text(encoding="utf-8").splitlines()]
     summary = json.loads((output_dir / "provider-benchmark-summary.json").read_text(encoding="utf-8"))
+    manifest = json.loads((output_dir / "artifact-manifest.json").read_text(encoding="utf-8"))
     assert rows[0]["provider"] == "current"
     assert parser_rows[0]["parser_provider"] == "current"
     assert parser_rows[0]["status"] == "extracted"
@@ -36,6 +37,12 @@ def test_provider_benchmark_runs_current_provider_and_writes_artifacts(tmp_path:
     assert parser_rows[0]["text_snippet"] == "Meeting minutes and Sunshine Club notes."
     assert recommendations[0]["promotion_status"] == "candidate"
     assert summary["result_count"] == 1
+    assert manifest["existing_artifact_count"] == 5
+    assert {artifact["name"]: artifact["row_count"] for artifact in manifest["artifacts"] if artifact["kind"] == "jsonl"} == {
+        "provider-benchmark-recommendations.jsonl": 1,
+        "provider-benchmark-results.jsonl": 1,
+        "sample-parser-results.jsonl": 1,
+    }
 
 
 def test_provider_benchmark_supports_optional_local_parser_boundaries(tmp_path: Path) -> None:
@@ -127,6 +134,22 @@ def test_provider_benchmark_filters_manifest_samples_and_writes_incremental_rows
     assert result["summary"]["sample_count"] == 1
     assert result["summary"]["sample_filter"] == {"categories": ["born_digital_text"], "limit": 1}
     assert json.loads(rows[0])["sample_path"] == str(source_a)
+
+
+def test_provider_benchmark_resets_stale_complete_artifacts_before_incremental_run(tmp_path: Path) -> None:
+    source = tmp_path / "minutes.txt"
+    source.write_text("Meeting minutes.", encoding="utf-8")
+    output_dir = tmp_path / "benchmark"
+    output_dir.mkdir()
+    (output_dir / "provider-benchmark-summary.json").write_text('{"stale": true}', encoding="utf-8")
+    (output_dir / "provider-benchmark-recommendations.jsonl").write_text('{"provider": "stale"}\n', encoding="utf-8")
+
+    benchmark_extraction_providers([source], provider_names=["current"], output_dir=output_dir)
+
+    summary = json.loads((output_dir / "provider-benchmark-summary.json").read_text(encoding="utf-8"))
+    recommendations = [json.loads(line) for line in (output_dir / "provider-benchmark-recommendations.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert "stale" not in summary
+    assert recommendations[0]["provider"] == "current"
 
 
 def test_provider_benchmark_recommendations_require_runtime_review_when_too_slow(tmp_path: Path) -> None:
