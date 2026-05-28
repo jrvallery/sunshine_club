@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from pypdf import PdfWriter
 
-from sunshine_extraction.embeddings import PlaceholderEmbeddingProvider
+from sunshine_extraction.embeddings import EmbeddingConfigurationError, PlaceholderEmbeddingProvider, provider_from_env
 from sunshine_extraction.domain.artifacts import ArtifactManifestEntry
 from sunshine_extraction.domain.chunks import chunk_row
 from sunshine_extraction.domain.model_usage import ModelUsageRow, cost_basis
@@ -15,7 +15,7 @@ from sunshine_extraction.domain.taxonomy import TaxonomyOptions
 from sunshine_extraction.providers.probe import NativeFileProbeProvider
 from sunshine_extraction.providers.chunking import CurrentChunkingProvider
 from sunshine_extraction.providers.chunking.legacy import chunk_content as legacy_chunk_content
-from sunshine_extraction.providers.embeddings import CurrentChunkEmbeddingProvider
+from sunshine_extraction.providers.embeddings import CortexEmbeddingProvider, CurrentChunkEmbeddingProvider, HostedOpenAIEmbeddingProvider, embedding_cache_key
 from sunshine_extraction.providers.extraction import CurrentExtractionProvider, DoclingExtractionProvider, extraction_provider_from_env
 from sunshine_extraction.providers.llm import CurrentLLMTagInspectionProvider
 from sunshine_extraction.providers.retrieval import CurrentSemanticRetrievalProvider
@@ -275,6 +275,25 @@ def test_current_chunk_embedding_provider_wraps_existing_behavior() -> None:
     assert attempt.requested_count == 1
     assert attempt.embedded_count == 1
     assert attempt.semantic_quality is False
+
+
+def test_embedding_provider_modules_expose_local_only_boundaries(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SUNSHINE_EMBEDDING_PROVIDER", "cortex")
+    monkeypatch.setenv("CORTEX_API_KEY", "local-test-key")
+    monkeypatch.delenv("CORTEX_OPENAI_BASE_URL", raising=False)
+    monkeypatch.setenv("CORTEX_BASE_URL", "http://cortex.local")
+    monkeypatch.setenv("SUNSHINE_EMBEDDING_MODEL", "local-embedding-model")
+    monkeypatch.setenv("SUNSHINE_EMBEDDING_DIMENSIONS", "17")
+
+    provider = provider_from_env()
+    cache_key = embedding_cache_key(text="hello", provider="cortex", model="local-embedding-model", dimensions=17)
+
+    assert isinstance(provider, CortexEmbeddingProvider)
+    assert provider.provider_name == "cortex"
+    assert provider.base_url == "http://cortex.local/v1"
+    assert len(cache_key) == 64
+    with pytest.raises(EmbeddingConfigurationError):
+        HostedOpenAIEmbeddingProvider()
 
 
 def test_vectorization_service_writes_compatible_embedding_rows() -> None:

@@ -152,14 +152,15 @@ def provider_from_env(provider_name_override: str | None = None) -> EmbeddingPro
         dimensions = _env_int("SUNSHINE_EMBEDDING_DIMENSIONS", DEFAULT_PLACEHOLDER_DIMENSIONS)
         return PlaceholderEmbeddingProvider(dimensions=dimensions)
     if provider_name in {"cortex", "openai-compatible"}:
+        from sunshine_extraction.providers.embeddings.cortex import CortexEmbeddingProvider
+
         cortex_base_url = os.environ.get("CORTEX_OPENAI_BASE_URL") or _openai_base_url_from_cortex_base(
             os.environ.get("CORTEX_BASE_URL", DEFAULT_CORTEX_BASE_URL)
         )
-        return OpenAICompatibleEmbeddingProvider(
+        return CortexEmbeddingProvider(
             api_key=os.environ.get("CORTEX_API_KEY") or os.environ.get("CORTEX_OPENAI_API_KEY", ""),
             model=os.environ.get("SUNSHINE_EMBEDDING_MODEL", DEFAULT_CORTEX_EMBEDDING_MODEL),
             base_url=cortex_base_url,
-            provider_name="cortex",
             dimensions=_env_int("SUNSHINE_EMBEDDING_DIMENSIONS", DEFAULT_CORTEX_EMBEDDING_DIMENSIONS),
         )
     if provider_name == "openai":

@@ -847,6 +847,9 @@ Success criteria:
 Current implementation:
 
 - `providers/embeddings/base.py` defines a chunk embedding provider contract.
+- `providers/embeddings/cortex.py` defines the local Cortex embedding provider for OpenAI-compatible infrastructure.
+- `providers/embeddings/openai.py` is an explicit hosted-OpenAI policy boundary that raises configuration errors because production is local-only.
+- `providers/embeddings/placeholder.py` exposes deterministic placeholder embeddings for tests/dev, and `providers/embeddings/cache.py` defines stable content/model cache keys for the future persistent cache.
 - `CurrentChunkEmbeddingProvider` wraps the existing embedding providers and centralizes fallback vs fail-closed behavior for the graph node.
 - `services/vectorization.py` owns backward-compatible embedding row construction instead of re-exporting legacy sample-pipeline helpers.
 - Graph runs write `sample-embedding-results.jsonl` with provider, model, status, requested/embedded counts, dimensions, semantic-quality flag, warnings, and metadata.
