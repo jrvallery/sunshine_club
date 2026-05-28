@@ -796,6 +796,13 @@ Success criteria:
 - Embedding failures fail closed in eval/production.
 - Provider/model/dimensions are visible.
 
+Current implementation:
+
+- `providers/embeddings/base.py` defines a chunk embedding provider contract.
+- `CurrentChunkEmbeddingProvider` wraps the existing embedding providers and centralizes fallback vs fail-closed behavior for the graph node.
+- Graph runs write `sample-embedding-results.jsonl` with provider, model, status, requested/embedded counts, dimensions, semantic-quality flag, warnings, and metadata.
+- Placeholder embeddings remain allowed for tests/dev; review/fail-closed mode marks placeholder embeddings as unavailable quality.
+
 ### 15. `index_chunks`
 
 Purpose:
@@ -1104,6 +1111,7 @@ Artifacts:
 - `sample-document-segments.jsonl`
 - `sample-chunking-results.jsonl`
 - `sample-chunks.jsonl`
+- `sample-embedding-results.jsonl`
 - `sample-embeddings.jsonl`
 - `sample-indexing.jsonl`
 - `sample-semantic-examples.jsonl`
@@ -1657,6 +1665,7 @@ Required artifacts:
 - `sample-document-segments.jsonl`
 - `sample-chunking-results.jsonl`
 - `sample-chunks.jsonl`
+- `sample-embedding-results.jsonl`
 - `sample-embeddings.jsonl`
 - `sample-indexing.jsonl`
 - `sample-semantic-examples.jsonl`

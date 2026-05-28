@@ -122,6 +122,7 @@ def run_document_batch(
         "sample-document-segments.jsonl": [],
         "sample-chunking-results.jsonl": [],
         "sample-chunks.jsonl": [],
+        "sample-embedding-results.jsonl": [],
         "sample-embeddings.jsonl": [],
         "sample-indexing.jsonl": [],
         "sample-semantic-examples.jsonl": [],
@@ -359,6 +360,8 @@ def _append_batch_rows(artifact_rows: dict[str, list[dict[str, Any]]], result: d
     if result.get("chunking_result"):
         artifact_rows["sample-chunking-results.jsonl"].append(result["chunking_result"])
     artifact_rows["sample-chunks.jsonl"].extend(result.get("chunks", []))
+    if result.get("embedding_result"):
+        artifact_rows["sample-embedding-results.jsonl"].append(result["embedding_result"])
     artifact_rows["sample-embeddings.jsonl"].extend(result.get("embeddings", []))
     if result.get("indexing_result"):
         artifact_rows["sample-indexing.jsonl"].append(result["indexing_result"])

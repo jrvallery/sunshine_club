@@ -6,12 +6,11 @@ import time
 from pathlib import Path
 from typing import Any
 
-from sunshine_extraction.embeddings import EmbeddingConfigurationError, EmbeddingProviderError, PlaceholderEmbeddingProvider
+from sunshine_extraction.embeddings import PlaceholderEmbeddingProvider
 from sunshine_extraction.graph.model_usage import _cost_basis, _embedding_model_usage_row, _model_usage_row
 from sunshine_extraction.graph.node_utils import _empty_extraction
 from sunshine_extraction.graph.state import DocumentPipelineDeps, DocumentPipelineState
 from sunshine_extraction.services.indexing import index_chunks
-from sunshine_extraction.services.vectorization import embed_chunks, embed_chunks_with_fallback
 from sunshine_extraction.semantic_index import search_semantic_index
 
 
@@ -19,29 +18,14 @@ def _embed_chunks_node(state: DocumentPipelineState, deps: DocumentPipelineDeps)
     chunks = state.get("chunks", [])
     started = time.monotonic()
     provider = deps["embedding_provider"]
-    embedding_warnings: list[str] = []
-    if deps.get("embedding_failure_mode") == "review":
-        try:
-            embeddings = embed_chunks(chunks, provider)
-        except (EmbeddingConfigurationError, EmbeddingProviderError) as error:
-            embeddings = []
-            embedding_warnings = [
-                "embedding_provider_failed",
-                "embedding_quality_unavailable",
-            ]
-            error_message = f"{type(error).__name__}: {error}"
-        else:
-            error_message = None
-            if isinstance(provider, PlaceholderEmbeddingProvider) or any(row.get("embedding_status") == "placeholder" for row in embeddings):
-                embedding_warnings = [
-                    "embedding_placeholder_disallowed_in_eval",
-                    "embedding_quality_unavailable",
-                ]
-    else:
-        embeddings, embedding_warnings = embed_chunks_with_fallback(chunks, provider)
-        error_message = ";".join(embedding_warnings) if embedding_warnings else None
+    embeddings, embedding_attempt = deps["chunk_embedding_provider"].embed_chunks(
+        chunks,
+        failure_mode=str(deps.get("embedding_failure_mode") or "fallback"),
+    )
+    embedding_warnings = embedding_attempt.warnings
+    error_message = str(embedding_attempt.metadata.get("error") or ";".join(embedding_warnings) or "") or None
 
-    if isinstance(provider, PlaceholderEmbeddingProvider) or any(row.get("embedding_status") == "placeholder" for row in embeddings):
+    if embedding_attempt.status == "placeholder":
         usage_status = "placeholder"
     elif embedding_warnings:
         usage_status = "failed"
@@ -59,6 +43,7 @@ def _embed_chunks_node(state: DocumentPipelineState, deps: DocumentPipelineDeps)
     )
     return {
         "embeddings": embeddings,
+        "embedding_result": embedding_attempt.as_row(),
         "warnings": [*state.get("warnings", []), *embedding_warnings],
         "model_usage": [*state.get("model_usage", []), usage_row] if usage_row else state.get("model_usage", []),
     }

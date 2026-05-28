@@ -8,6 +8,7 @@ from typing import Any, TypedDict
 
 from sunshine_extraction.embeddings import EmbeddingProvider
 from sunshine_extraction.providers.chunking import ChunkingProvider
+from sunshine_extraction.providers.embeddings import ChunkEmbeddingProvider
 from sunshine_extraction.providers.extraction import ExtractionProvider
 from sunshine_extraction.providers.vectorstores import VectorStoreProvider
 from sunshine_extraction.services.content import SampleFile
@@ -52,6 +53,7 @@ class DocumentPipelineState(TypedDict, total=False):
     document_segments: list[dict[str, Any]]
     chunking_result: dict[str, Any]
     chunks: list[dict[str, Any]]
+    embedding_result: dict[str, Any]
     embeddings: list[dict[str, Any]]
     indexing_result: dict[str, Any]
     semantic_examples: list[dict[str, Any]]
@@ -74,6 +76,7 @@ class DocumentPipelineState(TypedDict, total=False):
 class DocumentPipelineDeps(TypedDict, total=False):
     extraction_provider: ExtractionProvider
     chunking_provider: ChunkingProvider
+    chunk_embedding_provider: ChunkEmbeddingProvider
     vector_store: VectorStoreProvider
     embedding_provider: EmbeddingProvider
     embedding_failure_mode: str

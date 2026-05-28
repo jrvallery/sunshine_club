@@ -6,8 +6,10 @@ from pathlib import Path
 import pytest
 from pypdf import PdfWriter
 
+from sunshine_extraction.embeddings import PlaceholderEmbeddingProvider
 from sunshine_extraction.providers.probe import NativeFileProbeProvider
 from sunshine_extraction.providers.chunking import CurrentChunkingProvider
+from sunshine_extraction.providers.embeddings import CurrentChunkEmbeddingProvider
 from sunshine_extraction.providers.extraction import CurrentExtractionProvider, DoclingExtractionProvider, extraction_provider_from_env
 from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider
 from sunshine_extraction.sample_pipeline import SampleFile, llm_tag_inspector_from_env, ocr_executor_from_env
@@ -85,6 +87,30 @@ def test_current_chunking_provider_wraps_existing_behavior(tmp_path: Path) -> No
     assert attempt.provider == "current"
     assert attempt.status == "chunked"
     assert attempt.metadata["local_only"] is True
+
+
+def test_current_chunk_embedding_provider_wraps_existing_behavior() -> None:
+    chunks = [
+        {
+            "source_path": "/source/minutes.txt",
+            "relative_path": "Minutes/minutes.txt",
+            "chunk_id": "chunk-1",
+            "text": "Meeting minutes text",
+        }
+    ]
+
+    rows, attempt = CurrentChunkEmbeddingProvider(PlaceholderEmbeddingProvider(dimensions=4)).embed_chunks(
+        chunks,
+        failure_mode="fallback",
+    )
+
+    assert rows[0]["chunk_id"] == "chunk-1"
+    assert rows[0]["embedding_status"] == "placeholder"
+    assert attempt.provider == "local"
+    assert attempt.status == "placeholder"
+    assert attempt.requested_count == 1
+    assert attempt.embedded_count == 1
+    assert attempt.semantic_quality is False
 
 
 def test_docling_provider_is_optional_and_local_only() -> None:
