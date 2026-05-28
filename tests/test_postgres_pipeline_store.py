@@ -342,10 +342,34 @@ def test_postgres_pipeline_store_reports_runtime_summary() -> None:
                     "document_segments": 5,
                     "pipeline_chunks": 6,
                     "pipeline_chunk_embeddings": 6,
+                    "provider_benchmark_runs": 2,
+                    "provider_benchmark_results": 9,
+                    "provider_benchmark_parser_results": 8,
+                    "provider_benchmark_recommendations": 3,
                 }
                 for table, count in table_counts.items():
                     if f"from {table}" in normalized:
                         return _Cursor((count,))
+            if "from provider_benchmark_runs pbr" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "benchmark-id",
+                            "benchmark_key": "benchmark-1",
+                            "output_dir": "/tmp/provider-benchmark",
+                            "status": "completed",
+                            "partial": False,
+                            "summary": {"ok": True},
+                            "artifact_manifest": {},
+                            "background_error": {},
+                            "created_at": None,
+                            "updated_at": None,
+                            "result_count": 9,
+                            "parser_result_count": 8,
+                            "recommendation_count": 3,
+                        }
+                    ]
+                )
             if "from pipeline_runs r" in normalized:
                 return _Cursor(
                     rows=[
@@ -388,8 +412,11 @@ def test_postgres_pipeline_store_reports_runtime_summary() -> None:
     assert summary["pipeline_results"] == 7
     assert summary["pipeline_run_events"] == 8
     assert summary["pipeline_chunk_embeddings"] == 6
+    assert summary["provider_benchmark_runs"] == 2
+    assert summary["provider_benchmark_parser_results"] == 8
     assert summary["recent_runs"][0]["run_key"] == "run-1"
     assert summary["recent_runs"][0]["result_count"] == 7
+    assert summary["recent_provider_benchmarks"][0]["benchmark_key"] == "benchmark-1"
     assert connection.closed is True
 
 

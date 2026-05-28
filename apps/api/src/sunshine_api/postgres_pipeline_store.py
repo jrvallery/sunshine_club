@@ -75,7 +75,12 @@ class PostgresPipelineStore:
                 "document_segments": _scalar_count(connection, "select count(*) from document_segments"),
                 "pipeline_chunks": _scalar_count(connection, "select count(*) from pipeline_chunks"),
                 "pipeline_chunk_embeddings": _scalar_count(connection, "select count(*) from pipeline_chunk_embeddings"),
+                "provider_benchmark_runs": _scalar_count(connection, "select count(*) from provider_benchmark_runs"),
+                "provider_benchmark_results": _scalar_count(connection, "select count(*) from provider_benchmark_results"),
+                "provider_benchmark_parser_results": _scalar_count(connection, "select count(*) from provider_benchmark_parser_results"),
+                "provider_benchmark_recommendations": _scalar_count(connection, "select count(*) from provider_benchmark_recommendations"),
                 "recent_runs": self._list_pipeline_runs(connection, limit=5),
+                "recent_provider_benchmarks": self.list_provider_benchmark_runs(limit=5),
             }
         finally:
             connection.close()

@@ -59,8 +59,13 @@ type PostgresRuntime = {
     document_segments: number;
     pipeline_chunks: number;
     pipeline_chunk_embeddings: number;
+    provider_benchmark_runs?: number;
+    provider_benchmark_results?: number;
+    provider_benchmark_parser_results?: number;
+    provider_benchmark_recommendations?: number;
   };
   runs: Array<Record<string, unknown>>;
+  recent_provider_benchmarks?: Array<Record<string, unknown>>;
 };
 
 type PostgresReviewItems = {
@@ -224,6 +229,10 @@ export default function SettingsPage() {
           <KeyValue label="Segments" value={String(postgresRuntime.data?.summary.document_segments ?? 0)} />
           <KeyValue label="Chunks" value={String(postgresRuntime.data?.summary.pipeline_chunks ?? 0)} />
           <KeyValue label="Embeddings" value={String(postgresRuntime.data?.summary.pipeline_chunk_embeddings ?? 0)} />
+          <KeyValue label="Benchmark runs" value={String(postgresRuntime.data?.summary.provider_benchmark_runs ?? 0)} />
+          <KeyValue label="Benchmark results" value={String(postgresRuntime.data?.summary.provider_benchmark_results ?? 0)} />
+          <KeyValue label="Parser results" value={String(postgresRuntime.data?.summary.provider_benchmark_parser_results ?? 0)} />
+          <KeyValue label="Benchmark recommendations" value={String(postgresRuntime.data?.summary.provider_benchmark_recommendations ?? 0)} />
         </div>
         {postgresRuntime.error ? <p className="dangerText">{String(postgresRuntime.error.message)}</p> : null}
         {postgresRuntime.data?.runs.length ? (
@@ -322,6 +331,35 @@ export default function SettingsPage() {
                         "-"
                       )}
                     </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+        {postgresRuntime.data?.recent_provider_benchmarks?.length ? (
+          <div className="tableWrap reportTable">
+            <table>
+              <thead>
+                <tr>
+                  <th>Provider Benchmark</th>
+                  <th>Status</th>
+                  <th>Results</th>
+                  <th>Parser</th>
+                  <th>Recommendations</th>
+                </tr>
+              </thead>
+              <tbody>
+                {postgresRuntime.data.recent_provider_benchmarks.map((run) => (
+                  <tr key={String(run.id ?? run.benchmark_key)}>
+                    <td className="pathText">
+                      <strong>{String(run.benchmark_key ?? "-")}</strong>
+                      <span>{String(run.output_dir ?? "-")}</span>
+                    </td>
+                    <td>{String(run.status ?? "-")}</td>
+                    <td>{String(run.result_count ?? 0)}</td>
+                    <td>{String(run.parser_result_count ?? 0)}</td>
+                    <td>{String(run.recommendation_count ?? 0)}</td>
                   </tr>
                 ))}
               </tbody>

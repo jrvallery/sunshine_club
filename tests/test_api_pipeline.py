@@ -451,7 +451,7 @@ def test_provider_benchmark_api_can_start_background_run(tmp_path: Path, monkeyp
     assert imported.wait(timeout=2)
     import_status_path = output_dir / "provider-benchmark-postgres-import.json"
     for _attempt in range(20):
-        if import_status_path.exists():
+        if import_status_path.exists() and import_status_path.read_text(encoding="utf-8").strip():
             break
         time.sleep(0.05)
     import_status = json.loads(import_status_path.read_text(encoding="utf-8"))
