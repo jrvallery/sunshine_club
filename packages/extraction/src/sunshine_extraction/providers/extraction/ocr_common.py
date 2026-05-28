@@ -12,10 +12,12 @@ from PIL import Image
 
 from sunshine_extraction.domain.extraction import OcrDocumentResult, OcrPageResult
 from sunshine_extraction.services.content import SampleFile
-
-OCR_OK_CONFIDENCE_THRESHOLD = 75.0
-OCR_MIN_TEXT_LENGTH = 100
-OCR_MAX_FAILED_PAGE_RATE = 0.2
+from sunshine_extraction.services.quality.ocr_quality import (
+    OCR_MAX_FAILED_PAGE_RATE,
+    OCR_MIN_TEXT_LENGTH,
+    OCR_OK_CONFIDENCE_THRESHOLD,
+    classify_ocr_document_quality,
+)
 
 
 def ocr_pil_image(sample: SampleFile, image: Image.Image, page_number: int, page_count: int, page_start: float) -> OcrPageResult:
@@ -63,31 +65,13 @@ def ocr_document_from_pages(sample: SampleFile, pages: list[OcrPageResult], seco
     confidences = [page.mean_confidence for page in pages if page.mean_confidence is not None]
     mean_confidence = round(sum(confidences) / len(confidences), 2) if confidences else None
     warnings = sorted({warning for page in pages for warning in page.warnings})
-    failed_page_rate = pages_failed / page_count if page_count else 1
-
-    if pages_failed == page_count:
-        ocr_status = "failed"
-        quality = "failed"
-    elif total_text_length == 0:
-        ocr_status = "empty"
-        quality = "metadata_only"
-    elif (
-        mean_confidence is not None
-        and mean_confidence >= OCR_OK_CONFIDENCE_THRESHOLD
-        and total_text_length >= OCR_MIN_TEXT_LENGTH
-        and failed_page_rate <= OCR_MAX_FAILED_PAGE_RATE
-    ):
-        ocr_status = "ok"
-        quality = "ok"
-    else:
-        ocr_status = "poor"
-        quality = "poor"
-        if mean_confidence is None or mean_confidence < OCR_OK_CONFIDENCE_THRESHOLD:
-            warnings.append("ocr_confidence_below_threshold")
-        if total_text_length < OCR_MIN_TEXT_LENGTH:
-            warnings.append("ocr_sparse_text_below_threshold")
-        if failed_page_rate > OCR_MAX_FAILED_PAGE_RATE:
-            warnings.append("ocr_failed_page_rate_above_threshold")
+    ocr_status, quality, warnings = classify_ocr_document_quality(
+        page_count=page_count,
+        pages_failed=pages_failed,
+        total_text_length=total_text_length,
+        mean_confidence=mean_confidence,
+        warnings=warnings,
+    )
 
     return OcrDocumentResult(
         source_path=sample.source_path,

@@ -536,6 +536,7 @@ Current implementation:
 - The node writes `sample-extraction-validations.jsonl` with validation status, reason, strategy, extraction status, and text length.
 - Validation metadata is attached to the extraction result before quality gating.
 - `services/quality/text_validation.py` owns validation policy, row shaping, and extraction metadata attachment; the graph node only orchestrates the service call.
+- `services/quality/ocr_quality.py` owns OCR quality thresholds and document-level OCR quality classification used by OCR page/document artifacts.
 
 ### 9. `repair_or_escalate_extraction`
 
@@ -578,6 +579,8 @@ Current implementation:
 - The node writes `sample-extraction-repairs.jsonl`; successful validation records `not_needed`, failed validation invokes the existing local OCR repair/escalation path.
 - OCR model usage from repair is attributed to `repair_or_escalate_extraction`.
 - Original extraction metadata/snippets are preserved by the existing repair helper.
+- `services/extraction/escalation.py` owns validation-triggered OCR fallback, while `services/extraction/core.py` owns native extraction dispatch and OCR page-level execution.
+- `services/extraction/__init__.py` preserves the existing service import API while exposing the target package structure.
 
 ### 10. `quality_gate`
 

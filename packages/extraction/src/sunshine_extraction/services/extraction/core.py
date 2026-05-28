@@ -1,23 +1,19 @@
-"""Extraction, OCR, validation, quality, and chunking service boundary."""
+"""Core extraction and OCR dispatch services."""
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from PIL import Image
 from pypdf import PdfReader
 
 from sunshine_extraction.domain.extraction import ExtractionResult, OcrArtifacts, OcrExecutor
-from sunshine_extraction.providers.chunking.legacy import chunk_content
+from sunshine_extraction.providers.extraction.cortex_ocr import CortexNativeOcrExecutor
 from sunshine_extraction.providers.extraction.native_text import extract_text
 from sunshine_extraction.providers.extraction.photo_metadata import extract_photo_metadata
 from sunshine_extraction.providers.extraction.spreadsheet import extract_spreadsheet_metadata
-from sunshine_extraction.providers.extraction.cortex_ocr import CortexNativeOcrExecutor
 from sunshine_extraction.providers.extraction.tesseract_ocr import LocalTesseractOcrExecutor
 from sunshine_extraction.services.content import IMAGE_EXTENSIONS, SampleFile
-from sunshine_extraction.services.quality.gates import extraction_quality_gate
-from sunshine_extraction.services.quality.text_validation import validate_extracted_text, with_text_validation
 
 
 def extract_content(
@@ -48,99 +44,11 @@ def extract_content(
     if strategy == "spreadsheet_table_extraction":
         return extract_spreadsheet_metadata(sample, plan)
     if strategy == "ocr_page_level":
-        return _extract_ocr_page_level(sample, plan, ocr_executor=ocr_executor, ocr_artifacts=ocr_artifacts)
+        return extract_ocr_page_level(sample, plan, ocr_executor=ocr_executor, ocr_artifacts=ocr_artifacts)
     return ExtractionResult(sample, plan, "failed", "", {}, None, [f"unsupported_strategy:{strategy}"])
 
 
-def validate_and_repair_extraction(
-    sample: SampleFile,
-    plan: dict[str, Any],
-    extraction: ExtractionResult,
-    *,
-    ocr_executor: OcrExecutor | None = None,
-    ocr_artifacts: OcrArtifacts | None = None,
-) -> ExtractionResult:
-    validation = validate_extracted_text(extraction)
-    if validation["status"] != "failed":
-        return with_text_validation(extraction, validation)
-
-    failed_extraction = with_text_validation(
-        _with_added_warnings(extraction, [f"text_validation_failed:{validation['reason']}"]),
-        validation,
-    )
-    if plan.get("strategy") == "ocr_page_level" or not _can_try_ocr(sample):
-        return failed_extraction
-
-    fallback_plan = {
-        **plan,
-        "strategy": "ocr_page_level",
-        "document_subtype": "scanned_or_image_pdf",
-        "ocr_required": True,
-        "original_strategy": plan.get("strategy"),
-    }
-    original_extraction = {
-        "strategy": plan.get("strategy"),
-        "status": extraction.extraction_status,
-        "text_length": len(extraction.text),
-        "text_snippet": _shorten(extraction.text, 360),
-        "warnings": extraction.warnings,
-    }
-    if ocr_executor is None:
-        fallback_metadata = {
-            "ocr_required": True,
-            "document_subtype": fallback_plan.get("document_subtype"),
-            "text_validation": {
-                "status": "failed",
-                "reason": validation["reason"],
-                "repair_strategy": "ocr_page_level",
-            },
-            "original_extraction": original_extraction,
-        }
-        return ExtractionResult(
-            sample=sample,
-            plan=fallback_plan,
-            extraction_status="deferred_extractor",
-            text="",
-            metadata=fallback_metadata,
-            page_count=extraction.page_count,
-            warnings=[
-                *extraction.warnings,
-                f"text_validation_failed:{validation['reason']}",
-                f"text_extraction_fallback_to_ocr:{plan.get('strategy')}",
-                "ocr_executor_not_provided",
-            ],
-        )
-
-    fallback = _extract_ocr_page_level(
-        sample,
-        fallback_plan,
-        ocr_executor=ocr_executor,
-        ocr_artifacts=ocr_artifacts,
-    )
-    fallback_metadata = {
-        **fallback.metadata,
-        "text_validation": {"status": "repaired", "reason": validation["reason"], "repair_strategy": "ocr_page_level"},
-        "original_extraction": original_extraction,
-    }
-    return ExtractionResult(
-        sample=sample,
-        plan=fallback_plan,
-        extraction_status=fallback.extraction_status,
-        text=fallback.text,
-        metadata=fallback_metadata,
-        page_count=fallback.page_count,
-        warnings=[
-            *extraction.warnings,
-            f"text_validation_failed:{validation['reason']}",
-            f"text_extraction_fallback_to_ocr:{plan.get('strategy')}",
-            *fallback.warnings,
-        ],
-    )
-
-
 def ocr_executor_from_env(*, fallback_provider_override: str | None = None) -> OcrExecutor:
-    # Reuse the existing local/Cortex OCR executor classes until the OCR provider
-    # module is split. Hosted OpenAI remains disabled by production policy.
     import os
 
     from sunshine_extraction.config import DEFAULT_CORTEX_BASE_URL, DEFAULT_CORTEX_OCR_MODEL
@@ -164,7 +72,7 @@ def ocr_executor_from_env(*, fallback_provider_override: str | None = None) -> O
     return LocalTesseractOcrExecutor()
 
 
-def _extract_ocr_page_level(
+def extract_ocr_page_level(
     sample: SampleFile,
     plan: dict[str, Any],
     *,
@@ -183,7 +91,7 @@ def _extract_ocr_page_level(
         "ocr_document": document.as_row(),
     }
     if document.ocr_status == "deferred":
-        metadata.update(_ocr_probe_metadata(sample))
+        metadata.update(ocr_probe_metadata(sample))
         return ExtractionResult(
             sample,
             plan,
@@ -218,7 +126,7 @@ def _extract_ocr_page_level(
     )
 
 
-def _ocr_probe_metadata(sample: SampleFile) -> dict[str, Any]:
+def ocr_probe_metadata(sample: SampleFile) -> dict[str, Any]:
     metadata: dict[str, Any] = {}
     page_count = sample.index_row.get("metadata", {}).get("page_count")
     if isinstance(page_count, int):
@@ -244,39 +152,3 @@ def _ocr_probe_metadata(sample: SampleFile) -> dict[str, Any]:
         except Exception as error:  # noqa: BLE001
             metadata["pdf_probe_error"] = str(error)
     return metadata
-
-
-def _with_added_warnings(extraction: ExtractionResult, warnings: list[str]) -> ExtractionResult:
-    return ExtractionResult(
-        sample=extraction.sample,
-        plan=extraction.plan,
-        extraction_status=extraction.extraction_status,
-        text=extraction.text,
-        metadata=extraction.metadata,
-        page_count=extraction.page_count,
-        warnings=[*extraction.warnings, *warnings],
-    )
-
-
-def _can_try_ocr(sample: SampleFile) -> bool:
-    return sample.sample_path.suffix.lower() in IMAGE_EXTENSIONS or sample.sample_path.suffix.lower() == ".pdf"
-
-
-def _shorten(text: str, max_chars: int) -> str:
-    compact = " ".join(text.split())
-    if len(compact) <= max_chars:
-        return compact
-    return compact[: max_chars - 3] + "..."
-
-
-__all__ = [
-    "ExtractionResult",
-    "OcrArtifacts",
-    "OcrExecutor",
-    "chunk_content",
-    "extract_content",
-    "extraction_quality_gate",
-    "ocr_executor_from_env",
-    "validate_extracted_text",
-    "validate_and_repair_extraction",
-]
