@@ -336,6 +336,17 @@ h2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.runtimeCallout {
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 12px;
+}
+
 .tabBar {
   align-items: center;
   display: flex;

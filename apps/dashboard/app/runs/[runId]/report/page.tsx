@@ -12,14 +12,15 @@ import { RunContextBadge } from "../../../../components/dashboard/RunContextBadg
 import { KeyValue } from "../../../../components/ui/KeyValue";
 import { StatusBadge } from "../../../../components/ui/StatusBadge";
 import { deleteJson, fetchJson, postJson } from "../../../../lib/api";
-import type { PipelineRun, PipelineRunEvent, RunModelUsageReport, RunReport } from "../../../../lib/types";
+import type { PipelineRun, PipelineRunEvent, PostgresRunReport, RunModelUsageReport, RunReport } from "../../../../lib/types";
 
-type ReportTab = "overview" | "files" | "review" | "training" | "ocr" | "tags" | "placement" | "models" | "logs" | "artifacts" | "diff";
+type ReportTab = "overview" | "files" | "review" | "segments" | "training" | "ocr" | "tags" | "placement" | "models" | "logs" | "artifacts" | "diff";
 
 const tabs: Array<{ key: ReportTab; label: string }> = [
   { key: "overview", label: "Overview" },
   { key: "files", label: "Files" },
   { key: "review", label: "Review Queue" },
+  { key: "segments", label: "Segments" },
   { key: "training", label: "Training Cycle" },
   { key: "ocr", label: "OCR" },
   { key: "tags", label: "Tags" },
@@ -40,6 +41,14 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
     queryKey: ["run-report", runId],
     queryFn: () => fetchJson<RunReport>(`/api/admin/runs/${runId}/report`),
     refetchInterval: (query) => (isActive(query.state.data?.run.status) ? 1500 : false)
+  });
+  const data = report.data;
+  const postgresReport = useQuery({
+    queryKey: ["postgres-run-report", data?.run.run_key],
+    enabled: Boolean(data?.run.run_key),
+    queryFn: () => fetchJson<PostgresRunReport>(`/api/admin/system/postgres-runtime/runs/${encodeURIComponent(String(data?.run.run_key))}/report`),
+    retry: false,
+    refetchInterval: isActive(data?.run.status) ? 1500 : false
   });
   const events = useQuery({
     queryKey: ["run-events", runId],
@@ -66,11 +75,11 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
       router.push("/runs");
     }
   });
-  const data = report.data;
   const run = data?.run;
   const running = isActive(run?.status);
   const modelSummary = data?.model_usage?.summary;
-  const fileRows = useMemo(() => data?.files ?? [], [data?.files]);
+  const postgresData = postgresReport.data;
+  const fileRows = useMemo(() => (postgresData?.results?.length ? postgresData.results : data?.files ?? []), [data?.files, postgresData?.results]);
 
   if (report.isLoading) {
     return <RunReportLoading />;
@@ -161,6 +170,7 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
         <Metric label="Failed" value={String(data.overview.failed_count ?? 0)} />
         <Metric label="Deferred" value={String(statusBuckets.deferred ?? 0)} />
         <Metric label="Model calls" value={String(modelSummary?.total_calls ?? 0)} />
+        <Metric label="Segment reviews" value={String(postgresData?.summary.segment_review_count ?? 0)} />
         <Metric label="External cost" value={formatCost(modelSummary?.estimated_external_cost_usd ?? 0)} />
       </section>
 
@@ -172,9 +182,10 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
         ))}
       </nav>
 
-      {activeTab === "overview" ? <OverviewTab report={data} /> : null}
+      {activeTab === "overview" ? <OverviewTab report={data} postgresReport={postgresData} postgresError={postgresReport.error} /> : null}
       {activeTab === "files" ? <FilesTab rows={fileRows} /> : null}
-      {activeTab === "review" ? <ReviewQueueTab report={data} /> : null}
+      {activeTab === "review" ? <ReviewQueueTab report={data} postgresReport={postgresData} /> : null}
+      {activeTab === "segments" ? <SegmentsTab postgresReport={postgresData} postgresError={postgresReport.error} /> : null}
       {activeTab === "training" ? <TrainingCycleTab report={data} /> : null}
       {activeTab === "ocr" ? <OcrTab report={data} /> : null}
       {activeTab === "tags" ? <BreakdownGrid values={data.tags} /> : null}
@@ -201,12 +212,13 @@ function RunReportLoading() {
   );
 }
 
-function OverviewTab({ report }: { report: RunReport }) {
+function OverviewTab({ report, postgresReport, postgresError }: { report: RunReport; postgresReport?: PostgresRunReport; postgresError?: Error | null }) {
   return (
     <section className="panel">
       <div className="sectionHeader">
         <h2>Run Overview</h2>
       </div>
+      <PostgresRuntimeSummary postgresReport={postgresReport} postgresError={postgresError} />
       <div className="reportGrid">
         <Breakdown title="Production Buckets" values={report.status_buckets ?? {}} />
         <Breakdown title="Routes" values={report.distributions.route_status ?? {}} />
@@ -216,6 +228,33 @@ function OverviewTab({ report }: { report: RunReport }) {
       </div>
       <pre className="jsonPreview" tabIndex={0} aria-label="Run overview summary JSON">{JSON.stringify(report.overview.summary ?? {}, null, 2)}</pre>
     </section>
+  );
+}
+
+function PostgresRuntimeSummary({ postgresReport, postgresError }: { postgresReport?: PostgresRunReport; postgresError?: Error | null }) {
+  if (postgresReport) {
+    return (
+      <div className="runtimeCallout">
+        <div>
+          <strong>Postgres V2 runtime</strong>
+          <p className="muted">Normalized run report is available from Postgres. Segment proposals and model/provider rows below come from the V2 tables.</p>
+        </div>
+        <div className="metrics compactMetrics">
+          <Metric label="PG results" value={String(postgresReport.summary.result_count)} />
+          <Metric label="PG review" value={String(postgresReport.summary.open_review_item_count)} />
+          <Metric label="Segments" value={String(postgresReport.summary.document_segment_count)} />
+          <Metric label="Segment review" value={String(postgresReport.summary.segment_review_count)} />
+          <Metric label="Local calls" value={String(postgresReport.summary.local_model_call_count)} />
+          <Metric label="Nonlocal calls" value={String(postgresReport.summary.nonlocal_model_call_count)} />
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="runtimeCallout muted">
+      <strong>Postgres V2 runtime unavailable</strong>
+      <p>{postgresError ? postgresError.message : "Import this run into Postgres to inspect normalized results, model usage, provider attempts, and document segments."}</p>
+    </div>
   );
 }
 
@@ -287,14 +326,16 @@ function ModelUsageTab({ usage }: { usage: RunModelUsageReport }) {
   );
 }
 
-function ReviewQueueTab({ report }: { report: RunReport }) {
+function ReviewQueueTab({ report, postgresReport }: { report: RunReport; postgresReport?: PostgresRunReport }) {
   const links = report.review_queue.links ?? {};
+  const rows = postgresReport?.review_items?.length ? postgresReport.review_items : report.review_queue.items;
+  const rowCount = postgresReport?.review_items?.length ?? report.review_queue.count;
   return (
     <section className="panel">
       <div className="sectionHeader">
         <div>
           <h2>Review Queue</h2>
-          <span>{report.review_queue.count} review items linked to this run</span>
+          <span>{rowCount} review items linked to this run{postgresReport ? " from Postgres V2" : ""}</span>
         </div>
         <div className="buttonRow">
           <Link className="secondaryButton" href={links.open ?? `/review?run_id=${report.run.id}&status=open`}>Open Items</Link>
@@ -306,13 +347,83 @@ function ReviewQueueTab({ report }: { report: RunReport }) {
         </div>
       </div>
       <div className="metrics compactMetrics">
+        {postgresReport ? <Metric label="Open" value={String(postgresReport.summary.open_review_item_count)} /> : null}
+        {postgresReport ? <Metric label="Segment review" value={String(postgresReport.summary.segment_review_count)} /> : null}
         {Object.entries(report.review_queue.by_status ?? {}).map(([status, count]) => (
           <Metric key={status} label={status} value={String(count)} />
         ))}
         {!Object.keys(report.review_queue.by_status ?? {}).length ? <Metric label="Status" value="-" /> : null}
       </div>
-      <ReviewItemRows runId={report.run.id} rows={report.review_queue.items} />
+      <ReviewItemRows runId={report.run.id} rows={rows} />
     </section>
+  );
+}
+
+function SegmentsTab({ postgresReport, postgresError }: { postgresReport?: PostgresRunReport; postgresError?: Error | null }) {
+  if (!postgresReport) {
+    return (
+      <section className="panel">
+        <div className="sectionHeader">
+          <h2>Document Segments</h2>
+        </div>
+        <div className="empty">
+          {postgresError ? postgresError.message : "No Postgres segment report is available for this run yet."}
+        </div>
+      </section>
+    );
+  }
+  return (
+    <section className="panel">
+      <div className="sectionHeader">
+        <div>
+          <h2>Document Segments</h2>
+          <span>{postgresReport.document_segments.length} logical page-range proposals</span>
+        </div>
+      </div>
+      <div className="metrics compactMetrics">
+        <Metric label="Segments" value={String(postgresReport.summary.document_segment_count)} />
+        <Metric label="Needs review" value={String(postgresReport.summary.segment_review_count)} />
+      </div>
+      <div className="reportGrid">
+        <Breakdown title="Segment Type" values={postgresReport.summary.segment_type} />
+        <Breakdown title="Routes" values={postgresReport.summary.route_status} />
+      </div>
+      <SegmentRows rows={postgresReport.document_segments} />
+    </section>
+  );
+}
+
+function SegmentRows({ rows }: { rows: Array<Record<string, unknown>> }) {
+  if (!rows.length) {
+    return <div className="empty">No document segment rows imported for this run.</div>;
+  }
+  return (
+    <div className="tableWrap" tabIndex={0} aria-label="Document segments table">
+      <table>
+        <thead>
+          <tr>
+            <th>File</th>
+            <th>Pages</th>
+            <th>Type</th>
+            <th>Confidence</th>
+            <th>Review</th>
+            <th>Evidence</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={String(row.segment_id ?? index)}>
+              <td><PathCell title={String(row.relative_path ?? row.source_path ?? "-")} /></td>
+              <td>{formatPages(row.page_start, row.page_end)}</td>
+              <td>{String(row.segment_type ?? "-")}</td>
+              <td>{row.segment_confidence == null ? "-" : String(row.segment_confidence)}</td>
+              <td>{row.requires_segment_review ? "required" : "not required"}</td>
+              <td className="snippetCell">{formatEvidence(row.boundary_evidence)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -579,6 +690,26 @@ function formatProcessed(report: RunReport) {
 
 function formatCost(value: number) {
   return value > 0 ? `$${value.toFixed(4)}` : "$0";
+}
+
+function formatPages(start: unknown, end: unknown) {
+  if (start == null && end == null) {
+    return "-";
+  }
+  if (start === end || end == null) {
+    return `p${String(start)}`;
+  }
+  return `pp${String(start)}-${String(end)}`;
+}
+
+function formatEvidence(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item)).join("; ");
+  }
+  if (value && typeof value === "object") {
+    return JSON.stringify(value);
+  }
+  return value == null ? "-" : String(value);
 }
 
 function formatMs(value: number) {

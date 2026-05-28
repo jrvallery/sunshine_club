@@ -348,6 +348,34 @@ export type RunReport = {
   training_cycle: Record<string, unknown>;
 };
 
+export type PostgresRunReport = {
+  ok: boolean;
+  run: Record<string, unknown>;
+  summary: {
+    result_count: number;
+    review_item_count: number;
+    open_review_item_count: number;
+    model_usage_count: number;
+    model_call_count: number;
+    local_model_call_count: number;
+    nonlocal_model_call_count: number;
+    provider_attempt_count: number;
+    document_segment_count: number;
+    segment_review_count: number;
+    route_status: Record<string, number>;
+    quality: Record<string, number>;
+    primary_tag: Record<string, number>;
+    segment_type: Record<string, number>;
+    provider_attempt_status: Record<string, number>;
+    model_provider: Record<string, number>;
+  };
+  results: Array<Record<string, unknown>>;
+  review_items: Array<Record<string, unknown>>;
+  model_usage: Array<Record<string, unknown>>;
+  provider_attempts: Array<Record<string, unknown>>;
+  document_segments: Array<Record<string, unknown>>;
+};
+
 export type GoldenLabel = {
   id: number;
   review_item_id?: number | null;
