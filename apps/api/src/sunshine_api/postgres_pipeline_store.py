@@ -361,6 +361,17 @@ class PostgresPipelineStore:
         finally:
             connection.close()
 
+    def list_run_model_usage(self, *, run_key: str, limit: int = 500) -> list[dict[str, Any]]:
+        connection = self._connect_factory(self.database_url)
+        try:
+            rows = self._list_pipeline_runs(connection, limit=500)
+            if not any(row.get("run_key") == run_key for row in rows):
+                raise KeyError(f"Postgres pipeline run not found: {run_key}")
+            capped_limit = max(1, min(int(limit), 1000))
+            return self._list_model_usage(connection, run_key=run_key, limit=capped_limit)
+        finally:
+            connection.close()
+
     def list_run_events(self, *, run_key: str, limit: int = 200) -> list[dict[str, Any]]:
         connection = self._connect_factory(self.database_url)
         try:

@@ -198,6 +198,37 @@ def test_postgres_run_artifacts_endpoint_wraps_service(monkeypatch) -> None:
     assert captured == {"run_key": "run-1", "limit": 9}
 
 
+def test_postgres_run_model_usage_endpoint_wraps_service(monkeypatch) -> None:
+    captured = {}
+
+    def fake_list_model_usage(*, run_key: str, limit: int = 500) -> list[dict]:
+        captured["run_key"] = run_key
+        captured["limit"] = limit
+        return [
+            {
+                "purpose": "chunk_embedding",
+                "provider": "cortex",
+                "model": "local-embedding",
+                "status": "ok",
+                "call_count": 2,
+                "cost_basis": "local",
+                "runtime_ms": 12,
+            }
+        ]
+
+    monkeypatch.setattr("sunshine_api.routers.health.list_postgres_run_model_usage", fake_list_model_usage)
+
+    response = TestClient(app).get("/admin/system/postgres-runtime/runs/run-1/model-usage?limit=11")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run_key"] == "run-1"
+    assert payload["summary"]["total_calls"] == 2
+    assert payload["summary"]["local_calls"] == 2
+    assert payload["by_purpose"]["chunk_embedding"]["calls"] == 2
+    assert captured == {"run_key": "run-1", "limit": 11}
+
+
 def test_semantic_search_endpoint_wraps_local_qdrant_service(monkeypatch) -> None:
     captured = {}
 

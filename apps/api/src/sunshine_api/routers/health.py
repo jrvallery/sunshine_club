@@ -42,11 +42,13 @@ from sunshine_api.services.imports import (
     list_postgres_review_items,
     list_postgres_run_artifacts,
     list_postgres_run_events,
+    list_postgres_run_model_usage,
     postgres_runtime_summary,
     record_postgres_review_decision,
     record_postgres_segment_review_decision,
 )
 from sunshine_api.services.local_infrastructure import local_infrastructure_status
+from sunshine_api.services.model_usage import _model_usage_report
 
 repository = InMemoryFoundationRepository()
 
@@ -130,6 +132,17 @@ def postgres_runtime_run_artifacts(run_key: str, limit: int = 500) -> dict[str, 
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     return {"ok": True, "run_key": run_key, "count": len(artifacts), "artifacts": artifacts}
+
+
+@router.get("/admin/system/postgres-runtime/runs/{run_key}/model-usage")
+def postgres_runtime_run_model_usage(run_key: str, limit: int = 500) -> dict[str, Any]:
+    try:
+        rows = list_postgres_run_model_usage(run_key=run_key, limit=limit)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"ok": True, "run_key": run_key, **_model_usage_report(rows)}
 
 
 @router.post("/admin/system/postgres-runtime/runs/{run_key}/segments/{segment_id}/decision")

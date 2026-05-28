@@ -81,7 +81,7 @@ def _sum_call_counts(rows: list[dict[str, Any]]) -> int:
 
 def _model_call_count(row: dict[str, Any]) -> int:
     metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
-    raw_call_count = metadata.get("call_count")
+    raw_call_count = row.get("call_count", metadata.get("call_count"))
     if raw_call_count is None:
         return 1
     try:
