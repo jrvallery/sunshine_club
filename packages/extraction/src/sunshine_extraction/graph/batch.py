@@ -18,12 +18,6 @@ from sunshine_extraction.config import (
     DEFAULT_TAXONOMY_PATH,
     EXPECTED_STRATEGIES,
 )
-from sunshine_extraction.sample_pipeline import (
-    build_ocr_summary,
-    load_existing_content_class,
-    load_existing_extraction_plan,
-    select_sample_files,
-)
 
 from sunshine_extraction.graph.runtime import run_document_graph
 from sunshine_extraction.graph.utils import _progress, _write_jsonl
@@ -32,6 +26,8 @@ from sunshine_extraction.providers.extraction import ExtractionProvider
 from sunshine_extraction.services.artifacts import extraction_result_row, sample_input_row
 from sunshine_extraction.services.artifact_manifest import write_artifact_manifest
 from sunshine_extraction.services.extraction import OcrExecutor
+from sunshine_extraction.services.ocr_summary import build_ocr_summary
+from sunshine_extraction.services.samples import load_existing_content_class, load_existing_extraction_plan, rows_by_key, select_sample_files
 from sunshine_extraction.services.tagging import LLMTagInspector, llm_inspection_row
 
 
@@ -64,8 +60,8 @@ def run_document_batch(
     graph_runs_dir = output_dir_path / "graph-runs"
     graph_runs_dir.mkdir(parents=True, exist_ok=True)
 
-    corrected_by_key = _rows_by_key(corrected_path)
-    plan_by_key = _rows_by_key(plan_path)
+    corrected_by_key = rows_by_key(corrected_path)
+    plan_by_key = rows_by_key(plan_path)
     samples = select_sample_files(input_root_path)
     if limit is not None:
         samples = samples[:limit]
@@ -283,18 +279,6 @@ def _run_batch_item(
         retry_attempts=retry_attempts,
         retry_delay_seconds=retry_delay_seconds,
     )
-
-
-def _rows_by_key(path: str | Path) -> dict[str, dict[str, Any]]:
-    rows_by_key: dict[str, dict[str, Any]] = {}
-    with Path(path).open("r", encoding="utf-8") as input_file:
-        for line in input_file:
-            if not line.strip():
-                continue
-            row = json.loads(line)
-            rows_by_key[row["source_path"]] = row
-            rows_by_key[row["relative_path"]] = row
-    return rows_by_key
 
 
 def _append_batch_rows(artifact_rows: dict[str, list[dict[str, Any]]], result: dict[str, Any]) -> None:

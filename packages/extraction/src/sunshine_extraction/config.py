@@ -24,3 +24,12 @@ EXPECTED_STRATEGIES = {
     "spreadsheet_table_extraction",
     "deferred_technical",
 }
+
+INITIAL_SAMPLE_LIMITS = {
+    "accepted-image-random-100": 10,
+    "accepted-scanned-document-random-100": 10,
+    "changed-image-to-scanned_document-image_scan_policy_path_or_name": 5,
+    "changed-scanned_document-to-document-pdf_extractable_text_detected": 5,
+    "changed-document-to-scanned_document-pdf_image_only_or_empty_text": 5,
+    "changed-binary_or_unknown-to-spreadsheet-macro_enabled_spreadsheet_review": 1,
+}

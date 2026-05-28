@@ -40,6 +40,7 @@ from sunshine_extraction.config import (
     DEFAULT_PLAN_PATH,
     DEFAULT_TAXONOMY_PATH,
     EXPECTED_STRATEGIES,
+    INITIAL_SAMPLE_LIMITS,
 )
 from sunshine_extraction.cortex import CortexClient
 from sunshine_extraction.embeddings import (
@@ -53,6 +54,14 @@ from sunshine_extraction.embeddings import (
 from sunshine_extraction.domain.documents import IMAGE_EXTENSIONS, SPREADSHEET_EXTENSIONS, TEXT_EXTENSIONS, SampleFile
 from sunshine_extraction.domain.extraction import ExtractionResult, OcrArtifacts, OcrDocumentResult, OcrExecutor, OcrPageResult
 from sunshine_extraction.services.env import load_pipeline_env
+from sunshine_extraction.services.ocr_summary import build_ocr_summary
+from sunshine_extraction.services.samples import (
+    load_existing_content_class,
+    load_existing_extraction_plan,
+    read_jsonl,
+    rows_by_key,
+    select_sample_files,
+)
 from sunshine_extraction.placement import resolve_tag_placement
 
 
@@ -60,14 +69,6 @@ OCR_OK_CONFIDENCE_THRESHOLD = 75.0
 OCR_MIN_TEXT_LENGTH = 100
 OCR_MAX_FAILED_PAGE_RATE = 0.2
 OCR_FALLBACK_DEFAULT_MAX_PAGES = 25
-INITIAL_SAMPLE_LIMITS = {
-    "accepted-image-random-100": 10,
-    "accepted-scanned-document-random-100": 10,
-    "changed-image-to-scanned_document-image_scan_policy_path_or_name": 5,
-    "changed-scanned_document-to-document-pdf_extractable_text_detected": 5,
-    "changed-document-to-scanned_document-pdf_image_only_or_empty_text": 5,
-    "changed-binary_or_unknown-to-spreadsheet-macro_enabled_spreadsheet_review": 1,
-}
 class LocalTesseractOcrExecutor(OcrExecutor):
     def dependency_status(self) -> dict[str, Any]:
         tesseract_binary = _configure_tesseract_runtime()
@@ -573,8 +574,8 @@ def run_sample_pipeline(
     _progress(progress, f"sample-pipeline: input_root={input_root_path}")
     _progress(progress, f"sample-pipeline: output_dir={output_dir_path}")
     _progress(progress, "sample-pipeline: loading corrected content classes, extraction plan, and taxonomy")
-    corrected_by_key = _load_rows_by_keys(corrected_path)
-    plan_by_key = _load_rows_by_keys(plan_path)
+    corrected_by_key = rows_by_key(corrected_path)
+    plan_by_key = rows_by_key(plan_path)
     taxonomy = load_taxonomy_options(taxonomy_path)
     samples = select_sample_files(input_root_path)
     if limit is not None:
@@ -718,35 +719,6 @@ def run_sample_pipeline(
     _progress(progress, "sample-pipeline: wrote sample-pipeline-summary.json")
     _progress(progress, "sample-pipeline: complete")
     return summary
-
-
-def select_sample_files(input_root: Path, limits: dict[str, int] | None = None) -> list[SampleFile]:
-    active_limits = limits or INITIAL_SAMPLE_LIMITS
-    samples: list[SampleFile] = []
-    for group, group_limit in active_limits.items():
-        index_path = input_root / group / "index.jsonl"
-        if not index_path.exists():
-            continue
-        for row in _read_jsonl(index_path)[:group_limit]:
-            samples.append(
-                SampleFile(
-                    sample_path=input_root / group / row["link_name"],
-                    source_path=row["source_path"],
-                    relative_path=row["relative_path"],
-                    sample_group=group,
-                    sample_number=row.get("number"),
-                    index_row=row,
-                )
-            )
-    return samples
-
-
-def load_existing_content_class(sample: SampleFile, rows_by_key: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    return _lookup_by_sample(sample, rows_by_key, artifact_name="corrected content class")
-
-
-def load_existing_extraction_plan(sample: SampleFile, rows_by_key: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    return _lookup_by_sample(sample, rows_by_key, artifact_name="extraction plan")
 
 
 def extract_content(
@@ -2036,30 +2008,6 @@ def _configure_tesseract_runtime() -> str | None:
     return str(local_binary)
 
 
-def build_ocr_summary(page_rows: list[dict[str, Any]], document_rows: list[dict[str, Any]]) -> dict[str, Any]:
-    by_ocr_status: Counter[str] = Counter(str(row.get("ocr_status") or "unknown") for row in document_rows)
-    by_quality: Counter[str] = Counter(str(row.get("quality") or "unknown") for row in document_rows)
-    by_warning: Counter[str] = Counter()
-    for row in [*page_rows, *document_rows]:
-        for warning in row.get("warnings", []):
-            by_warning[str(warning)] += 1
-    page_seconds = [float(row.get("seconds") or 0) for row in page_rows]
-    total_pages = len(page_rows)
-    failed_pages = len([row for row in page_rows if row.get("ocr_status") == "failed"])
-    return {
-        "ocr_document_rows": len(document_rows),
-        "ocr_page_rows": len(page_rows),
-        "by_ocr_status": dict(sorted(by_ocr_status.items())),
-        "by_quality": dict(sorted(by_quality.items())),
-        "by_warning": dict(sorted(by_warning.items())),
-        "total_pages": total_pages,
-        "failed_pages": failed_pages,
-        "failed_page_rate": round(failed_pages / total_pages, 4) if total_pages else 0,
-        "total_ocr_seconds": round(sum(float(row.get("seconds") or 0) for row in document_rows), 4),
-        "average_seconds_per_page": round(sum(page_seconds) / total_pages, 4) if total_pages else 0,
-    }
-
-
 def _chunk_row(extraction: ExtractionResult, chunk_index: int, chunk_kind: str, text: str, metadata: dict[str, Any]) -> dict[str, Any]:
     return {
         "source_path": extraction.sample.source_path,
@@ -2131,26 +2079,6 @@ def _chunk_count_bucket(chunk_count: int) -> str:
     if chunk_count <= 5:
         return "2-5"
     return "6+"
-
-
-def _load_rows_by_keys(path: str | Path) -> dict[str, dict[str, Any]]:
-    rows_by_key: dict[str, dict[str, Any]] = {}
-    for row in _read_jsonl(Path(path)):
-        rows_by_key[row["source_path"]] = row
-        rows_by_key[row["relative_path"]] = row
-    return rows_by_key
-
-
-def _lookup_by_sample(sample: SampleFile, rows_by_key: dict[str, dict[str, Any]], *, artifact_name: str) -> dict[str, Any]:
-    row = rows_by_key.get(sample.source_path) or rows_by_key.get(sample.relative_path)
-    if row is None:
-        raise ValueError(f"Missing {artifact_name} row for {sample.relative_path}")
-    return row
-
-
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    with path.open("r", encoding="utf-8") as input_file:
-        return [json.loads(line) for line in input_file if line.strip()]
 
 
 def _write_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> None:
