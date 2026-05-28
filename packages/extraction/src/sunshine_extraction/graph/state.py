@@ -7,7 +7,9 @@ fields so audit output, persistence, and review routing can be traced.
 from typing import Any, TypedDict
 
 from sunshine_extraction.embeddings import EmbeddingProvider
-from sunshine_extraction.sample_pipeline import ExtractionResult, LLMTagInspector, OcrExecutor, SampleFile
+from sunshine_extraction.services.content import SampleFile
+from sunshine_extraction.services.extraction import ExtractionResult, OcrExecutor
+from sunshine_extraction.services.tagging import LLMTagInspector
 
 
 class DocumentPipelineState(TypedDict, total=False):

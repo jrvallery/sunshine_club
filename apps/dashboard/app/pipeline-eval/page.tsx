@@ -129,7 +129,6 @@ export default function PipelineEvalPage() {
           <CheckboxField label="Disable semantic index" checked={disableSemanticIndex} onChange={(event) => setDisableSemanticIndex(event.target.checked)} />
           <SelectInput label="Embedding provider" value={embeddingProvider} onChange={(event) => setEmbeddingProvider(event.target.value)}>
             <option value="placeholder">Placeholder</option>
-            <option value="gemini">Gemini</option>
             <option value="cortex">Cortex</option>
             <option value="openai">OpenAI</option>
           </SelectInput>

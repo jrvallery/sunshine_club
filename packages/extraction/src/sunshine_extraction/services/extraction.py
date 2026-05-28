@@ -1,0 +1,23 @@
+"""Extraction, OCR, validation, quality, and chunking service boundary."""
+
+from sunshine_extraction.sample_pipeline import (
+    ExtractionResult,
+    OcrArtifacts,
+    OcrExecutor,
+    chunk_content,
+    extract_content,
+    extraction_quality_gate,
+    ocr_executor_from_env,
+    validate_and_repair_extraction,
+)
+
+__all__ = [
+    "ExtractionResult",
+    "OcrArtifacts",
+    "OcrExecutor",
+    "chunk_content",
+    "extract_content",
+    "extraction_quality_gate",
+    "ocr_executor_from_env",
+    "validate_and_repair_extraction",
+]

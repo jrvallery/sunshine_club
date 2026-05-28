@@ -1592,7 +1592,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--taxonomy-path", default=DEFAULT_TAXONOMY_PATH)
     parser.add_argument("--semantic-index-path", default=DEFAULT_INDEX_DB)
     parser.add_argument("--disable-semantic-index", action="store_true")
-    parser.add_argument("--embedding-provider", choices=["placeholder", "gemini", "cortex", "openai"])
+    parser.add_argument("--embedding-provider", choices=["placeholder", "cortex", "openai"])
     parser.add_argument("--enable-llm-tags", action="store_true")
     parser.add_argument("--enable-ocr", action="store_true")
     parser.add_argument("--ocr-fallback-provider", choices=["disabled", "openai", "cortex", "local", "openai-compatible"])

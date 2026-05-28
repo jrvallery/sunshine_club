@@ -1347,7 +1347,7 @@ class ReviewStore:
                 "enable_llm_tags": True,
                 "embedding_provider": "cortex",
                 "llm_tag_provider": "auto",
-                "ocr_fallback_provider": "openai",
+                "ocr_fallback_provider": "cortex",
             },
             {
                 "preset_key": "qa_samples_fast",
@@ -1363,13 +1363,13 @@ class ReviewStore:
             {
                 "preset_key": "ocr_fallback_focus",
                 "label": "OCR fallback focus",
-                "description": "OCR-heavy QA sample with OpenAI fallback enabled.",
+                "description": "OCR-heavy QA sample with Cortex primary OCR and OpenAI escalation.",
                 "input_root": f"{base_manifest}/qa samples",
                 "output_dir": f"{base_manifest}/dashboard-runs/ocr_fallback_focus",
                 "enable_llm_tags": False,
                 "embedding_provider": "cortex",
                 "llm_tag_provider": "disabled",
-                "ocr_fallback_provider": "openai",
+                "ocr_fallback_provider": "cortex",
             },
             {
                 "preset_key": "review_required_rerun",
@@ -1380,7 +1380,7 @@ class ReviewStore:
                 "enable_llm_tags": True,
                 "embedding_provider": "cortex",
                 "llm_tag_provider": "auto",
-                "ocr_fallback_provider": "openai",
+                "ocr_fallback_provider": "cortex",
             },
             {
                 "preset_key": "random_route_candidate_audit",
@@ -1391,7 +1391,7 @@ class ReviewStore:
                 "enable_llm_tags": True,
                 "embedding_provider": "cortex",
                 "llm_tag_provider": "auto",
-                "ocr_fallback_provider": "openai",
+                "ocr_fallback_provider": "cortex",
             },
             {
                 "preset_key": "single_file_debug",

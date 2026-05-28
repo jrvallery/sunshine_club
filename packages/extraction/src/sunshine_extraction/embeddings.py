@@ -14,14 +14,11 @@ from typing import Any
 
 
 DEFAULT_PLACEHOLDER_DIMENSIONS = 64
-DEFAULT_GEMINI_MODEL = "gemini-embedding-2"
-DEFAULT_GEMINI_DIMENSIONS = 3072
 DEFAULT_CORTEX_BASE_URL = "https://cortex.vallery.net"
 DEFAULT_CORTEX_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B"
 DEFAULT_CORTEX_EMBEDDING_DIMENSIONS = 1024
 DEFAULT_OPENAI_EMBEDDING_MODEL = "text-embedding-3-large"
 DEFAULT_OPENAI_EMBEDDING_DIMENSIONS = 3072
-GEMINI_EMBEDDING_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:embedContent"
 
 
 class EmbeddingConfigurationError(RuntimeError):
@@ -74,66 +71,6 @@ class PlaceholderEmbeddingProvider(EmbeddingProvider):
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         return [_stable_placeholder_vector(text, self.dimensions) for text in texts]
-
-
-class GeminiEmbeddingProvider(EmbeddingProvider):
-    def __init__(
-        self,
-        *,
-        api_key: str,
-        model: str = DEFAULT_GEMINI_MODEL,
-        dimensions: int = DEFAULT_GEMINI_DIMENSIONS,
-        timeout_seconds: float = 30,
-    ) -> None:
-        if not api_key:
-            raise EmbeddingConfigurationError("GEMINI_API_KEY is required for Gemini embeddings")
-        if dimensions <= 0:
-            raise EmbeddingConfigurationError("SUNSHINE_EMBEDDING_DIMENSIONS must be greater than zero")
-        self.api_key = api_key
-        self.model = model
-        self.dimensions = dimensions
-        self.timeout_seconds = timeout_seconds
-
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        return [self._embed_one(text) for text in texts]
-
-    def _embed_one(self, text: str) -> list[float]:
-        payload = {
-            "content": {"parts": [{"text": text}]},
-            "output_dimensionality": self.dimensions,
-        }
-        request = urllib.request.Request(
-            GEMINI_EMBEDDING_URL_TEMPLATE.format(model=self.model),
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "x-goog-api-key": self.api_key,
-            },
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
-                response_payload = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as error:
-            body = error.read().decode("utf-8", errors="replace")
-            message, status = _google_error_message(body)
-            raise EmbeddingProviderError(
-                f"Gemini embedding request failed: HTTP {error.code}: {message}",
-                status_code=error.code,
-                status=status,
-            ) from error
-        except urllib.error.URLError as error:
-            raise EmbeddingProviderError(f"Gemini embedding request failed: {error.reason}") from error
-
-        values = response_payload.get("embedding", {}).get("values")
-        if not isinstance(values, list) or not all(isinstance(value, int | float) for value in values):
-            raise EmbeddingProviderError("Gemini embedding response did not include numeric embedding.values")
-        if len(values) != self.dimensions:
-            raise EmbeddingProviderError(
-                f"Gemini returned {len(values)} dimensions, expected {self.dimensions}; "
-                "check SUNSHINE_EMBEDDING_DIMENSIONS"
-            )
-        return [float(value) for value in values]
 
 
 class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
@@ -214,12 +151,6 @@ def provider_from_env(provider_name_override: str | None = None) -> EmbeddingPro
     if provider_name in {"", "placeholder", "local"}:
         dimensions = _env_int("SUNSHINE_EMBEDDING_DIMENSIONS", DEFAULT_PLACEHOLDER_DIMENSIONS)
         return PlaceholderEmbeddingProvider(dimensions=dimensions)
-    if provider_name == "gemini":
-        return GeminiEmbeddingProvider(
-            api_key=os.environ.get("GEMINI_API_KEY", ""),
-            model=os.environ.get("SUNSHINE_EMBEDDING_MODEL", DEFAULT_GEMINI_MODEL),
-            dimensions=_env_int("SUNSHINE_EMBEDDING_DIMENSIONS", DEFAULT_GEMINI_DIMENSIONS),
-        )
     if provider_name in {"cortex", "openai-compatible"}:
         cortex_base_url = os.environ.get("CORTEX_OPENAI_BASE_URL") or _openai_base_url_from_cortex_base(
             os.environ.get("CORTEX_BASE_URL", DEFAULT_CORTEX_BASE_URL)
@@ -295,8 +226,6 @@ def _stable_placeholder_vector(text: str, dimensions: int) -> list[float]:
 def _embedding_provider_name(provider: EmbeddingProvider) -> str:
     if isinstance(provider, PlaceholderEmbeddingProvider):
         return "local"
-    if isinstance(provider, GeminiEmbeddingProvider):
-        return "gemini"
     if isinstance(provider, OpenAICompatibleEmbeddingProvider):
         return provider.provider_name
     return provider.__class__.__name__
@@ -325,21 +254,6 @@ def _load_embedding_env(env_path: str = ".env") -> None:
     cortex_api = os.environ.get("CORTEX_API_KEY")
     if cortex_api and not os.environ.get("CORTEX_OPENAI_API_KEY"):
         os.environ["CORTEX_OPENAI_API_KEY"] = cortex_api
-
-
-def _google_error_message(body: str) -> tuple[str, str | None]:
-    try:
-        payload = json.loads(body)
-    except json.JSONDecodeError:
-        return body, None
-    error = payload.get("error")
-    if not isinstance(error, dict):
-        return body, None
-    message = error.get("message")
-    status = error.get("status")
-    if isinstance(message, str):
-        return message, status if isinstance(status, str) else None
-    return body, status if isinstance(status, str) else None
 
 
 def _openai_error_message(body: str) -> tuple[str, str | None]:
@@ -396,8 +310,8 @@ def main() -> None:
         if isinstance(error, EmbeddingProviderError):
             output["status_code"] = error.status_code
             output["provider_status"] = error.status
-            if error.status_code == 429 or error.status == "RESOURCE_EXHAUSTED":
-                output["action_required"] = "Enable billing or add Gemini API credits for this API key's project."
+            if error.status_code == 429:
+                output["action_required"] = "Check the configured provider quota, rate limits, or billing."
         print(json.dumps(output, indent=2, sort_keys=True), file=sys.stderr)
         raise SystemExit(1) from error
 

@@ -123,7 +123,7 @@ class PipelineEvalRequest(BaseModel):
     output_dir: str | None = None
     limit: int | None = Field(default=None, ge=1)
     semantic_index_path: str | None = None
-    embedding_provider: Literal["placeholder", "gemini", "cortex", "openai"] | None = None
+    embedding_provider: Literal["placeholder", "cortex", "openai"] | None = None
     ocr_fallback_provider: Literal["disabled", "cortex", "openai"] | None = None
     disable_semantic_index: bool = False
     enable_llm_tags: bool = False

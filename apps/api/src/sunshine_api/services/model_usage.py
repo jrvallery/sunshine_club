@@ -17,11 +17,11 @@ from typing import Any
 from sunshine_api.review_store import ReviewStore
 
 
-from sunshine_api.services.run_reports import _read_jsonl_file
+from sunshine_api.services.run_reports import _read_run_jsonl_with_live_fallback
 
 
 def _read_model_usage_artifact(output_dir: Path, *, run_id: int) -> list[dict[str, Any]]:
-    rows = _read_jsonl_file(output_dir / "sample-model-usage.jsonl")
+    rows = _read_run_jsonl_with_live_fallback(output_dir, "sample-model-usage.jsonl")
     if not rows:
         rows = _synthesize_model_usage_from_artifacts(output_dir)
     for index, row in enumerate(rows, start=1):
@@ -117,19 +117,30 @@ def _synthesize_model_usage_from_artifacts(output_dir: Path) -> list[dict[str, A
 
 
 def _synthesize_ocr_usage(output_dir: Path) -> list[dict[str, Any]]:
-    page_rows = _read_jsonl_file(output_dir / "sample-ocr-pages.jsonl")
+    page_rows = _read_run_jsonl_with_live_fallback(output_dir, "sample-ocr-pages.jsonl")
     rows = []
     for page in page_rows:
         warning = _first_warning_with_prefix(page.get("warnings", []), "ocr_fallback_used:")
+        purpose = "ocr_fallback"
+        prefix = "ocr_fallback_used:"
         if not warning:
-            continue
-        provider, model = _provider_model_from_engine(warning.removeprefix("ocr_fallback_used:"))
+            warning = _first_warning_with_prefix(page.get("warnings", []), "ocr_model_used:")
+            purpose = "ocr"
+            prefix = "ocr_model_used:"
+        if not warning:
+            engine = str(page.get("ocr_engine") or "")
+            if not engine or engine == "tesseract":
+                continue
+            warning = f"ocr_model_used:{engine}"
+            purpose = "ocr"
+            prefix = "ocr_model_used:"
+        provider, model = _provider_model_from_engine(warning.removeprefix(prefix))
         rows.append(
             {
                 "source_path": page.get("source_path"),
                 "relative_path": page.get("relative_path"),
                 "node": "ocr_artifact_inference",
-                "purpose": "ocr_fallback",
+                "purpose": purpose,
                 "provider": provider,
                 "model": model,
                 "status": "ok" if page.get("ocr_status") == "ok" else str(page.get("ocr_status") or "unknown"),
@@ -141,7 +152,7 @@ def _synthesize_ocr_usage(output_dir: Path) -> list[dict[str, Any]]:
     if rows:
         return rows
 
-    result_rows = _read_jsonl_file(output_dir / "sample-pipeline-results.jsonl")
+    result_rows = _read_run_jsonl_with_live_fallback(output_dir, "sample-pipeline-results.jsonl")
     for result in result_rows:
         warning = _first_warning_with_prefix(result.get("warnings", []), "ocr_fallback_used:")
         if not warning:
@@ -165,7 +176,7 @@ def _synthesize_ocr_usage(output_dir: Path) -> list[dict[str, Any]]:
 
 def _synthesize_llm_tag_usage(output_dir: Path) -> list[dict[str, Any]]:
     rows = []
-    for inspection in _read_jsonl_file(output_dir / "sample-llm-tag-inspections.jsonl"):
+    for inspection in _read_run_jsonl_with_live_fallback(output_dir, "sample-llm-tag-inspections.jsonl"):
         provider = str(inspection.get("provider") or "unknown")
         status = str(inspection.get("llm_status") or "unknown")
         if provider == "disabled" and status == "skipped":
@@ -189,7 +200,7 @@ def _synthesize_llm_tag_usage(output_dir: Path) -> list[dict[str, Any]]:
 
 def _synthesize_embedding_usage(output_dir: Path) -> list[dict[str, Any]]:
     rows = []
-    for embedding in _read_jsonl_file(output_dir / "sample-embeddings.jsonl"):
+    for embedding in _read_run_jsonl_with_live_fallback(output_dir, "sample-embeddings.jsonl"):
         provider = str(embedding.get("embedding_provider") or "unknown")
         rows.append(
             {
