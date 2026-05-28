@@ -347,7 +347,20 @@ export type RunReport = {
     links?: Record<string, string>;
   };
   ocr: { document_count: number; page_count: number; documents: Array<Record<string, unknown>>; pages: Array<Record<string, unknown>> };
-  extraction: { count: number; items: Array<Record<string, unknown>> };
+  extraction: {
+    count: number;
+    validation_count?: number;
+    repair_count?: number;
+    quality_gate_count?: number;
+    validation_status?: Record<string, number>;
+    repair_status?: Record<string, number>;
+    quality_gate_quality?: Record<string, number>;
+    quality_gate_review_required?: Record<string, number>;
+    items: Array<Record<string, unknown>>;
+    validations?: Array<Record<string, unknown>>;
+    repairs?: Array<Record<string, unknown>>;
+    quality_gates?: Array<Record<string, unknown>>;
+  };
   segments: {
     count: number;
     requires_review_count: number;
@@ -391,6 +404,8 @@ export type PostgresRunReport = {
     nonlocal_model_call_count: number;
     provider_attempt_count: number;
     provider_selection_count?: number;
+    quality_check_count?: number;
+    quality_review_required_count?: number;
     parser_result_count?: number;
     parser_review_required_count?: number;
     run_event_count: number;
@@ -412,6 +427,9 @@ export type PostgresRunReport = {
     provider_attempt_status: Record<string, number>;
     selected_provider?: Record<string, number>;
     provider_selection_reason?: Record<string, number>;
+    quality_check_type?: Record<string, number>;
+    quality_check_status?: Record<string, number>;
+    quality_check_quality?: Record<string, number>;
     parser_status?: Record<string, number>;
     parser_quality?: Record<string, number>;
     parser_provider?: Record<string, number>;
@@ -425,6 +443,7 @@ export type PostgresRunReport = {
   model_usage: Array<Record<string, unknown>>;
   provider_attempts: Array<Record<string, unknown>>;
   provider_selections?: Array<Record<string, unknown>>;
+  quality_checks?: Array<Record<string, unknown>>;
   parser_results?: Array<Record<string, unknown>>;
   document_segments: Array<Record<string, unknown>>;
   chunks?: Array<Record<string, unknown>>;

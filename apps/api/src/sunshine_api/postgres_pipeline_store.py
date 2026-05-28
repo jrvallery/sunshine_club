@@ -53,6 +53,7 @@ class PostgresPipelineStore:
                 "model_usage": self._import_model_usage(connection, run_id, output_path),
                 "provider_attempts": self._import_provider_attempts(connection, run_id, output_path),
                 "pipeline_provider_selections": self._import_provider_selections(connection, run_id, output_path),
+                "pipeline_quality_checks": self._import_quality_checks(connection, run_id, output_path),
                 "pipeline_parser_results": self._import_parser_results(connection, run_id, output_path),
                 "document_segments": self._import_document_segments(connection, run_id, output_path),
                 "review_items": self._import_review_items(connection, run_id, output_path),
@@ -74,6 +75,7 @@ class PostgresPipelineStore:
                 "model_usage": _scalar_count(connection, "select count(*) from model_usage"),
                 "provider_attempts": _scalar_count(connection, "select count(*) from provider_attempts"),
                 "pipeline_provider_selections": _scalar_count(connection, "select count(*) from pipeline_provider_selections"),
+                "pipeline_quality_checks": _scalar_count(connection, "select count(*) from pipeline_quality_checks"),
                 "pipeline_parser_results": _scalar_count(connection, "select count(*) from pipeline_parser_results"),
                 "pipeline_run_events": _scalar_count(connection, "select count(*) from pipeline_run_events"),
                 "document_segments": _scalar_count(connection, "select count(*) from document_segments"),
@@ -227,6 +229,7 @@ class PostgresPipelineStore:
                     (select count(*) from model_usage mu where mu.run_id = r.id) as model_usage,
                     (select count(*) from provider_attempts pa where pa.run_id = r.id) as provider_attempts,
                     (select count(*) from pipeline_provider_selections pps where pps.run_id = r.id) as pipeline_provider_selections,
+                    (select count(*) from pipeline_quality_checks pqc where pqc.run_id = r.id) as pipeline_quality_checks,
                     (select count(*) from pipeline_parser_results ppr where ppr.run_id = r.id) as pipeline_parser_results,
                     (select count(*) from document_segments ds where ds.run_id = r.id) as document_segments,
                     (select count(*) from review_items_v2 ri where ri.run_id = r.id) as review_items
@@ -253,6 +256,7 @@ class PostgresPipelineStore:
                     "model_usage": _int_value(run_row.get("model_usage")),
                     "provider_attempts": _int_value(run_row.get("provider_attempts")),
                     "pipeline_provider_selections": _int_value(run_row.get("pipeline_provider_selections")),
+                    "pipeline_quality_checks": _int_value(run_row.get("pipeline_quality_checks")),
                     "pipeline_parser_results": _int_value(run_row.get("pipeline_parser_results")),
                     "document_segments": _int_value(run_row.get("document_segments")),
                     "review_items": _int_value(run_row.get("review_items")),
@@ -282,6 +286,7 @@ class PostgresPipelineStore:
             model_usage = self._list_model_usage(connection, run_key=run_key, limit=capped_limit)
             provider_attempts = self._list_provider_attempts(connection, run_key=run_key, limit=capped_limit)
             provider_selections = self._list_provider_selections(connection, run_key=run_key, limit=capped_limit)
+            quality_checks = self._list_quality_checks(connection, run_key=run_key, limit=capped_limit)
             parser_results = self._list_parser_results(connection, run_key=run_key, limit=capped_limit)
             document_segments = self._list_document_segments(connection, run_key=run_key, limit=capped_limit)
             chunks = self._list_chunks(connection, run_key=run_key, limit=capped_limit)
@@ -295,6 +300,7 @@ class PostgresPipelineStore:
                     model_usage=model_usage,
                     provider_attempts=provider_attempts,
                     provider_selections=provider_selections,
+                    quality_checks=quality_checks,
                     parser_results=parser_results,
                     document_segments=document_segments,
                     chunks=chunks,
@@ -306,6 +312,7 @@ class PostgresPipelineStore:
                 "model_usage": model_usage,
                 "provider_attempts": provider_attempts,
                 "provider_selections": provider_selections,
+                "quality_checks": quality_checks,
                 "parser_results": parser_results,
                 "document_segments": document_segments,
                 "chunks": chunks,
@@ -1582,6 +1589,7 @@ class PostgresPipelineStore:
                 (select count(*) from model_usage mu where mu.run_id = r.id) as model_usage_count,
                 (select count(*) from provider_attempts pa where pa.run_id = r.id) as provider_attempt_count,
                 (select count(*) from pipeline_provider_selections pps where pps.run_id = r.id) as provider_selection_count,
+                (select count(*) from pipeline_quality_checks pqc where pqc.run_id = r.id) as quality_check_count,
                 (select count(*) from pipeline_parser_results ppr where ppr.run_id = r.id) as parser_result_count,
                 (select count(*) from document_segments ds where ds.run_id = r.id) as document_segment_count
             from pipeline_runs r
@@ -1768,6 +1776,37 @@ class PostgresPipelineStore:
             join pipeline_runs r on r.id = pps.run_id
             where r.run_key = %s
             order by pps.created_at asc, pps.source_path asc nulls last, pps.selected_provider asc
+            limit %s
+            """,
+            (run_key, max(1, min(int(limit), 1000))),
+        ).fetchall()
+        return [_json_safe_row(_row_to_dict(row)) for row in rows]
+
+    def _list_quality_checks(self, connection: PostgresConnection, *, run_key: str, limit: int) -> list[dict[str, Any]]:
+        rows = connection.execute(
+            """
+            select
+                pqc.id,
+                pqc.run_id,
+                r.run_key,
+                pqc.source_path,
+                pqc.relative_path,
+                pqc.check_type,
+                pqc.status,
+                pqc.quality,
+                pqc.requires_review,
+                pqc.can_chunk,
+                pqc.can_embed,
+                pqc.provider,
+                pqc.strategy,
+                pqc.reason,
+                pqc.warnings,
+                pqc.result,
+                pqc.created_at
+            from pipeline_quality_checks pqc
+            join pipeline_runs r on r.id = pqc.run_id
+            where r.run_key = %s
+            order by pqc.created_at asc, pqc.source_path asc nulls last, pqc.check_type asc
             limit %s
             """,
             (run_key, max(1, min(int(limit), 1000))),
@@ -2349,6 +2388,44 @@ class PostgresPipelineStore:
             )
         return len(rows)
 
+    def _import_quality_checks(self, connection: PostgresConnection, run_id: str, output_path: Path) -> int:
+        artifacts = [
+            ("extraction_validation", output_path / "sample-extraction-validations.jsonl"),
+            ("extraction_repair", output_path / "sample-extraction-repairs.jsonl"),
+            ("quality_gate", output_path / "sample-quality-gates.jsonl"),
+            ("chunking_result", output_path / "sample-chunking-results.jsonl"),
+        ]
+        connection.execute("delete from pipeline_quality_checks where run_id = %s", (run_id,))
+        imported = 0
+        for check_type, path in artifacts:
+            for row in _read_jsonl(path):
+                connection.execute(
+                    """
+                    insert into pipeline_quality_checks (
+                        run_id, source_path, relative_path, check_type, status, quality,
+                        requires_review, can_chunk, can_embed, provider, strategy, reason, warnings, result
+                    ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb)
+                    """,
+                    (
+                        run_id,
+                        row.get("source_path"),
+                        row.get("relative_path"),
+                        check_type,
+                        row.get("status") or row.get("repair_status") or row.get("chunking_status"),
+                        row.get("quality"),
+                        _optional_bool(row.get("requires_review")),
+                        _optional_bool(row.get("can_chunk")),
+                        _optional_bool(row.get("can_embed")),
+                        row.get("provider"),
+                        row.get("strategy"),
+                        row.get("reason") or row.get("validation_reason") or row.get("review_reason"),
+                        json.dumps(row.get("warnings") or []),
+                        json.dumps(row, sort_keys=True),
+                    ),
+                )
+                imported += 1
+        return imported
+
     def _import_parser_results(self, connection: PostgresConnection, run_id: str, output_path: Path) -> int:
         rows = _read_jsonl(output_path / "sample-parser-results.jsonl")
         connection.execute("delete from pipeline_parser_results where run_id = %s", (run_id,))
@@ -2471,6 +2548,12 @@ def _run_summary_from_artifacts(output_path: Path) -> dict[str, Any]:
     model_usage_rows = _read_jsonl(output_path / "sample-model-usage.jsonl")
     provider_attempt_rows = _read_jsonl(output_path / "sample-provider-attempts.jsonl")
     provider_selection_rows = _read_jsonl(output_path / "sample-provider-selections.jsonl")
+    quality_check_rows = [
+        *_read_jsonl(output_path / "sample-extraction-validations.jsonl"),
+        *_read_jsonl(output_path / "sample-extraction-repairs.jsonl"),
+        *_read_jsonl(output_path / "sample-quality-gates.jsonl"),
+        *_read_jsonl(output_path / "sample-chunking-results.jsonl"),
+    ]
     parser_result_rows = _read_jsonl(output_path / "sample-parser-results.jsonl")
     indexing_rows = _read_jsonl(output_path / "sample-indexing.jsonl")
     manifest = _read_json(output_path / "artifact-manifest.json")
@@ -2488,6 +2571,7 @@ def _run_summary_from_artifacts(output_path: Path) -> dict[str, Any]:
             "model_usage": len(model_usage_rows),
             "provider_attempts": len(provider_attempt_rows),
             "provider_selections": len(provider_selection_rows),
+            "quality_checks": len(quality_check_rows),
             "parser_results": len(parser_result_rows),
             "indexing": len(indexing_rows),
         },
@@ -2916,6 +3000,7 @@ def _run_report_summary(
     model_usage: list[dict[str, Any]],
     provider_attempts: list[dict[str, Any]],
     provider_selections: list[dict[str, Any]],
+    quality_checks: list[dict[str, Any]],
     parser_results: list[dict[str, Any]],
     document_segments: list[dict[str, Any]],
     chunks: list[dict[str, Any]],
@@ -2934,6 +3019,8 @@ def _run_report_summary(
         "nonlocal_model_call_count": sum(_int_value(row.get("call_count"), default=1) for row in model_usage if row.get("local_only") is False),
         "provider_attempt_count": len(provider_attempts),
         "provider_selection_count": len(provider_selections),
+        "quality_check_count": len(quality_checks),
+        "quality_review_required_count": sum(1 for row in quality_checks if row.get("requires_review") is True),
         "parser_result_count": len(parser_results),
         "parser_review_required_count": sum(1 for row in parser_results if row.get("requires_review") is True),
         "run_event_count": len(run_events),
@@ -2955,6 +3042,9 @@ def _run_report_summary(
         "provider_attempt_status": _count_values(provider_attempts, "status"),
         "selected_provider": _count_values(provider_selections, "selected_provider"),
         "provider_selection_reason": _count_values(provider_selections, "provider_selection_reason"),
+        "quality_check_type": _count_values(quality_checks, "check_type"),
+        "quality_check_status": _count_values(quality_checks, "status"),
+        "quality_check_quality": _count_values(quality_checks, "quality"),
         "parser_status": _count_values(parser_results, "status"),
         "parser_quality": _count_values(parser_results, "quality"),
         "parser_provider": _count_values(parser_results, "provider"),
@@ -2974,6 +3064,12 @@ def _optional_bool_int(value: Any) -> int | None:
     if value is None:
         return None
     return 1 if bool(value) else 0
+
+
+def _optional_bool(value: Any) -> bool | None:
+    if value is None:
+        return None
+    return bool(value)
 
 
 def _call_count(row: dict[str, Any]) -> int:

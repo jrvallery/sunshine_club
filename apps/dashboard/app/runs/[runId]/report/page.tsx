@@ -14,7 +14,7 @@ import { StatusBadge } from "../../../../components/ui/StatusBadge";
 import { deleteJson, fetchJson, postJson } from "../../../../lib/api";
 import type { PipelineRun, PipelineRunEvent, PostgresRunReport, RunModelUsageReport, RunReport } from "../../../../lib/types";
 
-type ReportTab = "overview" | "files" | "review" | "segments" | "training" | "ocr" | "indexing" | "tags" | "placement" | "models" | "providers" | "logs" | "artifacts" | "diff";
+type ReportTab = "overview" | "files" | "review" | "segments" | "training" | "ocr" | "extraction" | "indexing" | "tags" | "placement" | "models" | "providers" | "logs" | "artifacts" | "diff";
 
 const tabs: Array<{ key: ReportTab; label: string }> = [
   { key: "overview", label: "Overview" },
@@ -23,6 +23,7 @@ const tabs: Array<{ key: ReportTab; label: string }> = [
   { key: "segments", label: "Segments" },
   { key: "training", label: "Training Cycle" },
   { key: "ocr", label: "OCR" },
+  { key: "extraction", label: "Extraction" },
   { key: "indexing", label: "Indexing" },
   { key: "tags", label: "Tags" },
   { key: "placement", label: "Placement" },
@@ -226,6 +227,7 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
       {activeTab === "segments" ? <SegmentsTab report={data} postgresReport={postgresData} postgresError={postgresReport.error} /> : null}
       {activeTab === "training" ? <TrainingCycleTab report={data} /> : null}
       {activeTab === "ocr" ? <OcrTab report={data} /> : null}
+      {activeTab === "extraction" ? <ExtractionTab report={data} postgresReport={postgresData} /> : null}
       {activeTab === "indexing" ? <IndexingTab report={data} postgresReport={postgresData} /> : null}
       {activeTab === "tags" ? <BreakdownGrid values={data.tags} /> : null}
       {activeTab === "placement" ? <BreakdownGrid values={data.placement} /> : null}
@@ -264,7 +266,7 @@ function PostgresRunReportView({
   const runKey = String(report.run.run_key ?? "");
   const status = String(report.run.status ?? "-");
   const modelCalls = Number(report.summary.model_call_count ?? 0);
-  const postgresTabs = tabs.filter((tab) => ["overview", "files", "review", "segments", "ocr", "indexing", "models", "providers", "logs"].includes(tab.key));
+  const postgresTabs = tabs.filter((tab) => ["overview", "files", "review", "segments", "ocr", "extraction", "indexing", "models", "providers", "logs"].includes(tab.key));
   const activePostgresTab = postgresTabs.some((tab) => tab.key === activeTab) ? activeTab : "overview";
   return (
     <main className="pageShell">
@@ -311,6 +313,7 @@ function PostgresRunReportView({
         <Metric label="Model calls" value={String(modelCalls)} />
         <Metric label="Provider attempts" value={String(report.summary.provider_attempt_count ?? 0)} />
         <Metric label="Provider selections" value={String(report.summary.provider_selection_count ?? report.provider_selections?.length ?? 0)} />
+        <Metric label="Quality checks" value={String(report.summary.quality_check_count ?? report.quality_checks?.length ?? 0)} />
         <Metric label="Graph events" value={String(report.summary.run_event_count ?? 0)} />
       </section>
 
@@ -327,6 +330,7 @@ function PostgresRunReportView({
       {activePostgresTab === "review" ? <PostgresReviewQueueTab report={report} /> : null}
       {activePostgresTab === "segments" ? <SegmentsTab postgresReport={report} /> : null}
       {activePostgresTab === "ocr" ? <PostgresParserTab report={report} /> : null}
+      {activePostgresTab === "extraction" ? <PostgresExtractionTab report={report} /> : null}
       {activePostgresTab === "indexing" ? <PostgresIndexingTab report={report} /> : null}
       {activePostgresTab === "models" ? <JsonTable title="Model Calls" rows={report.model_usage ?? []} /> : null}
       {activePostgresTab === "providers" ? <PostgresProvidersTab report={report} /> : null}
@@ -349,6 +353,8 @@ function PostgresOverviewTab({ report }: { report: PostgresRunReport }) {
         <Breakdown title="Provider Attempts" values={report.summary.provider_attempt_status ?? {}} />
         <Breakdown title="Selected Providers" values={report.summary.selected_provider ?? {}} />
         <Breakdown title="Selection Reasons" values={report.summary.provider_selection_reason ?? {}} />
+        <Breakdown title="Quality Check Status" values={report.summary.quality_check_status ?? {}} />
+        <Breakdown title="Quality Gate Labels" values={report.summary.quality_check_quality ?? {}} />
         <Breakdown title="Parser Quality" values={report.summary.parser_quality ?? {}} />
         <Breakdown title="Parser Providers" values={report.summary.parser_provider ?? {}} />
         <Breakdown title="Graph Events" values={report.summary.run_event_status ?? {}} />
@@ -491,6 +497,60 @@ function OcrTab({ report }: { report: RunReport }) {
         <span>{report.ocr.document_count} documents, {report.ocr.page_count} pages</span>
       </div>
       <JsonTable title="OCR Documents" rows={report.ocr.documents} />
+    </section>
+  );
+}
+
+function ExtractionTab({ report, postgresReport }: { report: RunReport; postgresReport?: PostgresRunReport }) {
+  if (postgresReport) {
+    return <PostgresExtractionTab report={postgresReport} />;
+  }
+  return (
+    <section className="panel">
+      <div className="sectionHeader">
+        <div>
+          <h2>Extraction</h2>
+          <span>{report.extraction.count} extraction rows</span>
+        </div>
+      </div>
+      <div className="metrics compactMetrics">
+        <Metric label="Validations" value={String(report.extraction.validation_count ?? 0)} />
+        <Metric label="Repairs" value={String(report.extraction.repair_count ?? 0)} />
+        <Metric label="Quality gates" value={String(report.extraction.quality_gate_count ?? 0)} />
+      </div>
+      <div className="reportGrid">
+        <Breakdown title="Validation Status" values={recordNumberMap(report.extraction.validation_status ?? {})} />
+        <Breakdown title="Repair Status" values={recordNumberMap(report.extraction.repair_status ?? {})} />
+        <Breakdown title="Quality Gate" values={recordNumberMap(report.extraction.quality_gate_quality ?? {})} />
+      </div>
+      <JsonTable title="Extraction Rows" rows={report.extraction.items ?? []} />
+      <JsonTable title="Validation Rows" rows={Array.isArray(report.extraction.validations) ? report.extraction.validations : []} />
+      <JsonTable title="Repair Rows" rows={Array.isArray(report.extraction.repairs) ? report.extraction.repairs : []} />
+      <JsonTable title="Quality Gate Rows" rows={Array.isArray(report.extraction.quality_gates) ? report.extraction.quality_gates : []} />
+    </section>
+  );
+}
+
+function PostgresExtractionTab({ report }: { report: PostgresRunReport }) {
+  const rows = report.quality_checks ?? [];
+  return (
+    <section className="panel">
+      <div className="sectionHeader">
+        <div>
+          <h2>Extraction Quality</h2>
+          <span>{rows.length} validation, repair, quality-gate, and chunking rows</span>
+        </div>
+      </div>
+      <div className="metrics compactMetrics">
+        <Metric label="Rows" value={String(report.summary.quality_check_count ?? rows.length)} />
+        <Metric label="Needs review" value={String(report.summary.quality_review_required_count ?? 0)} />
+      </div>
+      <div className="reportGrid">
+        <Breakdown title="Check Type" values={report.summary.quality_check_type ?? {}} />
+        <Breakdown title="Status" values={report.summary.quality_check_status ?? {}} />
+        <Breakdown title="Quality" values={report.summary.quality_check_quality ?? {}} />
+      </div>
+      <JsonTable title="Quality Check Rows" rows={rows} />
     </section>
   );
 }

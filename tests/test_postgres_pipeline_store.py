@@ -68,6 +68,7 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
         "model_usage": 1,
         "provider_attempts": 1,
         "pipeline_provider_selections": 1,
+        "pipeline_quality_checks": 4,
         "pipeline_parser_results": 1,
         "document_segments": 1,
         "review_items": 1,
@@ -83,6 +84,7 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
     assert "insert into model_usage" in executed_sql
     assert "insert into provider_attempts" in executed_sql
     assert "insert into pipeline_provider_selections" in executed_sql
+    assert "insert into pipeline_quality_checks" in executed_sql
     assert "insert into pipeline_parser_results" in executed_sql
     assert "insert into document_segments" in executed_sql
     assert "insert into review_items_v2" in executed_sql
@@ -102,6 +104,8 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
     provider_selection_params = next(params for query, params in connection.executed if "insert into pipeline_provider_selections" in query)
     assert provider_selection_params[1:6] == ("/source/a.pdf", "Sunshine/a.pdf", "current", "current", "current")
     assert json.loads(provider_selection_params[6]) == ["current", "cortex_ocr"]
+    quality_check_params = next(params for query, params in connection.executed if "insert into pipeline_quality_checks" in query)
+    assert quality_check_params[1:6] == ("/source/a.pdf", "Sunshine/a.pdf", "extraction_validation", "valid", None)
     parser_params = next(params for query, params in connection.executed if "insert into pipeline_parser_results" in query)
     assert parser_params[1:9] == (
         "/source/a.pdf",
@@ -683,6 +687,7 @@ def test_postgres_pipeline_store_deletes_run_with_cascade_counts() -> None:
                         "model_usage": 4,
                         "provider_attempts": 5,
                         "pipeline_provider_selections": 6,
+                        "pipeline_quality_checks": 10,
                         "pipeline_parser_results": 9,
                         "document_segments": 6,
                         "review_items": 7,
@@ -711,6 +716,7 @@ def test_postgres_pipeline_store_deletes_run_with_cascade_counts() -> None:
         "model_usage": 4,
         "provider_attempts": 5,
         "pipeline_provider_selections": 6,
+        "pipeline_quality_checks": 10,
         "pipeline_parser_results": 9,
         "document_segments": 6,
         "review_items": 7,
@@ -755,6 +761,7 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
                             "model_usage_count": 1,
                             "provider_attempt_count": 1,
                             "provider_selection_count": 1,
+                            "quality_check_count": 1,
                             "parser_result_count": 1,
                             "document_segment_count": 1,
                         }
@@ -872,6 +879,30 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
                             "skipped_providers": [],
                             "provider_selection_reason": "preferred_docling_available",
                             "metadata": {"local_only": True},
+                            "created_at": None,
+                        }
+                    ]
+                )
+            if "from pipeline_quality_checks pqc" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "quality-id",
+                            "run_id": "run-id",
+                            "run_key": "run-report",
+                            "source_path": "/source/scrapbook.pdf",
+                            "relative_path": "History/scrapbook.pdf",
+                            "check_type": "quality_gate",
+                            "status": "ok",
+                            "quality": "ok",
+                            "requires_review": False,
+                            "can_chunk": True,
+                            "can_embed": True,
+                            "provider": "docling",
+                            "strategy": "ocr_page_level",
+                            "reason": None,
+                            "warnings": [],
+                            "result": {"quality": "ok"},
                             "created_at": None,
                         }
                     ]
@@ -1002,6 +1033,8 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     assert report["summary"]["model_call_count"] == 1
     assert report["summary"]["local_model_call_count"] == 1
     assert report["summary"]["provider_selection_count"] == 1
+    assert report["summary"]["quality_check_count"] == 1
+    assert report["summary"]["quality_review_required_count"] == 0
     assert report["summary"]["parser_result_count"] == 1
     assert report["summary"]["parser_status"] == {"extracted": 1}
     assert report["summary"]["parser_quality"] == {"ok": 1}
@@ -1018,6 +1051,8 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     assert report["summary"]["embedding_status"] == {"embedded": 1}
     assert report["summary"]["selected_provider"] == {"docling": 1}
     assert report["summary"]["provider_selection_reason"] == {"preferred_docling_available": 1}
+    assert report["summary"]["quality_check_type"] == {"quality_gate": 1}
+    assert report["summary"]["quality_check_status"] == {"ok": 1}
     assert report["results"][0]["top_tag_candidate"] == "scrapbooks"
     assert report["review_items"][0]["segment_id"] == "scrapbook:segment-001"
     assert report["model_usage"][0]["provider"] == "cortex"
@@ -1025,6 +1060,7 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     assert report["provider_attempts"][0]["provider"] == "docling"
     assert report["provider_selections"][0]["selected_provider"] == "docling"
     assert report["provider_selections"][0]["provider_chain"] == ["docling", "current", "cortex_ocr"]
+    assert report["quality_checks"][0]["check_type"] == "quality_gate"
     assert report["parser_results"][0]["provider"] == "docling"
     assert report["parser_results"][0]["page_text_coverage_rate"] == 0.92
     assert report["chunks"][0]["chunk_kind"] == "segment_text"
@@ -1940,6 +1976,58 @@ def _postgres_import_artifacts(tmp_path: Path) -> Path:
                 "skipped_providers": [],
                 "provider_selection_reason": "configured_provider_matches_preferred",
                 "local_only": True,
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-extraction-validations.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "status": "valid",
+                "strategy": "text_extraction",
+                "reason": None,
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-extraction-repairs.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "status": "not_needed",
+                "strategy": "text_extraction",
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-quality-gates.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "status": "ok",
+                "quality": "ok",
+                "requires_review": False,
+                "can_chunk": True,
+                "can_embed": True,
+                "provider": "current",
+                "strategy": "text_extraction",
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-chunking-results.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "status": "chunked",
+                "provider": "current",
+                "strategy": "structure_aware",
+                "warnings": [],
             }
         ],
     )
