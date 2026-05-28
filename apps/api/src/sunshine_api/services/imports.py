@@ -76,6 +76,31 @@ def import_provider_benchmark_output_to_postgres(
     return store.import_provider_benchmark_output(output_dir, benchmark_key=benchmark_key)
 
 
+def import_provider_benchmark_output_to_postgres_if_configured(
+    output_dir: str | Path,
+    *,
+    benchmark_key: str | None = None,
+) -> dict[str, Any]:
+    database_url = os.environ.get("DATABASE_URL") or os.environ.get("SUNSHINE_DATABASE_URL")
+    if not database_url:
+        return {
+            "import_status": "skipped",
+            "importer": "postgres_provider_benchmarks",
+            "output_dir": str(output_dir),
+            "benchmark_key": benchmark_key,
+            "reason": "postgres_database_url_not_configured",
+        }
+    return {
+        "import_status": "imported",
+        "importer": "postgres_provider_benchmarks",
+        "result": import_provider_benchmark_output_to_postgres(
+            output_dir,
+            benchmark_key=benchmark_key,
+            database_url=database_url,
+        ),
+    }
+
+
 def list_postgres_provider_benchmark_runs(
     *,
     limit: int = 50,
@@ -445,6 +470,7 @@ __all__ = [
     "import_langgraph_output_to_postgres",
     "import_langgraph_output_to_postgres_if_configured",
     "import_provider_benchmark_output_to_postgres",
+    "import_provider_benchmark_output_to_postgres_if_configured",
     "delete_postgres_pipeline_run_if_configured",
     "delete_postgres_golden_label",
     "export_postgres_golden_labels_sqlite",

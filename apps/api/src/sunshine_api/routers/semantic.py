@@ -18,6 +18,7 @@ from sunshine_api.services.imports import (
     export_postgres_golden_labels_sqlite,
     get_postgres_provider_benchmark_run,
     import_provider_benchmark_output_to_postgres,
+    import_provider_benchmark_output_to_postgres_if_configured,
     list_postgres_provider_benchmark_runs,
 )
 from sunshine_api.schemas import (
@@ -189,7 +190,8 @@ def provider_benchmark_run(request: ProviderBenchmarkRequest) -> dict[str, Any]:
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    return {"ok": True, **result}
+    postgres_import = _import_provider_benchmark_to_postgres_if_possible(request.output_dir)
+    return {"ok": True, **result, "postgres_import": postgres_import}
 
 
 def _run_provider_benchmark_background(request: ProviderBenchmarkRequest) -> None:
@@ -204,6 +206,10 @@ def _run_provider_benchmark_background(request: ProviderBenchmarkRequest) -> Non
             sample_limit=request.sample_limit,
             max_average_seconds=request.max_average_seconds,
         )
+        _write_provider_benchmark_postgres_import_status(
+            request.output_dir,
+            _import_provider_benchmark_to_postgres_if_possible(request.output_dir),
+        )
     except Exception as error:
         output_path = Path(str(request.output_dir))
         output_path.mkdir(parents=True, exist_ok=True)
@@ -216,6 +222,40 @@ def _run_provider_benchmark_background(request: ProviderBenchmarkRequest) -> Non
             "sample_categories": request.sample_categories or [],
         }
         (output_path / "provider-benchmark-background-error.json").write_text(json.dumps(error_row, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        _write_provider_benchmark_postgres_import_status(
+            request.output_dir,
+            _import_provider_benchmark_to_postgres_if_possible(request.output_dir),
+        )
+
+
+def _import_provider_benchmark_to_postgres_if_possible(output_dir: str | None) -> dict[str, Any]:
+    if not output_dir:
+        return {
+            "import_status": "skipped",
+            "importer": "postgres_provider_benchmarks",
+            "reason": "output_dir_not_configured",
+        }
+    try:
+        return import_provider_benchmark_output_to_postgres_if_configured(output_dir)
+    except Exception as error:
+        return {
+            "import_status": "failed",
+            "importer": "postgres_provider_benchmarks",
+            "output_dir": output_dir,
+            "error_type": error.__class__.__name__,
+            "error": str(error),
+        }
+
+
+def _write_provider_benchmark_postgres_import_status(output_dir: str | None, status: dict[str, Any]) -> None:
+    if not output_dir:
+        return
+    output_path = Path(str(output_dir))
+    output_path.mkdir(parents=True, exist_ok=True)
+    (output_path / "provider-benchmark-postgres-import.json").write_text(
+        json.dumps(status, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 @router.get("/admin/provider-benchmarks/latest")
@@ -227,6 +267,7 @@ def provider_benchmark_latest(output_dir: str) -> dict[str, Any]:
     recommendations_path = output_path / "provider-benchmark-recommendations.jsonl"
     manifest_path = output_path / "artifact-manifest.json"
     background_error_path = output_path / "provider-benchmark-background-error.json"
+    postgres_import_path = output_path / "provider-benchmark-postgres-import.json"
     artifact_exists = (
         summary_path.exists()
         or results_path.exists()
@@ -234,6 +275,7 @@ def provider_benchmark_latest(output_dir: str) -> dict[str, Any]:
         or recommendations_path.exists()
         or manifest_path.exists()
         or background_error_path.exists()
+        or postgres_import_path.exists()
     )
     if not artifact_exists:
         return {"ok": False, "exists": False, "output_dir": str(output_path)}
@@ -262,6 +304,7 @@ def provider_benchmark_latest(output_dir: str) -> dict[str, Any]:
             "parser_results": parser_results,
             "artifact_manifest": _read_optional_json(manifest_path),
             "background_error": _read_optional_json(background_error_path),
+            "postgres_import": _read_optional_json(postgres_import_path),
         }
     try:
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
@@ -278,6 +321,7 @@ def provider_benchmark_latest(output_dir: str) -> dict[str, Any]:
         "parser_results": _read_eval_jsonl(parser_results_path, limit=500),
         "artifact_manifest": _read_optional_json(manifest_path),
         "background_error": _read_optional_json(background_error_path),
+        "postgres_import": _read_optional_json(postgres_import_path),
     }
 
 

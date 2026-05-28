@@ -298,6 +298,7 @@ def test_provider_benchmark_api_runs_current_provider(tmp_path: Path) -> None:
     assert run.status_code == 200
     assert run.json()["summary"]["by_provider"]["current"] == 1
     assert run.json()["summary"]["local_only"] is True
+    assert run.json()["postgres_import"]["import_status"] == "skipped"
     assert latest.status_code == 200
     assert latest.json()["summary"]["result_count"] == 1
     assert latest.json()["recommendations"][0]["provider"] == "current"
@@ -311,6 +312,7 @@ def test_provider_benchmark_api_runs_current_provider(tmp_path: Path) -> None:
 def test_provider_benchmark_api_can_start_background_run(tmp_path: Path, monkeypatch) -> None:
     output_dir = tmp_path / "provider-benchmark"
     called = threading.Event()
+    imported = threading.Event()
 
     def fake_benchmark(*args, **kwargs) -> dict:
         Path(kwargs["output_dir"]).mkdir(parents=True, exist_ok=True)
@@ -321,7 +323,12 @@ def test_provider_benchmark_api_can_start_background_run(tmp_path: Path, monkeyp
         called.set()
         return {"summary": {}, "results": [], "parser_results": [], "recommendations": []}
 
+    def fake_import(output_dir: str) -> dict[str, Any]:
+        imported.set()
+        return {"import_status": "imported", "output_dir": output_dir, "result": {"benchmark_key": "provider-benchmark"}}
+
     monkeypatch.setattr("sunshine_api.routers.semantic.benchmark_extraction_providers", fake_benchmark)
+    monkeypatch.setattr("sunshine_api.routers.semantic.import_provider_benchmark_output_to_postgres_if_configured", fake_import)
 
     response = TestClient(app).post(
         "/admin/provider-benchmarks/run",
@@ -332,6 +339,9 @@ def test_provider_benchmark_api_can_start_background_run(tmp_path: Path, monkeyp
     assert response.json()["status"] == "started"
     assert response.json()["background"] is True
     assert called.wait(timeout=2)
+    assert imported.wait(timeout=2)
+    import_status = json.loads((output_dir / "provider-benchmark-postgres-import.json").read_text(encoding="utf-8"))
+    assert import_status["import_status"] == "imported"
 
 
 def test_provider_benchmark_postgres_import_and_list_wrap_services(monkeypatch) -> None:
