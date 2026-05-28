@@ -351,6 +351,12 @@ Success criteria:
 - Corrected human labels override heuristic classification.
 - Ambiguous class routes to review or safe extraction plan.
 
+Current implementation:
+
+- `services/classification/content_type.py` owns broad content-class policy using suffix, MIME, and file-probe signals.
+- `graph/nodes/classification.py` preserves injected/corrected `content_class` state and only calls the service when classification is missing.
+- Probe signals route likely image-only PDFs to `scanned_document` so they plan OCR instead of trusting empty native PDF text.
+
 ### 5. `plan_extraction`
 
 Purpose:
@@ -384,6 +390,12 @@ Success criteria:
 - Provider chain is visible before execution.
 - No third-party API calls.
 - Technical/deferred formats remain safely deferred.
+
+Current implementation:
+
+- `services/classification/extraction_plan.py` owns extraction strategy planning and provider hint policy.
+- Plans include strategy, subtype, OCR requirement, defer reason, probe status, and provider hints consumed by provider selection.
+- Graph nodes preserve injected/corrected extraction plans, so reviewed plans override heuristic planning.
 
 ### 6. `select_extraction_provider`
 
@@ -648,6 +660,12 @@ Success criteria:
 - Tables/pages survive parser swaps.
 - Raw provider output remains inspectable.
 
+Current implementation:
+
+- `domain/document_structure.py` defines provider-neutral normalized structure rows.
+- `services/structure.py` normalizes text, OCR page rows, and Docling metadata into pages, sections, placeholder table/figure rows, and provider metadata.
+- Graph writes `sample-structure.jsonl` after quality gating and before segmentation/chunking.
+
 ### 12. `propose_document_segments`
 
 Purpose:
@@ -850,6 +868,12 @@ Success criteria:
 - Metadata filters work.
 - Search results include citations.
 - Dashboard can rebuild index per run or collection.
+
+Current implementation:
+
+- `services/indexing/chunk_indexer.py` owns normalized indexing result shaping.
+- `providers/vectorstores/base.py` defines the vector-store provider contract, with `NoopVectorStoreProvider` for side-effect-free runs and `QdrantVectorStoreProvider` for configured local indexing.
+- Graph writes `sample-indexing.jsonl` with provider status, chunk counts, embedding counts, placeholder counts, and warnings.
 
 ### 16. `retrieve_labeled_examples`
 
