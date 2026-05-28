@@ -69,7 +69,7 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
   const data = report.data;
   const run = data?.run;
   const running = isActive(run?.status);
-  const modelSummary = data?.model_usage.summary;
+  const modelSummary = data?.model_usage?.summary;
   const fileRows = useMemo(() => data?.files ?? [], [data?.files]);
 
   if (report.isLoading) {
@@ -83,6 +83,8 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
       </main>
     );
   }
+
+  const statusBuckets = data.status_buckets ?? (data.overview.status_buckets as Record<string, number> | undefined) ?? {};
 
   return (
     <main className="pageShell">
@@ -147,10 +149,10 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
 
       <section className="metrics">
         <Metric label="Processed" value={formatProcessed(data)} />
-        <Metric label="Accepted" value={String(data.status_buckets.accepted ?? 0)} />
+        <Metric label="Accepted" value={String(statusBuckets.accepted ?? 0)} />
         <Metric label="Review required" value={String(data.overview.review_required_count ?? 0)} />
         <Metric label="Failed" value={String(data.overview.failed_count ?? 0)} />
-        <Metric label="Deferred" value={String(data.status_buckets.deferred ?? 0)} />
+        <Metric label="Deferred" value={String(statusBuckets.deferred ?? 0)} />
         <Metric label="Model calls" value={String(modelSummary?.total_calls ?? 0)} />
         <Metric label="External cost" value={formatCost(modelSummary?.estimated_external_cost_usd ?? 0)} />
       </section>

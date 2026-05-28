@@ -329,7 +329,7 @@ export type RunReport = {
   run: PipelineRun;
   progress: PipelineRunProgress;
   overview: Record<string, unknown>;
-  status_buckets: Record<string, number>;
+  status_buckets?: Record<string, number>;
   distributions: Record<string, Record<string, number>>;
   files: Array<Record<string, unknown>>;
   review_queue: {
