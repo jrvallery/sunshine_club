@@ -20,7 +20,6 @@ from sunshine_extraction.sample_pipeline import (
     SampleFile,
     TaxonomyOptions,
     _chat_response_usage_fields,
-    _gemini_usage_fields,
     assign_tag_candidates,
     build_llm_tag_prompt,
     build_ocr_summary,
@@ -74,12 +73,7 @@ class _TokenUsageResponse:
     response_metadata = {"token_usage": {"prompt_tokens": 13, "completion_tokens": 5, "total_tokens": 18}}
 
 
-def test_llm_usage_helpers_normalize_gemini_and_openai_compatible_tokens() -> None:
-    assert _gemini_usage_fields({"usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 4, "totalTokenCount": 14}}) == {
-        "input_tokens": 10,
-        "output_tokens": 4,
-        "total_tokens": 14,
-    }
+def test_llm_usage_helpers_normalize_openai_compatible_tokens() -> None:
     assert _chat_response_usage_fields(_UsageResponse()) == {
         "input_tokens": 11,
         "output_tokens": 7,
@@ -834,6 +828,21 @@ def test_llm_tag_inspector_factory_creates_cortex_provider(monkeypatch) -> None:
     assert inspector.base_url == "https://cortex.vallery.net/v1"
 
 
+def test_llm_tag_inspector_auto_does_not_select_gemini(monkeypatch) -> None:
+    monkeypatch.delenv("CORTEX_API_KEY", raising=False)
+    monkeypatch.delenv("CORTEX_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("CORTEX_MODEL", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+
+    inspector = llm_tag_inspector_from_env(provider_override="auto")
+
+    assert isinstance(inspector, LLMTagInspector)
+    assert not isinstance(inspector, OpenAICompatibleLLMTagInspector)
+    assert inspector.model == "disabled"
+
+
 def test_load_pipeline_env_normalizes_cortex_aliases(tmp_path: Path, monkeypatch) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text("CORTEX_BASE_URL=https://cortex.vallery.net\nCORTEX_API_KEY=test-secret\n", encoding="utf-8")
@@ -852,12 +861,25 @@ def test_ocr_executor_factory_uses_cortex_native_ocr(monkeypatch) -> None:
     monkeypatch.setenv("SUNSHINE_OCR_FALLBACK_PROVIDER", "cortex")
     monkeypatch.setenv("CORTEX_API_KEY", "test-cortex-key")
     monkeypatch.setenv("CORTEX_BASE_URL", "https://cortex.vallery.net")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API", raising=False)
+
+    executor = ocr_executor_from_env()
+
+    assert isinstance(executor, CortexNativeOcrExecutor)
+    assert executor.base_url == "https://cortex.vallery.net"
+
+
+def test_ocr_executor_factory_uses_cortex_primary_with_openai_escalation(monkeypatch) -> None:
+    monkeypatch.setenv("SUNSHINE_OCR_FALLBACK_PROVIDER", "cortex")
+    monkeypatch.setenv("CORTEX_API_KEY", "test-cortex-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
 
     executor = ocr_executor_from_env()
 
     assert isinstance(executor, EscalatingOcrExecutor)
-    assert isinstance(executor.fallback, CortexNativeOcrExecutor)
-    assert executor.fallback.base_url == "https://cortex.vallery.net"
+    assert isinstance(executor.primary, CortexNativeOcrExecutor)
+    assert executor.fallback.engine_name == "openai:gpt-4.1-mini"
 
 
 def test_cortex_native_ocr_uploads_file_and_maps_pages(tmp_path: Path, monkeypatch) -> None:
@@ -894,6 +916,7 @@ def test_cortex_native_ocr_uploads_file_and_maps_pages(tmp_path: Path, monkeypat
     assert pages[0].text == "Meeting minutes"
     assert pages[0].mean_confidence == 93.0
     assert pages[0].ocr_engine == "cortex:paddleocr-ppocr-cpu"
+    assert "ocr_model_used:cortex:paddleocr-ppocr-cpu" in pages[0].warnings
 
 
 def test_load_pipeline_env_normalizes_openai_api_alias(tmp_path: Path, monkeypatch) -> None:

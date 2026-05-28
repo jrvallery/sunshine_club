@@ -14,14 +14,25 @@ def _ocr_model_usage_rows(state: DocumentPipelineState, pages: list[dict[str, An
     rows: list[dict[str, Any]] = []
     for page in pages:
         warning = _first_warning_with_prefix(page.get("warnings", []), "ocr_fallback_used:")
+        purpose = "ocr_fallback"
+        prefix = "ocr_fallback_used:"
         if not warning:
-            continue
-        provider, model = _provider_model_from_engine(warning.removeprefix("ocr_fallback_used:"))
+            warning = _first_warning_with_prefix(page.get("warnings", []), "ocr_model_used:")
+            purpose = "ocr"
+            prefix = "ocr_model_used:"
+        if not warning:
+            engine = str(page.get("ocr_engine") or "")
+            if not engine or engine == "tesseract":
+                continue
+            warning = f"ocr_model_used:{engine}"
+            purpose = "ocr"
+            prefix = "ocr_model_used:"
+        provider, model = _provider_model_from_engine(warning.removeprefix(prefix))
         rows.append(
             _model_usage_row(
                 state,
                 node=node,
-                purpose="ocr_fallback",
+                purpose=purpose,
                 provider=provider,
                 model=model,
                 status="ok" if page.get("ocr_status") == "ok" else str(page.get("ocr_status") or "unknown"),

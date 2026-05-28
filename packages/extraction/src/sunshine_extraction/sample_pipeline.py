@@ -45,13 +45,11 @@ DEFAULT_OUTPUT_DIR = DEFAULT_MANIFEST_ROOT / "sample-pipeline"
 DEFAULT_CORRECTED_PATH = DEFAULT_MANIFEST_ROOT / "corrected-content-classes.jsonl"
 DEFAULT_PLAN_PATH = DEFAULT_MANIFEST_ROOT / "extraction-plan.jsonl"
 DEFAULT_TAXONOMY_PATH = Path("docs/Sunshine_Taxonomy_Seed_v0.1_2026-05-25.json")
-DEFAULT_GEMINI_TAG_MODEL = "gemini-2.5-flash"
 DEFAULT_CORTEX_BASE_URL = "https://cortex.vallery.net"
 DEFAULT_CORTEX_MODEL = "gemma4-26b"
 DEFAULT_CORTEX_OCR_MODEL = "paddleocr-ppocr-cpu"
 DEFAULT_OPENAI_TAG_MODEL = "gpt-4.1-mini"
 DEFAULT_OPENAI_OCR_MODEL = "gpt-4.1-mini"
-GEMINI_GENERATE_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 OCR_OK_CONFIDENCE_THRESHOLD = 75.0
 OCR_MIN_TEXT_LENGTH = 100
 OCR_MAX_FAILED_PAGE_RATE = 0.2
@@ -361,6 +359,7 @@ class OpenAICompatibleVisionOcrExecutor(OcrExecutor):
             page_start = time.monotonic()
             try:
                 text, confidence, page_warnings = self._ocr_image(image)
+                model_warnings = [f"ocr_model_used:{self.engine_name}", *warnings, *page_warnings]
                 pages.append(
                     OcrPageResult(
                         source_path=sample.source_path,
@@ -378,7 +377,7 @@ class OpenAICompatibleVisionOcrExecutor(OcrExecutor):
                         image_width=image.width,
                         image_height=image.height,
                         seconds=round(time.monotonic() - page_start, 4),
-                        warnings=[*warnings, *page_warnings] if not text.strip() else [*warnings, *page_warnings],
+                        warnings=model_warnings,
                     )
                 )
             except Exception as error:  # noqa: BLE001
@@ -399,7 +398,7 @@ class OpenAICompatibleVisionOcrExecutor(OcrExecutor):
                         image_width=image.width,
                         image_height=image.height,
                         seconds=round(time.monotonic() - page_start, 4),
-                        warnings=[*warnings, f"ocr_fallback_page_failed:{type(error).__name__}"],
+                        warnings=[f"ocr_model_used:{self.engine_name}", *warnings, f"ocr_fallback_page_failed:{type(error).__name__}"],
                     )
                 )
             finally:
@@ -458,7 +457,7 @@ class CortexNativeOcrExecutor(OcrExecutor):
         timeout_seconds: float = 300,
     ) -> None:
         if not api_key:
-            raise ValueError("CORTEX_API_KEY is required for Cortex OCR fallback")
+            raise ValueError("CORTEX_API_KEY is required for Cortex OCR")
         self.api_key = api_key
         self.base_url = _cortex_root_base_url(base_url)
         self.model = model
@@ -491,7 +490,7 @@ class CortexNativeOcrExecutor(OcrExecutor):
             page_number = int(page_payload.get("page_number") or page_payload.get("page") or index)
             text = str(page_payload.get("text") or page_payload.get("content") or "").strip()
             confidence = _normalize_ocr_confidence(page_payload.get("confidence") or page_payload.get("mean_confidence"))
-            warnings = [f"ocr_fallback_used:{self.engine_name}"]
+            warnings = [f"ocr_model_used:{self.engine_name}"]
             notes = page_payload.get("notes")
             if isinstance(notes, str) and notes.strip():
                 warnings.append(f"ocr_fallback_note:{_shorten(notes, 120)}")
@@ -554,75 +553,6 @@ class LLMTagInspector:
             "needs_review": False,
             "warning": None,
         }
-
-
-class GeminiLLMTagInspector(LLMTagInspector):
-    def __init__(self, *, api_key: str, model: str = DEFAULT_GEMINI_TAG_MODEL, timeout_seconds: float = 45) -> None:
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY is required for Gemini LLM tag inspection")
-        self.api_key = api_key
-        self.model = model
-        self.timeout_seconds = timeout_seconds
-
-    def inspect(
-        self,
-        *,
-        sample: SampleFile,
-        corrected: dict[str, Any],
-        plan: dict[str, Any],
-        extraction: ExtractionResult,
-        taxonomy: TaxonomyOptions,
-        deterministic_candidates: list[dict[str, Any]],
-        semantic_examples: list[dict[str, Any]] | None = None,
-    ) -> dict[str, Any]:
-        prompt = build_llm_tag_prompt(sample, corrected, plan, extraction, taxonomy, deterministic_candidates, semantic_examples or [])
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "responseMimeType": "application/json",
-                "responseJsonSchema": llm_tag_schema(taxonomy),
-            },
-        }
-        request = urllib.request.Request(
-            GEMINI_GENERATE_URL_TEMPLATE.format(model=self.model),
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json", "x-goog-api-key": self.api_key},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
-                response_payload = json.loads(response.read().decode("utf-8"))
-            text = response_payload["candidates"][0]["content"]["parts"][0]["text"]
-            inspection = normalize_llm_inspection(json.loads(text), taxonomy, model=self.model, provider="gemini")
-            inspection.update(_gemini_usage_fields(response_payload))
-            return inspection
-        except urllib.error.HTTPError as error:
-            body = error.read().decode("utf-8", errors="replace")
-            return {
-                "llm_status": "failed",
-                "model": self.model,
-                "provider": "gemini",
-                "primary_tag": None,
-                "secondary_tags": [],
-                "confidence": 0.0,
-                "evidence": [],
-                "rationale": "LLM tag inspection failed.",
-                "needs_review": True,
-                "warning": f"llm_tag_inspection_failed:HTTPError:{error.code}:{_shorten(body, 500)}",
-            }
-        except (KeyError, IndexError, json.JSONDecodeError, urllib.error.URLError) as error:
-            return {
-                "llm_status": "failed",
-                "model": self.model,
-                "provider": "gemini",
-                "primary_tag": None,
-                "secondary_tags": [],
-                "confidence": 0.0,
-                "evidence": [],
-                "rationale": "LLM tag inspection failed.",
-                "needs_review": True,
-                "warning": f"llm_tag_inspection_failed:{type(error).__name__}",
-            }
 
 
 class OpenAICompatibleLLMTagInspector(LLMTagInspector):
@@ -1129,19 +1059,9 @@ def llm_tag_inspector_from_env(*, enabled: bool = True, provider_override: str |
     if provider_name == "auto":
         if os.environ.get("CORTEX_API_KEY") or os.environ.get("CORTEX_OPENAI_API_KEY") or os.environ.get("CORTEX_MODEL"):
             provider_name = "cortex"
-        elif os.environ.get("GEMINI_API_KEY"):
-            provider_name = "gemini"
         elif os.environ.get("OPENAI_API_KEY") or os.environ.get("OPENAI_API"):
             provider_name = "openai"
         else:
-            return LLMTagInspector()
-    if provider_name == "gemini":
-        try:
-            return GeminiLLMTagInspector(
-                api_key=os.environ.get("GEMINI_API_KEY", ""),
-                model=os.environ.get("SUNSHINE_LLM_TAG_MODEL", DEFAULT_GEMINI_TAG_MODEL),
-            )
-        except ValueError:
             return LLMTagInspector()
     if provider_name in {"cortex", "openai-compatible"}:
         try:
@@ -1168,13 +1088,32 @@ def llm_tag_inspector_from_env(*, enabled: bool = True, provider_override: str |
 
 
 def ocr_executor_from_env(*, fallback_provider_override: str | None = None) -> OcrExecutor:
-    primary = LocalTesseractOcrExecutor()
-    provider_name = (fallback_provider_override or os.environ.get("SUNSHINE_OCR_FALLBACK_PROVIDER", "disabled")).strip().lower()
-    if provider_name in {"", "disabled", "none"}:
-        return primary
+    provider_name = (fallback_provider_override or os.environ.get("SUNSHINE_OCR_FALLBACK_PROVIDER", "cortex")).strip().lower()
+    if provider_name in {"", "disabled", "none", "local"}:
+        return LocalTesseractOcrExecutor()
     timeout_seconds = float(os.environ.get("SUNSHINE_OCR_FALLBACK_TIMEOUT_SECONDS", "120"))
     max_pages = int(os.environ.get("SUNSHINE_OCR_FALLBACK_MAX_PAGES", str(OCR_FALLBACK_DEFAULT_MAX_PAGES)))
     if provider_name == "openai":
+        try:
+            return OpenAICompatibleVisionOcrExecutor(
+                api_key=os.environ.get("OPENAI_API_KEY") or os.environ.get("OPENAI_API", ""),
+                model=os.environ.get("OPENAI_OCR_MODEL", DEFAULT_OPENAI_OCR_MODEL),
+                provider_name="openai",
+                timeout_seconds=timeout_seconds,
+                max_pages=max_pages,
+            )
+        except ValueError:
+            return LocalTesseractOcrExecutor()
+    if provider_name in {"cortex", "openai-compatible"}:
+        try:
+            primary = CortexNativeOcrExecutor(
+                api_key=os.environ.get("SUNSHINE_OCR_FALLBACK_API_KEY") or os.environ.get("CORTEX_API_KEY") or os.environ.get("CORTEX_OPENAI_API_KEY", ""),
+                model=os.environ.get("SUNSHINE_OCR_FALLBACK_MODEL") or os.environ.get("CORTEX_OCR_MODEL", DEFAULT_CORTEX_OCR_MODEL),
+                base_url=os.environ.get("SUNSHINE_OCR_FALLBACK_BASE_URL") or os.environ.get("CORTEX_BASE_URL", DEFAULT_CORTEX_BASE_URL),
+                timeout_seconds=timeout_seconds,
+            )
+        except ValueError:
+            return LocalTesseractOcrExecutor()
         try:
             fallback = OpenAICompatibleVisionOcrExecutor(
                 api_key=os.environ.get("OPENAI_API_KEY") or os.environ.get("OPENAI_API", ""),
@@ -1183,21 +1122,10 @@ def ocr_executor_from_env(*, fallback_provider_override: str | None = None) -> O
                 timeout_seconds=timeout_seconds,
                 max_pages=max_pages,
             )
-            return EscalatingOcrExecutor(primary, fallback)
         except ValueError:
             return primary
-    if provider_name in {"cortex", "openai-compatible", "local"}:
-        try:
-            fallback = CortexNativeOcrExecutor(
-                api_key=os.environ.get("SUNSHINE_OCR_FALLBACK_API_KEY") or os.environ.get("CORTEX_API_KEY") or os.environ.get("CORTEX_OPENAI_API_KEY", ""),
-                model=os.environ.get("SUNSHINE_OCR_FALLBACK_MODEL") or os.environ.get("CORTEX_OCR_MODEL", DEFAULT_CORTEX_OCR_MODEL),
-                base_url=os.environ.get("SUNSHINE_OCR_FALLBACK_BASE_URL") or os.environ.get("CORTEX_BASE_URL", DEFAULT_CORTEX_BASE_URL),
-                timeout_seconds=timeout_seconds,
-            )
-            return EscalatingOcrExecutor(primary, fallback)
-        except ValueError:
-            return primary
-    return primary
+        return EscalatingOcrExecutor(primary, fallback)
+    return LocalTesseractOcrExecutor()
 
 
 def load_taxonomy_options(path: str | Path) -> TaxonomyOptions:
@@ -1349,25 +1277,6 @@ def _message_content_to_text(content: Any) -> str:
                 parts.append(item["text"])
         return "\n".join(parts)
     return str(content)
-
-
-def _gemini_usage_fields(response_payload: dict[str, Any]) -> dict[str, int]:
-    usage = response_payload.get("usageMetadata")
-    if not isinstance(usage, dict):
-        return {}
-    fields: dict[str, int] = {}
-    prompt_tokens = _optional_positive_int(usage.get("promptTokenCount"))
-    output_tokens = _optional_positive_int(usage.get("candidatesTokenCount"))
-    total_tokens = _optional_positive_int(usage.get("totalTokenCount"))
-    if prompt_tokens is not None:
-        fields["input_tokens"] = prompt_tokens
-    if output_tokens is not None:
-        fields["output_tokens"] = output_tokens
-    if total_tokens is not None:
-        fields["total_tokens"] = total_tokens
-    elif prompt_tokens is not None or output_tokens is not None:
-        fields["total_tokens"] = int(prompt_tokens or 0) + int(output_tokens or 0)
-    return fields
 
 
 def _chat_response_usage_fields(response: Any) -> dict[str, int]:
@@ -2464,13 +2373,13 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--llm-tag-provider",
-        choices=["auto", "gemini", "cortex", "openai", "disabled"],
+        choices=["auto", "cortex", "openai", "disabled"],
         help="Override SUNSHINE_LLM_TAG_PROVIDER for this run.",
     )
     parser.add_argument(
         "--ocr-fallback-provider",
-        choices=["openai", "cortex", "openai-compatible", "local", "disabled"],
-        help="Escalate poor, empty, failed, or suspicious local OCR to this fallback provider.",
+        choices=["openai", "cortex", "disabled"],
+        help="OCR provider. cortex uses Cortex first and escalates poor, empty, failed, or suspicious OCR to OpenAI when configured.",
     )
     parser.add_argument(
         "--quiet",
