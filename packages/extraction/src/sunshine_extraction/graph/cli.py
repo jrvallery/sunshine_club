@@ -33,7 +33,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--plan", default=str(DEFAULT_PLAN_PATH))
     parser.add_argument("--taxonomy", default=str(DEFAULT_TAXONOMY_PATH))
     parser.add_argument("--limit", type=int)
-    parser.add_argument("--extraction-provider", choices=["current", "docling"])
+    parser.add_argument("--extraction-provider", choices=["current", "docling", "mineru", "ragflow_deepdoc", "unstructured"])
     parser.add_argument("--embedding-provider", choices=["cortex", "placeholder", "disabled"])
     parser.add_argument("--enable-llm-tags", action="store_true")
     parser.add_argument("--llm-tag-provider", choices=["auto", "cortex", "disabled"])

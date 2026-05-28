@@ -599,6 +599,9 @@ def test_extraction_provider_factory_selects_current_and_docling(monkeypatch: py
     monkeypatch.setenv("SUNSHINE_EXTRACTION_PROVIDER", "current")
     assert isinstance(extraction_provider_from_env(), CurrentExtractionProvider)
     assert isinstance(extraction_provider_from_env("docling"), DoclingExtractionProvider)
+    assert isinstance(extraction_provider_from_env("mineru"), MinerUExtractionProvider)
+    assert isinstance(extraction_provider_from_env("ragflow_deepdoc"), RAGFlowDeepDocExtractionProvider)
+    assert isinstance(extraction_provider_from_env("unstructured"), UnstructuredExtractionProvider)
 
 
 def test_optional_extraction_provider_boundaries_are_local_only(tmp_path: Path) -> None:

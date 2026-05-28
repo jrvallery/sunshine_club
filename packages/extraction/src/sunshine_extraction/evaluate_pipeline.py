@@ -1595,7 +1595,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--taxonomy-path", default=DEFAULT_TAXONOMY_PATH)
     parser.add_argument("--semantic-index-path", default=DEFAULT_INDEX_DB)
     parser.add_argument("--disable-semantic-index", action="store_true")
-    parser.add_argument("--extraction-provider", choices=["current", "docling"])
+    parser.add_argument("--extraction-provider", choices=["current", "docling", "mineru", "ragflow_deepdoc", "unstructured"])
     parser.add_argument("--embedding-provider", choices=["placeholder", "cortex"])
     parser.add_argument("--enable-llm-tags", action="store_true")
     parser.add_argument("--enable-ocr", action="store_true")
