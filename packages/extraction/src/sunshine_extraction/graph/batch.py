@@ -64,6 +64,7 @@ from sunshine_extraction.sample_pipeline import (
 
 from sunshine_extraction.graph.runtime import run_document_graph
 from sunshine_extraction.graph.utils import _progress, _write_jsonl
+from sunshine_extraction.providers.chunking import ChunkingProvider
 from sunshine_extraction.providers.extraction import ExtractionProvider
 from sunshine_extraction.services.artifact_manifest import write_artifact_manifest
 
@@ -76,6 +77,7 @@ def run_document_batch(
     taxonomy_path: str | Path = DEFAULT_TAXONOMY_PATH,
     limit: int | None = None,
     extraction_provider: ExtractionProvider | None = None,
+    chunking_provider: ChunkingProvider | None = None,
     embedding_provider: EmbeddingProvider | None = None,
     llm_tag_inspector: LLMTagInspector | None = None,
     ocr_executor: OcrExecutor | None = None,
@@ -118,6 +120,7 @@ def run_document_batch(
         "sample-ocr-documents.jsonl": [],
         "sample-structure.jsonl": [],
         "sample-document-segments.jsonl": [],
+        "sample-chunking-results.jsonl": [],
         "sample-chunks.jsonl": [],
         "sample-embeddings.jsonl": [],
         "sample-indexing.jsonl": [],
@@ -165,6 +168,7 @@ def run_document_batch(
                         retry_delay_seconds,
                         progress,
                         extraction_provider,
+                        chunking_provider,
                         embedding_provider,
                         llm_tag_inspector,
                         ocr_executor,
@@ -190,6 +194,7 @@ def run_document_batch(
                         retry_delay_seconds,
                         progress,
                         extraction_provider,
+                        chunking_provider,
                         embedding_provider,
                         llm_tag_inspector,
                         ocr_executor,
@@ -276,6 +281,7 @@ def _run_batch_item(
     retry_delay_seconds: float,
     progress: bool,
     extraction_provider: ExtractionProvider | None,
+    chunking_provider: ChunkingProvider | None,
     embedding_provider: EmbeddingProvider | None,
     llm_tag_inspector: LLMTagInspector | None,
     ocr_executor: OcrExecutor | None,
@@ -296,6 +302,7 @@ def _run_batch_item(
         sample_number=sample.sample_number or index,
         index_metadata=sample.index_row.get("metadata", {}),
         extraction_provider=extraction_provider,
+        chunking_provider=chunking_provider,
         embedding_provider=embedding_provider,
         llm_tag_inspector=llm_tag_inspector,
         ocr_executor=ocr_executor,
@@ -349,6 +356,8 @@ def _append_batch_rows(artifact_rows: dict[str, list[dict[str, Any]]], result: d
     if result.get("document_structure"):
         artifact_rows["sample-structure.jsonl"].append(result["document_structure"])
     artifact_rows["sample-document-segments.jsonl"].extend(result.get("document_segments", []))
+    if result.get("chunking_result"):
+        artifact_rows["sample-chunking-results.jsonl"].append(result["chunking_result"])
     artifact_rows["sample-chunks.jsonl"].extend(result.get("chunks", []))
     artifact_rows["sample-embeddings.jsonl"].extend(result.get("embeddings", []))
     if result.get("indexing_result"):

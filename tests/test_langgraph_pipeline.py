@@ -170,6 +170,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     llm_rows = [json.loads(line) for line in (output_dir / "sample-llm-tag-inspections.jsonl").read_text().splitlines()]
     model_usage_rows = [json.loads(line) for line in (output_dir / "sample-model-usage.jsonl").read_text().splitlines()]
     segment_rows = [json.loads(line) for line in (output_dir / "sample-document-segments.jsonl").read_text().splitlines()]
+    chunking_rows = [json.loads(line) for line in (output_dir / "sample-chunking-results.jsonl").read_text().splitlines()]
     structure_rows = [json.loads(line) for line in (output_dir / "sample-structure.jsonl").read_text().splitlines()]
     provider_attempt_rows = [json.loads(line) for line in (output_dir / "sample-provider-attempts.jsonl").read_text().splitlines()]
     source_identity_rows = [json.loads(line) for line in (output_dir / "sample-source-identity.jsonl").read_text().splitlines()]
@@ -208,6 +209,10 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert llm_rows[0]["primary_tag"] == "annual_spring_tea"
     assert segment_rows[0]["segment_type"] == "single_document"
     assert segment_rows[0]["requires_segment_review"] is False
+    assert chunking_rows[0]["provider"] == "current"
+    assert chunking_rows[0]["status"] == "chunked"
+    assert chunking_rows[0]["chunk_count"] == 1
+    assert chunking_rows[0]["chunking_strategy"] == "fixed_size_text"
     assert structure_rows[0]["provider"] == "current"
     assert structure_rows[0]["text_length"] == len("Annual Sunshine Tea guest list and event notes.")
     assert structure_rows[0]["pages"][0]["quality"] == "text"
@@ -231,6 +236,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert manifest_by_name["sample-pipeline-results.jsonl"]["row_count"] == 1
     assert manifest_by_name["sample-route-decisions.jsonl"]["row_count"] == 1
     assert manifest_by_name["sample-document-segments.jsonl"]["row_count"] == 1
+    assert manifest_by_name["sample-chunking-results.jsonl"]["row_count"] == 1
     assert manifest_by_name["sample-import-results.jsonl"]["row_count"] == 1
     assert len(manifest_by_name["graph-result.json"]["sha256"]) == 64
     assert manifest_by_name["artifact-manifest.json"]["note"] == "self_referential_manifest"
@@ -550,6 +556,7 @@ def test_langgraph_batch_aggregates_artifacts_and_continues_after_file_failure(t
     assert pipeline_summary["max_concurrency"] == 2
     assert manifest_by_name["sample-pipeline-results.jsonl"]["row_count"] == 2
     assert manifest_by_name["sample-review-queue.jsonl"]["row_count"] == 1
+    assert manifest_by_name["sample-chunking-results.jsonl"]["row_count"] == 1
     assert manifest_by_name["graph-batch-summary.json"]["kind"] == "json"
     assert len(manifest_by_name["sample-pipeline-summary.json"]["sha256"]) == 64
     assert (output_dir / "graph-runs" / "00001" / "graph-result.json").exists()

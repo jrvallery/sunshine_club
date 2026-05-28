@@ -751,6 +751,12 @@ Success criteria:
 - Scrapbook/newspaper pages keep context.
 - Retrieval top-k improves against golden labels.
 
+Current implementation:
+
+- `providers/chunking/base.py` defines the swappable chunking provider contract.
+- `CurrentChunkingProvider` wraps the existing fixed-size/metadata chunking behavior without changing downstream chunk compatibility.
+- Graph runs write `sample-chunking-results.jsonl` with provider, status, strategy, chunk count, warnings, and local-only metadata.
+
 ### 14. `embed_chunks`
 
 Purpose:
@@ -1096,6 +1102,7 @@ Artifacts:
 - `sample-ocr-documents.jsonl`
 - `sample-structure.jsonl`
 - `sample-document-segments.jsonl`
+- `sample-chunking-results.jsonl`
 - `sample-chunks.jsonl`
 - `sample-embeddings.jsonl`
 - `sample-indexing.jsonl`
@@ -1120,6 +1127,7 @@ Current implementation:
 - Manifest rows include artifact path, kind, existence, size, modified time, JSONL row count, and SHA-256 for non-manifest artifacts.
 - `artifact-manifest.json` includes itself with `sha256: null` and `note: self_referential_manifest` because a file cannot truthfully hash itself while embedding that hash.
 - The manifest makes review-critical rows such as `sample-document-segments.jsonl`, `sample-route-decisions.jsonl`, `sample-quality-gates.jsonl`, and `sample-model-usage.jsonl` discoverable from one place.
+- Chunking now writes `sample-chunking-results.jsonl`, so future provider swaps can be audited separately from final chunk rows.
 
 ### 24. `import_run_results`
 
@@ -1647,6 +1655,7 @@ Required artifacts:
 - `sample-ocr-documents.jsonl`
 - `sample-structure.jsonl`
 - `sample-document-segments.jsonl`
+- `sample-chunking-results.jsonl`
 - `sample-chunks.jsonl`
 - `sample-embeddings.jsonl`
 - `sample-indexing.jsonl`

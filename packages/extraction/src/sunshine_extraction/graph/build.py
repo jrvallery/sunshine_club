@@ -44,7 +44,7 @@ def build_document_graph(deps: DocumentPipelineDeps | None = None, *, checkpoint
     builder.add_node("quality_gate", lambda state: _run_node("quality_gate", state, _quality_gate))
     builder.add_node("normalize_document_structure", lambda state: _run_node("normalize_document_structure", state, _normalize_document_structure_node))
     builder.add_node("propose_document_segments", lambda state: _run_node("propose_document_segments", state, _propose_document_segments_node))
-    builder.add_node("chunk_content", lambda state: _run_node("chunk_content", state, _chunk_content_node))
+    builder.add_node("chunk_content", lambda state: _run_node("chunk_content", state, lambda active: _chunk_content_node(active, active_deps)))
     builder.add_node("embed_chunks", lambda state: _run_node("embed_chunks", state, lambda active: _embed_chunks_node(active, active_deps)))
     builder.add_node("index_chunks", lambda state: _run_node("index_chunks", state, lambda active: _index_chunks_node(active, active_deps)))
     builder.add_node("retrieve_labeled_examples", lambda state: _run_node("retrieve_labeled_examples", state, lambda active: _retrieve_labeled_examples_node(active, active_deps)))

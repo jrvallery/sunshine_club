@@ -7,6 +7,7 @@ import pytest
 from pypdf import PdfWriter
 
 from sunshine_extraction.providers.probe import NativeFileProbeProvider
+from sunshine_extraction.providers.chunking import CurrentChunkingProvider
 from sunshine_extraction.providers.extraction import CurrentExtractionProvider, DoclingExtractionProvider, extraction_provider_from_env
 from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider
 from sunshine_extraction.sample_pipeline import SampleFile, llm_tag_inspector_from_env, ocr_executor_from_env
@@ -57,6 +58,32 @@ def test_current_extraction_provider_wraps_existing_behavior(tmp_path: Path) -> 
     assert extraction.extraction_status == "extracted"
     assert extraction.text == "Meeting minutes text"
     assert attempt.provider == "current"
+    assert attempt.metadata["local_only"] is True
+
+
+def test_current_chunking_provider_wraps_existing_behavior(tmp_path: Path) -> None:
+    source = tmp_path / "minutes.txt"
+    source.write_text("Meeting minutes text", encoding="utf-8")
+    extraction = ExtractionResult(
+        sample=_sample(source),
+        plan={"strategy": "text_extraction"},
+        extraction_status="extracted",
+        text="Meeting minutes text",
+        metadata={},
+        page_count=1,
+        warnings=[],
+    )
+
+    chunks, attempt = CurrentChunkingProvider().chunk(
+        extraction,
+        {"quality": "ok", "can_chunk": True},
+    )
+
+    assert len(chunks) == 1
+    assert chunks[0]["chunking_provider"] == "current"
+    assert chunks[0]["chunking_strategy"] == "fixed_size_text"
+    assert attempt.provider == "current"
+    assert attempt.status == "chunked"
     assert attempt.metadata["local_only"] is True
 
 

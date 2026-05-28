@@ -7,6 +7,7 @@ fields so audit output, persistence, and review routing can be traced.
 from typing import Any, TypedDict
 
 from sunshine_extraction.embeddings import EmbeddingProvider
+from sunshine_extraction.providers.chunking import ChunkingProvider
 from sunshine_extraction.providers.extraction import ExtractionProvider
 from sunshine_extraction.providers.vectorstores import VectorStoreProvider
 from sunshine_extraction.services.content import SampleFile
@@ -49,6 +50,7 @@ class DocumentPipelineState(TypedDict, total=False):
     ocr_document: dict[str, Any]
     document_structure: dict[str, Any]
     document_segments: list[dict[str, Any]]
+    chunking_result: dict[str, Any]
     chunks: list[dict[str, Any]]
     embeddings: list[dict[str, Any]]
     indexing_result: dict[str, Any]
@@ -71,6 +73,7 @@ class DocumentPipelineState(TypedDict, total=False):
 
 class DocumentPipelineDeps(TypedDict, total=False):
     extraction_provider: ExtractionProvider
+    chunking_provider: ChunkingProvider
     vector_store: VectorStoreProvider
     embedding_provider: EmbeddingProvider
     embedding_failure_mode: str

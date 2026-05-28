@@ -12,6 +12,7 @@ from sunshine_extraction.embeddings import (
     provider_from_env,
 )
 from sunshine_extraction.graph.state import DocumentPipelineDeps
+from sunshine_extraction.providers.chunking import ChunkingProvider, CurrentChunkingProvider
 from sunshine_extraction.providers.extraction import ExtractionProvider, extraction_provider_from_env
 from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider, VectorStoreProvider
 from sunshine_extraction.services.extraction import OcrExecutor, ocr_executor_from_env
@@ -25,6 +26,7 @@ def _resolve_deps(
     *,
     embedding_provider: EmbeddingProvider | None = None,
     extraction_provider: ExtractionProvider | None = None,
+    chunking_provider: ChunkingProvider | None = None,
     vector_store: VectorStoreProvider | None = None,
     embedding_failure_mode: str | None = None,
     llm_tag_inspector: LLMTagInspector | None = None,
@@ -39,6 +41,7 @@ def _resolve_deps(
             embedding_provider = PlaceholderEmbeddingProvider()
     return {
         "extraction_provider": extraction_provider or extraction_provider_from_env(),
+        "chunking_provider": chunking_provider or CurrentChunkingProvider(),
         "vector_store": vector_store or _vector_store_from_env(),
         "embedding_provider": embedding_provider,
         "embedding_failure_mode": _embedding_failure_mode(embedding_failure_mode),

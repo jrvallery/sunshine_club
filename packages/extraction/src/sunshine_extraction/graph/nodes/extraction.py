@@ -11,7 +11,6 @@ from sunshine_extraction.providers.extraction.docling_provider import DoclingExt
 from sunshine_extraction.providers.extraction.router import select_extraction_provider
 from sunshine_extraction.services.extraction import (
     OcrArtifacts,
-    chunk_content,
     extraction_quality_gate,
     validate_extracted_text,
     validate_and_repair_extraction,
@@ -224,9 +223,12 @@ def _propose_document_segments_node(state: DocumentPipelineState) -> dict[str, A
         warnings.append("document_segmentation_review_recommended")
     return {"document_segments": segments, "warnings": warnings}
 
-def _chunk_content_node(state: DocumentPipelineState) -> dict[str, Any]:
-    chunks = chunk_content(state["extraction_result"], state["extraction_quality"])
-    return {"chunks": attach_segment_ids_to_chunks(chunks, state.get("document_segments", []))}
+def _chunk_content_node(state: DocumentPipelineState, deps: DocumentPipelineDeps) -> dict[str, Any]:
+    chunks, attempt = deps["chunking_provider"].chunk(state["extraction_result"], state["extraction_quality"])
+    return {
+        "chunks": attach_segment_ids_to_chunks(chunks, state.get("document_segments", [])),
+        "chunking_result": attempt.as_row(),
+    }
 
 def _after_quality_gate(state: DocumentPipelineState) -> str:
     return "chunk" if state.get("extraction_quality", {}).get("can_chunk") else "route"
