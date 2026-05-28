@@ -123,6 +123,7 @@ def _migration_status() -> dict[str, Any]:
         "0004_golden_labels_v2.sql",
         "0005_pipeline_run_events_indexes.sql",
         "0006_provider_benchmarks.sql",
+        "0007_pipeline_parser_results.sql",
     ]
     return {
         "migration_dir": str(migration_dir),

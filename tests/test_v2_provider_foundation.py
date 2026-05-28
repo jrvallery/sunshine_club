@@ -927,6 +927,35 @@ def test_docling_provider_is_optional_and_local_only() -> None:
         assert status["model_cache"]["provider"] == "rapidocr"
         assert isinstance(status["model_cache"]["required_files"], list)
         assert isinstance(status["model_cache"]["missing_files"], list)
+        assert status["model_cache_required"] is False
+
+
+def test_docling_provider_requires_local_model_cache_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sunshine_extraction.providers.extraction.docling_provider as docling_provider_module
+
+    monkeypatch.setenv("SUNSHINE_RUNTIME_MODE", "production")
+    monkeypatch.setattr(
+        docling_provider_module,
+        "_rapidocr_model_cache_status",
+        lambda: {
+            "provider": "rapidocr",
+            "ready": False,
+            "path": "/missing/models",
+            "required_files": ["det.pth"],
+            "present_files": [],
+            "missing_files": ["det.pth"],
+        },
+    )
+
+    status = DoclingExtractionProvider().dependency_status()
+
+    if "docling" in status.get("missing", []):
+        assert status["available"] is False
+        return
+    assert status["available"] is False
+    assert status["model_cache_required"] is True
+    assert status["missing"] == ["rapidocr_model_cache"]
+    assert status["error"] == "model_cache_missing"
 
 
 def test_docling_provider_extracts_with_injected_local_converter(tmp_path: Path) -> None:

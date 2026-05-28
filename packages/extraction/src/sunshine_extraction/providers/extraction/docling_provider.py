@@ -7,6 +7,7 @@ before the heavy local parser stack is installed.
 from __future__ import annotations
 
 import importlib.util
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -23,8 +24,16 @@ class DoclingExtractionProvider:
         self._converter = converter
 
     def dependency_status(self) -> dict[str, Any]:
+        cache_status = _rapidocr_model_cache_status()
+        cache_required = _local_model_cache_required()
         if self._converter is not None:
-            return {"provider": self.provider_name, "available": True, "local_only": True, "model_cache": _rapidocr_model_cache_status()}
+            return {
+                "provider": self.provider_name,
+                "available": True,
+                "local_only": True,
+                "model_cache": cache_status,
+                "model_cache_required": cache_required,
+            }
         try:
             import docling.document_converter  # noqa: F401
         except Exception as error:  # noqa: BLE001 - optional dependency probe.
@@ -35,7 +44,23 @@ class DoclingExtractionProvider:
                 "missing": ["docling"],
                 "error": error.__class__.__name__,
             }
-        return {"provider": self.provider_name, "available": True, "local_only": True, "model_cache": _rapidocr_model_cache_status()}
+        if cache_required and not cache_status.get("ready"):
+            return {
+                "provider": self.provider_name,
+                "available": False,
+                "local_only": True,
+                "missing": ["rapidocr_model_cache"],
+                "model_cache": cache_status,
+                "model_cache_required": True,
+                "error": "model_cache_missing",
+            }
+        return {
+            "provider": self.provider_name,
+            "available": True,
+            "local_only": True,
+            "model_cache": cache_status,
+            "model_cache_required": cache_required,
+        }
 
     def extract(
         self,
@@ -218,3 +243,11 @@ def _rapidocr_model_cache_status() -> dict[str, Any]:
         "present_files": present_files,
         "missing_files": missing_files,
     }
+
+
+def _local_model_cache_required() -> bool:
+    value = (
+        os.environ.get("SUNSHINE_REQUIRE_LOCAL_MODEL_CACHE")
+        or ("true" if (os.environ.get("SUNSHINE_RUNTIME_MODE") or os.environ.get("SUNSHINE_ENV") or "").strip().lower() == "production" else "")
+    )
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
