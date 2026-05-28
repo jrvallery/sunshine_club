@@ -1,19 +1,71 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 
+import { Button } from "../../components/ui/Button";
+import { TextInput } from "../../components/ui/FormControls";
 import { KeyValue } from "../../components/ui/KeyValue";
-import { fetchJson } from "../../lib/api";
+import { StatusBadge } from "../../components/ui/StatusBadge";
+import { fetchJson, postJson } from "../../lib/api";
 import type { ReviewSummary, SemanticIndexStatus } from "../../lib/types";
 
 type Health = {
   status: string;
 };
 
+type LocalInfrastructure = {
+  local_only: boolean;
+  postgres: Record<string, unknown>;
+  qdrant: Record<string, unknown>;
+  qdrant_retrieval: Record<string, unknown>;
+  docling: Record<string, unknown>;
+  cortex: Record<string, unknown>;
+  model_call_cache: Record<string, unknown>;
+  temporal: Record<string, unknown>;
+  observability: Record<string, unknown>;
+  provider_registry: {
+    validation: { ok: boolean; errors?: string[]; missing_capabilities?: string[] };
+    providers: Array<Record<string, unknown>>;
+  };
+  policy: Record<string, unknown>;
+};
+
+type QdrantRebuildResponse = {
+  ok: boolean;
+  source_row_count: number;
+  vector_store: {
+    provider: string;
+    collection: string | null;
+    status: string;
+    indexed_count: number;
+    skipped_count: number;
+    warnings: string[];
+  };
+};
+
 export default function SettingsPage() {
+  const queryClient = useQueryClient();
+  const [rebuildRunKey, setRebuildRunKey] = useState("");
+  const [rebuildLimit, setRebuildLimit] = useState("");
   const health = useQuery({ queryKey: ["api-health"], queryFn: () => fetchJson<Health>("/api/healthz") });
   const summary = useQuery({ queryKey: ["review-summary"], queryFn: () => fetchJson<ReviewSummary>("/api/admin/review/summary") });
   const semanticIndex = useQuery({ queryKey: ["semantic-index-status"], queryFn: () => fetchJson<SemanticIndexStatus>("/api/admin/semantic-index/status") });
+  const infrastructure = useQuery({
+    queryKey: ["local-infrastructure"],
+    queryFn: () => fetchJson<LocalInfrastructure>("/api/admin/system/local-infrastructure")
+  });
+  const rebuildQdrant = useMutation({
+    mutationFn: () =>
+      postJson<QdrantRebuildResponse>("/api/admin/vector-index/qdrant/rebuild", {
+        run_key: rebuildRunKey.trim() || undefined,
+        limit: Number(rebuildLimit) > 0 ? Number(rebuildLimit) : undefined
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["local-infrastructure"] });
+    }
+  });
+  const providerRows = infrastructure.data?.provider_registry.providers ?? [];
 
   return (
     <main className="pageShell">
@@ -30,6 +82,76 @@ export default function SettingsPage() {
           <KeyValue label="Review DB" value={summary.data?.db_path ?? "-"} />
           <KeyValue label="Semantic index" value={semanticIndex.data?.index_db ?? "-"} />
           <KeyValue label="Semantic index rows" value={String(semanticIndex.data?.indexed ?? 0)} />
+          <KeyValue label="Local only" value={String(infrastructure.data?.local_only ?? "-")} />
+          <KeyValue label="Provider registry" value={<StatusBadge value={infrastructure.data?.provider_registry.validation.ok ? "ok" : "needs attention"} tone={infrastructure.data?.provider_registry.validation.ok ? "default" : "danger"} />} />
+        </div>
+      </section>
+      <section className="panel">
+        <div className="sectionHeader">
+          <h2>Provider Infrastructure</h2>
+          <span>{providerRows.length} registered</span>
+        </div>
+        <div className="settingsGrid">
+          <ProviderStatus title="Postgres" status={infrastructure.data?.postgres} />
+          <ProviderStatus title="Qdrant" status={infrastructure.data?.qdrant} />
+          <ProviderStatus title="Qdrant retrieval" status={infrastructure.data?.qdrant_retrieval} />
+          <ProviderStatus title="Docling" status={infrastructure.data?.docling} />
+          <ProviderStatus title="Cortex" status={infrastructure.data?.cortex} />
+          <ProviderStatus title="Model cache" status={infrastructure.data?.model_call_cache} />
+          <ProviderStatus title="Temporal" status={infrastructure.data?.temporal} />
+          <ProviderStatus title="Observability" status={infrastructure.data?.observability} />
+        </div>
+      </section>
+      <section className="panel">
+        <div className="sectionHeader">
+          <h2>Qdrant Collection Rebuild</h2>
+          <StatusBadge value={String(infrastructure.data?.qdrant?.provisioned ? "provisioned" : "not provisioned")} tone={infrastructure.data?.qdrant?.provisioned ? "default" : "danger"} />
+        </div>
+        <div className="formGrid compactForm">
+          <TextInput label="Run key" value={rebuildRunKey} onChange={(event) => setRebuildRunKey(event.target.value)} />
+          <TextInput label="Limit" value={rebuildLimit} onChange={(event) => setRebuildLimit(event.target.value)} />
+          <Button variant="primary" disabled={rebuildQdrant.isPending} onClick={() => rebuildQdrant.mutate()}>
+            {rebuildQdrant.isPending ? "Rebuilding..." : "Rebuild Qdrant"}
+          </Button>
+        </div>
+        {rebuildQdrant.data ? (
+          <div className="settingsGrid">
+            <KeyValue label="Status" value={rebuildQdrant.data.vector_store.status} />
+            <KeyValue label="Collection" value={rebuildQdrant.data.vector_store.collection ?? "-"} />
+            <KeyValue label="Source rows" value={String(rebuildQdrant.data.source_row_count)} />
+            <KeyValue label="Indexed" value={String(rebuildQdrant.data.vector_store.indexed_count)} />
+          </div>
+        ) : null}
+        {rebuildQdrant.error ? <p className="dangerText">{String(rebuildQdrant.error.message)}</p> : null}
+      </section>
+      <section className="panel">
+        <div className="sectionHeader">
+          <h2>Provider Registry</h2>
+          <span>{infrastructure.data?.provider_registry.validation.ok ? "valid" : "check configuration"}</span>
+        </div>
+        <div className="tableWrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Capability</th>
+                <th>Provider</th>
+                <th>Enabled</th>
+                <th>Local</th>
+                <th>Package</th>
+              </tr>
+            </thead>
+            <tbody>
+              {providerRows.map((row) => (
+                <tr key={String(row.key)}>
+                  <td>{String(row.capability ?? "-")}</td>
+                  <td>{String(row.name ?? row.key ?? "-")}</td>
+                  <td>{String(row.enabled ?? "-")}</td>
+                  <td>{String(row.local_only ?? "-")}</td>
+                  <td>{String(row.package ?? "-")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </section>
       <section className="panel">
@@ -37,5 +159,21 @@ export default function SettingsPage() {
         <p className="muted">Dashboard actions read source files and write review/run artifacts. They do not move, delete, or overwrite source files.</p>
       </section>
     </main>
+  );
+}
+
+function ProviderStatus({ title, status }: { title: string; status?: Record<string, unknown> }) {
+  const available = Boolean(status?.available ?? status?.configured ?? status?.provisioned);
+  return (
+    <div className="breakdown">
+      <div className="sectionHeader">
+        <h2>{title}</h2>
+        <StatusBadge value={available ? "ready" : "check"} tone={available ? "default" : "danger"} />
+      </div>
+      <KeyValue label="Provider" value={String(status?.provider ?? "-")} />
+      <KeyValue label="Local only" value={String(status?.local_only ?? true)} />
+      <KeyValue label="URL/path" value={String(status?.url ?? status?.path ?? status?.address ?? "-")} />
+      <KeyValue label="Collection/model" value={String(status?.collection ?? status?.model ?? status?.task_queue ?? "-")} />
+    </div>
   );
 }
