@@ -47,6 +47,7 @@ def test_local_infrastructure_status_is_local_only(monkeypatch) -> None:
     monkeypatch.setenv("CORTEX_OPENAI_BASE_URL", "http://127.0.0.1:11434/v1")
     monkeypatch.setenv("CORTEX_MODEL", "gemma4-26b")
     monkeypatch.setenv("TEMPORAL_ADDRESS", "localhost:7233")
+    monkeypatch.setenv("SUNSHINE_MODEL_CACHE_PATH", "/tmp/sunshine-model-cache.sqlite")
 
     response = TestClient(app).get("/admin/system/local-infrastructure")
 
@@ -63,6 +64,9 @@ def test_local_infrastructure_status_is_local_only(monkeypatch) -> None:
     assert payload["docling"]["provider"] == "docling"
     assert payload["docling"]["local_only"] is True
     assert payload["cortex"]["configured"] is True
+    assert payload["model_call_cache"]["configured"] is True
+    assert payload["model_call_cache"]["local_only"] is True
+    assert payload["model_call_cache"]["namespaces"] == ["embedding", "llm_tag_inspection"]
     assert payload["temporal"]["configured"] is True
     assert payload["temporal"]["worker_registered"] is True
     assert payload["observability"]["local_only"] is True

@@ -39,6 +39,7 @@ def local_infrastructure_status() -> dict[str, Any]:
             "embedding_model": os.environ.get("SUNSHINE_EMBEDDING_MODEL"),
             "ocr_model": os.environ.get("CORTEX_OCR_MODEL") or os.environ.get("SUNSHINE_OCR_FALLBACK_MODEL"),
         },
+        "model_call_cache": _model_call_cache_status(),
         "temporal": {
             "configured": bool(os.environ.get("TEMPORAL_ADDRESS")),
             "address": os.environ.get("TEMPORAL_ADDRESS"),
@@ -64,6 +65,19 @@ def _module_available(module_name: str) -> bool:
     except Exception:  # noqa: BLE001 - health check should normalize import failures.
         return False
     return True
+
+
+def _model_call_cache_status() -> dict[str, Any]:
+    configured = os.environ.get("SUNSHINE_MODEL_CACHE_PATH", "").strip()
+    path = Path(configured) if configured else None
+    return {
+        "configured": bool(configured),
+        "provider": "sqlite" if configured else "disabled",
+        "local_only": True,
+        "path": str(path) if path else None,
+        "exists": path.exists() if path else False,
+        "namespaces": ["embedding", "llm_tag_inspection"],
+    }
 
 
 def _migration_status() -> dict[str, Any]:
