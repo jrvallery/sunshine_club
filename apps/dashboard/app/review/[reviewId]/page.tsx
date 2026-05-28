@@ -115,6 +115,7 @@ function ReviewItemPageContent() {
 
   const item = itemQuery.data;
   const extractedText = textQuery.data || item.extraction_text_snippet || "No text snippet available.";
+  const runReportHref = reviewRunReportHref(item, source);
 
   return (
     <main className="fileViewerPage">
@@ -127,7 +128,7 @@ function ReviewItemPageContent() {
         <div className="buttonRow">
           <Link className="secondaryButton" href={backHref}>Back to Review</Link>
           <a className="secondaryButton" href={`/api/admin/review/items/${item.id}/download${sourceQuery}`} download>Download File</a>
-          {typeof item.run_id === "number" ? <Link className="secondaryButton" href={`/runs/${item.run_id}/report`}>Run Report</Link> : null}
+          {runReportHref ? <Link className="secondaryButton" href={runReportHref}>Run Report</Link> : null}
         </div>
       </header>
 
@@ -215,6 +216,19 @@ function ReviewItemPageContent() {
       </section>
     </main>
   );
+}
+
+function reviewRunReportHref(item: ReviewItem, source: "sqlite" | "postgres") {
+  if (source === "postgres" && item.run_key) {
+    return `/runs/${encodeURIComponent(item.run_key)}/report?source=postgres`;
+  }
+  if (typeof item.run_id === "number") {
+    return `/runs/${item.run_id}/report`;
+  }
+  if (typeof item.run_id === "string" && item.run_key) {
+    return `/runs/${encodeURIComponent(item.run_key)}/report?source=postgres`;
+  }
+  return null;
 }
 
 function ReviewDecisionPanel({

@@ -15,9 +15,12 @@ export function RunContextBadge({
     return <span className="muted">Manual / legacy</span>;
   }
   if (typeof runId === "string" && !/^\d+$/.test(runId)) {
+    const postgresRunKey = runKey || runId;
     return (
       <div className="runContextBadge">
-        <span>{runKey || runId}</span>
+        <Link className="viewLink" href={`/runs/${encodeURIComponent(postgresRunKey)}/report?source=postgres`}>
+          {postgresRunKey}
+        </Link>
         {preset ? <span>{preset}</span> : null}
       </div>
     );
