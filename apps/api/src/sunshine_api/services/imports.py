@@ -86,6 +86,22 @@ def list_postgres_provider_benchmark_runs(
     return store.list_provider_benchmark_runs(limit=limit)
 
 
+def get_postgres_provider_benchmark_run(
+    *,
+    benchmark_key: str,
+    result_limit: int = 500,
+    parser_result_limit: int = 500,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> dict[str, Any]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.get_provider_benchmark_run(
+        benchmark_key=benchmark_key,
+        result_limit=result_limit,
+        parser_result_limit=parser_result_limit,
+    )
+
+
 def postgres_runtime_summary(
     *,
     database_url: str | None = None,
@@ -437,6 +453,7 @@ __all__ = [
     "get_postgres_file_result",
     "get_postgres_golden_label",
     "get_postgres_pipeline_run",
+    "get_postgres_provider_benchmark_run",
     "get_postgres_review_item",
     "get_postgres_run_report",
     "list_postgres_golden_labels",

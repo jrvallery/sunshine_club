@@ -353,20 +353,44 @@ def test_provider_benchmark_postgres_import_and_list_wrap_services(monkeypatch) 
         captured["limit"] = limit
         return [{"benchmark_key": "benchmark-1", "result_count": 1}]
 
+    def fake_get(*, benchmark_key: str, result_limit: int = 500, parser_result_limit: int = 500) -> dict[str, Any]:
+        captured["detail"] = {
+            "benchmark_key": benchmark_key,
+            "result_limit": result_limit,
+            "parser_result_limit": parser_result_limit,
+        }
+        return {
+            "run": {"benchmark_key": benchmark_key, "status": "completed"},
+            "summary": {"result_count": 1, "parser_result_count": 1},
+            "results": [{"provider": "docling", "status": "extracted"}],
+            "parser_results": [{"provider": "docling", "quality": "ok"}],
+            "recommendations": [{"provider": "docling", "recommendation": "candidate"}],
+        }
+
     monkeypatch.setattr("sunshine_api.routers.semantic.import_provider_benchmark_output_to_postgres", fake_import)
     monkeypatch.setattr("sunshine_api.routers.semantic.list_postgres_provider_benchmark_runs", fake_list)
+    monkeypatch.setattr("sunshine_api.routers.semantic.get_postgres_provider_benchmark_run", fake_get)
 
     imported = TestClient(app).post(
         "/admin/provider-benchmarks/import-postgres",
         json={"output_dir": "/tmp/provider-benchmark", "benchmark_key": "benchmark-1"},
     )
     listed = TestClient(app).get("/admin/provider-benchmarks/postgres?limit=7")
+    detail = TestClient(app).get("/admin/provider-benchmarks/postgres/benchmark-1?result_limit=9&parser_result_limit=11")
 
     assert imported.status_code == 200
     assert imported.json()["benchmark_run_id"] == "benchmark-id"
     assert listed.status_code == 200
     assert listed.json()["runs"][0]["benchmark_key"] == "benchmark-1"
-    assert captured == {"output_dir": "/tmp/provider-benchmark", "benchmark_key": "benchmark-1", "limit": 7}
+    assert detail.status_code == 200
+    assert detail.json()["run"]["benchmark_key"] == "benchmark-1"
+    assert detail.json()["recommendations"][0]["recommendation"] == "candidate"
+    assert captured == {
+        "output_dir": "/tmp/provider-benchmark",
+        "benchmark_key": "benchmark-1",
+        "limit": 7,
+        "detail": {"benchmark_key": "benchmark-1", "result_limit": 9, "parser_result_limit": 11},
+    }
 
 
 def test_review_items_can_read_postgres_v2_source(monkeypatch) -> None:

@@ -179,6 +179,112 @@ def test_postgres_pipeline_store_imports_provider_benchmark_artifacts(tmp_path: 
     assert connection.committed is True
 
 
+def test_postgres_pipeline_store_gets_provider_benchmark_detail() -> None:
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.closed = False
+            self.executed: list[tuple[str, tuple[Any, ...]]] = []
+
+        def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
+            self.executed.append((query, params))
+            normalized = " ".join(query.lower().split())
+            if "from provider_benchmark_runs pbr" in normalized:
+                return _Cursor(
+                    {
+                        "id": "benchmark-id",
+                        "benchmark_key": "benchmark-1",
+                        "output_dir": "/tmp/provider-benchmark",
+                        "status": "completed",
+                        "partial": False,
+                        "summary": {"result_count": 1},
+                        "artifact_manifest": {"artifacts": []},
+                        "background_error": {},
+                        "created_at": None,
+                        "updated_at": None,
+                        "result_count": 1,
+                        "parser_result_count": 1,
+                        "recommendation_count": 1,
+                    }
+                )
+            if "from provider_benchmark_results" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "result-id",
+                            "benchmark_run_id": "benchmark-id",
+                            "source_path": "/source/a.pdf",
+                            "relative_path": "Sunshine/a.pdf",
+                            "sample_category": "scanned_pdf",
+                            "sample_label": "A",
+                            "provider": "docling",
+                            "status": "extracted",
+                            "quality": "ok",
+                            "requires_review": False,
+                            "seconds": 12.5,
+                            "result": {"text_length": 1234},
+                            "created_at": None,
+                        }
+                    ]
+                )
+            if "from provider_benchmark_parser_results" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "parser-id",
+                            "benchmark_run_id": "benchmark-id",
+                            "source_path": "/source/a.pdf",
+                            "relative_path": "Sunshine/a.pdf",
+                            "sample_category": "scanned_pdf",
+                            "sample_label": "A",
+                            "provider": "docling",
+                            "status": "extracted",
+                            "quality": "ok",
+                            "requires_review": False,
+                            "seconds": 12.5,
+                            "text_length": 1234,
+                            "page_count": 4,
+                            "result": {"text_snippet": "Sunshine"},
+                            "created_at": None,
+                        }
+                    ]
+                )
+            if "from provider_benchmark_recommendations" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "recommendation-id",
+                            "benchmark_run_id": "benchmark-id",
+                            "provider": "docling",
+                            "recommendation": "candidate",
+                            "status": "candidate",
+                            "average_seconds": 12.5,
+                            "result": {"reason": "quality_ok"},
+                            "created_at": None,
+                        }
+                    ]
+                )
+            return _Cursor()
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+    store = PostgresPipelineStore("postgresql://local/test", connect_factory=lambda _url: connection)
+
+    detail = store.get_provider_benchmark_run(benchmark_key="benchmark-1", result_limit=7, parser_result_limit=9)
+
+    assert detail["run"]["benchmark_key"] == "benchmark-1"
+    assert detail["summary"]["providers"] == {"docling": 2}
+    assert detail["summary"]["recommendations"] == {"candidate": 1}
+    assert detail["results"][0]["result"]["text_length"] == 1234
+    assert detail["parser_results"][0]["page_count"] == 4
+    assert detail["recommendations"][0]["recommendation"] == "candidate"
+    assert connection.executed[0][1] == ("benchmark-1",)
+    assert connection.executed[1][1] == ("benchmark-id", 7)
+    assert connection.executed[2][1] == ("benchmark-id", 9)
+    assert connection.closed is True
+
+
 def test_postgres_pipeline_store_reports_runtime_summary() -> None:
     class FakeConnection:
         def __init__(self) -> None:

@@ -308,6 +308,123 @@ class PostgresPipelineStore:
         finally:
             connection.close()
 
+    def get_provider_benchmark_run(
+        self,
+        *,
+        benchmark_key: str,
+        result_limit: int = 500,
+        parser_result_limit: int = 500,
+    ) -> dict[str, Any]:
+        connection = self._connect_factory(self.database_url)
+        try:
+            run_row = connection.execute(
+                """
+                select
+                    pbr.id,
+                    pbr.benchmark_key,
+                    pbr.output_dir,
+                    pbr.status,
+                    pbr.partial,
+                    pbr.summary,
+                    pbr.artifact_manifest,
+                    pbr.background_error,
+                    pbr.created_at,
+                    pbr.updated_at,
+                    (select count(*) from provider_benchmark_results r where r.benchmark_run_id = pbr.id) as result_count,
+                    (select count(*) from provider_benchmark_parser_results r where r.benchmark_run_id = pbr.id) as parser_result_count,
+                    (select count(*) from provider_benchmark_recommendations r where r.benchmark_run_id = pbr.id) as recommendation_count
+                from provider_benchmark_runs pbr
+                where pbr.benchmark_key = %s
+                limit 1
+                """,
+                (benchmark_key,),
+            ).fetchone()
+            if run_row is None:
+                raise KeyError(f"Provider benchmark run not found: {benchmark_key}")
+            run = _json_safe_row(_row_to_dict(run_row))
+            benchmark_run_id = str(run["id"])
+            results = connection.execute(
+                """
+                select
+                    id,
+                    benchmark_run_id,
+                    source_path,
+                    relative_path,
+                    sample_category,
+                    sample_label,
+                    provider,
+                    status,
+                    quality,
+                    requires_review,
+                    seconds,
+                    result,
+                    created_at
+                from provider_benchmark_results
+                where benchmark_run_id = %s
+                order by sample_category nulls last, relative_path nulls last, source_path nulls last, provider
+                limit %s
+                """,
+                (benchmark_run_id, max(1, min(int(result_limit), 2000))),
+            ).fetchall()
+            parser_results = connection.execute(
+                """
+                select
+                    id,
+                    benchmark_run_id,
+                    source_path,
+                    relative_path,
+                    sample_category,
+                    sample_label,
+                    provider,
+                    status,
+                    quality,
+                    requires_review,
+                    seconds,
+                    text_length,
+                    page_count,
+                    result,
+                    created_at
+                from provider_benchmark_parser_results
+                where benchmark_run_id = %s
+                order by sample_category nulls last, relative_path nulls last, source_path nulls last, provider
+                limit %s
+                """,
+                (benchmark_run_id, max(1, min(int(parser_result_limit), 2000))),
+            ).fetchall()
+            recommendations = connection.execute(
+                """
+                select
+                    id,
+                    benchmark_run_id,
+                    provider,
+                    recommendation,
+                    status,
+                    average_seconds,
+                    result,
+                    created_at
+                from provider_benchmark_recommendations
+                where benchmark_run_id = %s
+                order by provider
+                """,
+                (benchmark_run_id,),
+            ).fetchall()
+            result_rows = [_json_safe_row(_row_to_dict(row)) for row in results]
+            parser_result_rows = [_json_safe_row(_row_to_dict(row)) for row in parser_results]
+            recommendation_rows = [_json_safe_row(_row_to_dict(row)) for row in recommendations]
+            return {
+                "run": run,
+                "summary": _provider_benchmark_detail_summary(
+                    result_rows=result_rows,
+                    parser_result_rows=parser_result_rows,
+                    recommendation_rows=recommendation_rows,
+                ),
+                "results": result_rows,
+                "parser_results": parser_result_rows,
+                "recommendations": recommendation_rows,
+            }
+        finally:
+            connection.close()
+
     def list_review_items(self, *, run_key: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
         connection = self._connect_factory(self.database_url)
         try:
@@ -1821,6 +1938,27 @@ def _provider_benchmark_partial_summary(
         "by_status": _count_values(results, "status"),
         "by_quality": _count_values(results, "quality"),
         "sample_category": _count_values(results, "sample_category"),
+    }
+
+
+def _provider_benchmark_detail_summary(
+    *,
+    result_rows: list[dict[str, Any]],
+    parser_result_rows: list[dict[str, Any]],
+    recommendation_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "result_count": len(result_rows),
+        "parser_result_count": len(parser_result_rows),
+        "recommendation_count": len(recommendation_rows),
+        "result_status": _count_values(result_rows, "status"),
+        "result_quality": _count_values(result_rows, "quality"),
+        "parser_status": _count_values(parser_result_rows, "status"),
+        "parser_quality": _count_values(parser_result_rows, "quality"),
+        "providers": _count_values(result_rows + parser_result_rows, "provider"),
+        "sample_categories": _count_values(result_rows + parser_result_rows, "sample_category"),
+        "recommendations": _count_values(recommendation_rows, "recommendation"),
+        "review_required_count": sum(1 for row in result_rows + parser_result_rows if row.get("requires_review") is True),
     }
 
 
