@@ -6,7 +6,33 @@ from typing import Any
 
 from sunshine_extraction.services.content import SampleFile
 from sunshine_extraction.services.extraction import ExtractionResult
-from sunshine_extraction.sample_pipeline import extraction_quality_gate
+
+
+def extraction_quality_gate(extraction: ExtractionResult) -> dict[str, Any]:
+    """Classify extraction quality and decide whether downstream text work is allowed."""
+
+    if extraction.extraction_status == "failed":
+        return {"quality": "failed", "can_chunk": False, "can_embed": False, "requires_review": True}
+    if extraction.extraction_status in {"deferred_technical", "deferred_extractor"}:
+        return {
+            "quality": "deferred",
+            "can_chunk": extraction.extraction_status == "deferred_extractor",
+            "can_embed": False,
+            "requires_review": True,
+        }
+    text_validation = extraction.metadata.get("text_validation")
+    if isinstance(text_validation, dict) and text_validation.get("status") == "failed":
+        return {"quality": "poor", "can_chunk": True, "can_embed": True, "requires_review": True}
+    ocr_document = extraction.metadata.get("ocr_document")
+    if isinstance(ocr_document, dict) and ocr_document.get("quality") == "poor":
+        return {"quality": "poor", "can_chunk": True, "can_embed": True, "requires_review": True}
+    if isinstance(ocr_document, dict) and ocr_document.get("quality") == "metadata_only":
+        return {"quality": "metadata_only", "can_chunk": True, "can_embed": True, "requires_review": True}
+    if extraction.text.strip():
+        return {"quality": "ok", "can_chunk": True, "can_embed": True, "requires_review": False}
+    if extraction.metadata:
+        return {"quality": "metadata_only", "can_chunk": True, "can_embed": True, "requires_review": False}
+    return {"quality": "empty", "can_chunk": False, "can_embed": False, "requires_review": True}
 
 
 def quality_gate_row(
