@@ -742,6 +742,10 @@ def test_docling_provider_is_optional_and_local_only() -> None:
     assert status["provider"] == "docling"
     assert status["local_only"] is True
     assert "available" in status
+    if status["available"]:
+        assert status["model_cache"]["provider"] == "rapidocr"
+        assert isinstance(status["model_cache"]["required_files"], list)
+        assert isinstance(status["model_cache"]["missing_files"], list)
 
 
 def test_docling_provider_extracts_with_injected_local_converter(tmp_path: Path) -> None:

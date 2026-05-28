@@ -6,7 +6,9 @@ before the heavy local parser stack is installed.
 
 from __future__ import annotations
 
+import importlib.util
 import time
+from pathlib import Path
 from typing import Any
 
 from sunshine_extraction.providers.extraction.base import ExtractionProviderAttempt
@@ -22,7 +24,7 @@ class DoclingExtractionProvider:
 
     def dependency_status(self) -> dict[str, Any]:
         if self._converter is not None:
-            return {"provider": self.provider_name, "available": True, "local_only": True}
+            return {"provider": self.provider_name, "available": True, "local_only": True, "model_cache": _rapidocr_model_cache_status()}
         try:
             import docling.document_converter  # noqa: F401
         except Exception as error:  # noqa: BLE001 - optional dependency probe.
@@ -33,7 +35,7 @@ class DoclingExtractionProvider:
                 "missing": ["docling"],
                 "error": error.__class__.__name__,
             }
-        return {"provider": self.provider_name, "available": True, "local_only": True}
+        return {"provider": self.provider_name, "available": True, "local_only": True, "model_cache": _rapidocr_model_cache_status()}
 
     def extract(
         self,
@@ -186,3 +188,33 @@ def _safe_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _rapidocr_model_cache_status() -> dict[str, Any]:
+    required_files = [
+        "ch_PP-OCRv4_det_mobile.pth",
+        "ch_ptocr_mobile_v2.0_cls_mobile.pth",
+        "ch_PP-OCRv4_rec_mobile.pth",
+    ]
+    spec = importlib.util.find_spec("rapidocr")
+    if spec is None or spec.origin is None:
+        return {
+            "provider": "rapidocr",
+            "ready": False,
+            "path": None,
+            "required_files": required_files,
+            "present_files": [],
+            "missing_files": required_files,
+        }
+    package_root = Path(spec.origin).parent
+    model_dir = package_root / "models"
+    present_files = sorted(path.name for path in model_dir.glob("*") if path.is_file()) if model_dir.exists() else []
+    missing_files = [name for name in required_files if name not in present_files]
+    return {
+        "provider": "rapidocr",
+        "ready": not missing_files,
+        "path": str(model_dir),
+        "required_files": required_files,
+        "present_files": present_files,
+        "missing_files": missing_files,
+    }
