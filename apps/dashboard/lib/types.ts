@@ -406,6 +406,7 @@ export type PostgresRunReport = {
     provider_selection_count?: number;
     quality_check_count?: number;
     quality_review_required_count?: number;
+    tagging_evidence_count?: number;
     parser_result_count?: number;
     parser_review_required_count?: number;
     run_event_count: number;
@@ -430,6 +431,11 @@ export type PostgresRunReport = {
     quality_check_type?: Record<string, number>;
     quality_check_status?: Record<string, number>;
     quality_check_quality?: Record<string, number>;
+    tagging_evidence_type?: Record<string, number>;
+    tagging_primary_tag?: Record<string, number>;
+    tagging_assignment_source?: Record<string, number>;
+    tagging_route_status?: Record<string, number>;
+    tagging_placement_status?: Record<string, number>;
     parser_status?: Record<string, number>;
     parser_quality?: Record<string, number>;
     parser_provider?: Record<string, number>;
@@ -444,6 +450,7 @@ export type PostgresRunReport = {
   provider_attempts: Array<Record<string, unknown>>;
   provider_selections?: Array<Record<string, unknown>>;
   quality_checks?: Array<Record<string, unknown>>;
+  tagging_evidence?: Array<Record<string, unknown>>;
   parser_results?: Array<Record<string, unknown>>;
   document_segments: Array<Record<string, unknown>>;
   chunks?: Array<Record<string, unknown>>;

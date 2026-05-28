@@ -54,6 +54,7 @@ class PostgresPipelineStore:
                 "provider_attempts": self._import_provider_attempts(connection, run_id, output_path),
                 "pipeline_provider_selections": self._import_provider_selections(connection, run_id, output_path),
                 "pipeline_quality_checks": self._import_quality_checks(connection, run_id, output_path),
+                "pipeline_tagging_evidence": self._import_tagging_evidence(connection, run_id, output_path),
                 "pipeline_parser_results": self._import_parser_results(connection, run_id, output_path),
                 "document_segments": self._import_document_segments(connection, run_id, output_path),
                 "review_items": self._import_review_items(connection, run_id, output_path),
@@ -76,6 +77,7 @@ class PostgresPipelineStore:
                 "provider_attempts": _scalar_count(connection, "select count(*) from provider_attempts"),
                 "pipeline_provider_selections": _scalar_count(connection, "select count(*) from pipeline_provider_selections"),
                 "pipeline_quality_checks": _scalar_count(connection, "select count(*) from pipeline_quality_checks"),
+                "pipeline_tagging_evidence": _scalar_count(connection, "select count(*) from pipeline_tagging_evidence"),
                 "pipeline_parser_results": _scalar_count(connection, "select count(*) from pipeline_parser_results"),
                 "pipeline_run_events": _scalar_count(connection, "select count(*) from pipeline_run_events"),
                 "document_segments": _scalar_count(connection, "select count(*) from document_segments"),
@@ -230,6 +232,7 @@ class PostgresPipelineStore:
                     (select count(*) from provider_attempts pa where pa.run_id = r.id) as provider_attempts,
                     (select count(*) from pipeline_provider_selections pps where pps.run_id = r.id) as pipeline_provider_selections,
                     (select count(*) from pipeline_quality_checks pqc where pqc.run_id = r.id) as pipeline_quality_checks,
+                    (select count(*) from pipeline_tagging_evidence pte where pte.run_id = r.id) as pipeline_tagging_evidence,
                     (select count(*) from pipeline_parser_results ppr where ppr.run_id = r.id) as pipeline_parser_results,
                     (select count(*) from document_segments ds where ds.run_id = r.id) as document_segments,
                     (select count(*) from review_items_v2 ri where ri.run_id = r.id) as review_items
@@ -257,6 +260,7 @@ class PostgresPipelineStore:
                     "provider_attempts": _int_value(run_row.get("provider_attempts")),
                     "pipeline_provider_selections": _int_value(run_row.get("pipeline_provider_selections")),
                     "pipeline_quality_checks": _int_value(run_row.get("pipeline_quality_checks")),
+                    "pipeline_tagging_evidence": _int_value(run_row.get("pipeline_tagging_evidence")),
                     "pipeline_parser_results": _int_value(run_row.get("pipeline_parser_results")),
                     "document_segments": _int_value(run_row.get("document_segments")),
                     "review_items": _int_value(run_row.get("review_items")),
@@ -287,6 +291,7 @@ class PostgresPipelineStore:
             provider_attempts = self._list_provider_attempts(connection, run_key=run_key, limit=capped_limit)
             provider_selections = self._list_provider_selections(connection, run_key=run_key, limit=capped_limit)
             quality_checks = self._list_quality_checks(connection, run_key=run_key, limit=capped_limit)
+            tagging_evidence = self._list_tagging_evidence(connection, run_key=run_key, limit=capped_limit)
             parser_results = self._list_parser_results(connection, run_key=run_key, limit=capped_limit)
             document_segments = self._list_document_segments(connection, run_key=run_key, limit=capped_limit)
             chunks = self._list_chunks(connection, run_key=run_key, limit=capped_limit)
@@ -301,6 +306,7 @@ class PostgresPipelineStore:
                     provider_attempts=provider_attempts,
                     provider_selections=provider_selections,
                     quality_checks=quality_checks,
+                    tagging_evidence=tagging_evidence,
                     parser_results=parser_results,
                     document_segments=document_segments,
                     chunks=chunks,
@@ -313,6 +319,7 @@ class PostgresPipelineStore:
                 "provider_attempts": provider_attempts,
                 "provider_selections": provider_selections,
                 "quality_checks": quality_checks,
+                "tagging_evidence": tagging_evidence,
                 "parser_results": parser_results,
                 "document_segments": document_segments,
                 "chunks": chunks,
@@ -1590,6 +1597,7 @@ class PostgresPipelineStore:
                 (select count(*) from provider_attempts pa where pa.run_id = r.id) as provider_attempt_count,
                 (select count(*) from pipeline_provider_selections pps where pps.run_id = r.id) as provider_selection_count,
                 (select count(*) from pipeline_quality_checks pqc where pqc.run_id = r.id) as quality_check_count,
+                (select count(*) from pipeline_tagging_evidence pte where pte.run_id = r.id) as tagging_evidence_count,
                 (select count(*) from pipeline_parser_results ppr where ppr.run_id = r.id) as parser_result_count,
                 (select count(*) from document_segments ds where ds.run_id = r.id) as document_segment_count
             from pipeline_runs r
@@ -1807,6 +1815,40 @@ class PostgresPipelineStore:
             join pipeline_runs r on r.id = pqc.run_id
             where r.run_key = %s
             order by pqc.created_at asc, pqc.source_path asc nulls last, pqc.check_type asc
+            limit %s
+            """,
+            (run_key, max(1, min(int(limit), 1000))),
+        ).fetchall()
+        return [_json_safe_row(_row_to_dict(row)) for row in rows]
+
+    def _list_tagging_evidence(self, connection: PostgresConnection, *, run_key: str, limit: int) -> list[dict[str, Any]]:
+        rows = connection.execute(
+            """
+            select
+                pte.id,
+                pte.run_id,
+                r.run_key,
+                pte.source_path,
+                pte.relative_path,
+                pte.evidence_type,
+                pte.status,
+                pte.provider,
+                pte.model,
+                pte.primary_tag,
+                pte.confidence,
+                pte.assignment_source,
+                pte.route_status,
+                pte.review_reason,
+                pte.placement_status,
+                pte.destination_path,
+                pte.warnings,
+                pte.evidence,
+                pte.result,
+                pte.created_at
+            from pipeline_tagging_evidence pte
+            join pipeline_runs r on r.id = pte.run_id
+            where r.run_key = %s
+            order by pte.created_at asc, pte.source_path asc nulls last, pte.evidence_type asc
             limit %s
             """,
             (run_key, max(1, min(int(limit), 1000))),
@@ -2426,6 +2468,53 @@ class PostgresPipelineStore:
                 imported += 1
         return imported
 
+    def _import_tagging_evidence(self, connection: PostgresConnection, run_id: str, output_path: Path) -> int:
+        artifacts = [
+            ("retrieval_result", output_path / "sample-retrieval-results.jsonl"),
+            ("semantic_example", output_path / "sample-semantic-examples.jsonl"),
+            ("llm_tag_inspection_result", output_path / "sample-llm-tag-inspection-results.jsonl"),
+            ("llm_tag_inspection", output_path / "sample-llm-tag-inspections.jsonl"),
+            ("tag_candidate", output_path / "sample-tag-candidates.jsonl"),
+            ("confidence_calibration", output_path / "sample-confidence-calibrations.jsonl"),
+            ("placement_proposal", output_path / "sample-placement-proposals.jsonl"),
+            ("route_decision", output_path / "sample-route-decisions.jsonl"),
+        ]
+        connection.execute("delete from pipeline_tagging_evidence where run_id = %s", (run_id,))
+        imported = 0
+        for evidence_type, path in artifacts:
+            for row in _read_jsonl(path):
+                normalized = _tagging_evidence_row(evidence_type, row)
+                connection.execute(
+                    """
+                    insert into pipeline_tagging_evidence (
+                        run_id, source_path, relative_path, evidence_type, status, provider, model,
+                        primary_tag, confidence, assignment_source, route_status, review_reason,
+                        placement_status, destination_path, warnings, evidence, result
+                    ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb)
+                    """,
+                    (
+                        run_id,
+                        normalized["source_path"],
+                        normalized["relative_path"],
+                        evidence_type,
+                        normalized["status"],
+                        normalized["provider"],
+                        normalized["model"],
+                        normalized["primary_tag"],
+                        normalized["confidence"],
+                        normalized["assignment_source"],
+                        normalized["route_status"],
+                        normalized["review_reason"],
+                        normalized["placement_status"],
+                        normalized["destination_path"],
+                        json.dumps(normalized["warnings"]),
+                        json.dumps(normalized["evidence"]),
+                        json.dumps(row, sort_keys=True),
+                    ),
+                )
+                imported += 1
+        return imported
+
     def _import_parser_results(self, connection: PostgresConnection, run_id: str, output_path: Path) -> int:
         rows = _read_jsonl(output_path / "sample-parser-results.jsonl")
         connection.execute("delete from pipeline_parser_results where run_id = %s", (run_id,))
@@ -2554,6 +2643,16 @@ def _run_summary_from_artifacts(output_path: Path) -> dict[str, Any]:
         *_read_jsonl(output_path / "sample-quality-gates.jsonl"),
         *_read_jsonl(output_path / "sample-chunking-results.jsonl"),
     ]
+    tagging_evidence_rows = [
+        *_read_jsonl(output_path / "sample-retrieval-results.jsonl"),
+        *_read_jsonl(output_path / "sample-semantic-examples.jsonl"),
+        *_read_jsonl(output_path / "sample-llm-tag-inspection-results.jsonl"),
+        *_read_jsonl(output_path / "sample-llm-tag-inspections.jsonl"),
+        *_read_jsonl(output_path / "sample-tag-candidates.jsonl"),
+        *_read_jsonl(output_path / "sample-confidence-calibrations.jsonl"),
+        *_read_jsonl(output_path / "sample-placement-proposals.jsonl"),
+        *_read_jsonl(output_path / "sample-route-decisions.jsonl"),
+    ]
     parser_result_rows = _read_jsonl(output_path / "sample-parser-results.jsonl")
     indexing_rows = _read_jsonl(output_path / "sample-indexing.jsonl")
     manifest = _read_json(output_path / "artifact-manifest.json")
@@ -2572,6 +2671,7 @@ def _run_summary_from_artifacts(output_path: Path) -> dict[str, Any]:
             "provider_attempts": len(provider_attempt_rows),
             "provider_selections": len(provider_selection_rows),
             "quality_checks": len(quality_check_rows),
+            "tagging_evidence": len(tagging_evidence_rows),
             "parser_results": len(parser_result_rows),
             "indexing": len(indexing_rows),
         },
@@ -3001,6 +3101,7 @@ def _run_report_summary(
     provider_attempts: list[dict[str, Any]],
     provider_selections: list[dict[str, Any]],
     quality_checks: list[dict[str, Any]],
+    tagging_evidence: list[dict[str, Any]],
     parser_results: list[dict[str, Any]],
     document_segments: list[dict[str, Any]],
     chunks: list[dict[str, Any]],
@@ -3021,6 +3122,7 @@ def _run_report_summary(
         "provider_selection_count": len(provider_selections),
         "quality_check_count": len(quality_checks),
         "quality_review_required_count": sum(1 for row in quality_checks if row.get("requires_review") is True),
+        "tagging_evidence_count": len(tagging_evidence),
         "parser_result_count": len(parser_results),
         "parser_review_required_count": sum(1 for row in parser_results if row.get("requires_review") is True),
         "run_event_count": len(run_events),
@@ -3045,6 +3147,11 @@ def _run_report_summary(
         "quality_check_type": _count_values(quality_checks, "check_type"),
         "quality_check_status": _count_values(quality_checks, "status"),
         "quality_check_quality": _count_values(quality_checks, "quality"),
+        "tagging_evidence_type": _count_values(tagging_evidence, "evidence_type"),
+        "tagging_primary_tag": _count_values(tagging_evidence, "primary_tag"),
+        "tagging_assignment_source": _count_values(tagging_evidence, "assignment_source"),
+        "tagging_route_status": _count_values(tagging_evidence, "route_status"),
+        "tagging_placement_status": _count_values(tagging_evidence, "placement_status"),
         "parser_status": _count_values(parser_results, "status"),
         "parser_quality": _count_values(parser_results, "quality"),
         "parser_provider": _count_values(parser_results, "provider"),
@@ -3070,6 +3177,38 @@ def _optional_bool(value: Any) -> bool | None:
     if value is None:
         return None
     return bool(value)
+
+
+def _tagging_evidence_row(evidence_type: str, row: dict[str, Any]) -> dict[str, Any]:
+    proposal = row.get("proposal") if isinstance(row.get("proposal"), dict) else {}
+    return {
+        "source_path": row.get("source_path") or row.get("sample_path"),
+        "relative_path": row.get("relative_path"),
+        "status": row.get("status") or row.get("llm_status") or row.get("route_status") or proposal.get("placement_status"),
+        "provider": row.get("provider") or row.get("retrieval_provider") or row.get("llm_provider"),
+        "model": row.get("model") or row.get("llm_model"),
+        "primary_tag": _tagging_primary_tag(evidence_type, row, proposal),
+        "confidence": _tagging_confidence(evidence_type, row),
+        "assignment_source": row.get("assignment_source") or row.get("source") or row.get("tag_assignment_source"),
+        "route_status": row.get("route_status"),
+        "review_reason": row.get("review_reason") or row.get("llm_review_reason"),
+        "placement_status": row.get("placement_status") or proposal.get("placement_status"),
+        "destination_path": row.get("destination_path") or proposal.get("destination_path"),
+        "warnings": row.get("warnings") if isinstance(row.get("warnings"), list) else [],
+        "evidence": row.get("evidence") if isinstance(row.get("evidence"), list) else [],
+    }
+
+
+def _tagging_primary_tag(evidence_type: str, row: dict[str, Any], proposal: dict[str, Any]) -> str | None:
+    if evidence_type == "semantic_example":
+        return row.get("correct_primary_tag")
+    return row.get("tag") or row.get("primary_tag") or row.get("top_tag") or row.get("llm_primary_tag") or proposal.get("primary_tag")
+
+
+def _tagging_confidence(evidence_type: str, row: dict[str, Any]) -> Any:
+    if evidence_type == "confidence_calibration":
+        return row.get("calibrated_confidence")
+    return row.get("confidence") or row.get("score") or row.get("tag_confidence") or row.get("llm_confidence")
 
 
 def _call_count(row: dict[str, Any]) -> int:

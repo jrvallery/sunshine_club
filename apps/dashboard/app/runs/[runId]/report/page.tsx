@@ -266,7 +266,7 @@ function PostgresRunReportView({
   const runKey = String(report.run.run_key ?? "");
   const status = String(report.run.status ?? "-");
   const modelCalls = Number(report.summary.model_call_count ?? 0);
-  const postgresTabs = tabs.filter((tab) => ["overview", "files", "review", "segments", "ocr", "extraction", "indexing", "models", "providers", "logs"].includes(tab.key));
+  const postgresTabs = tabs.filter((tab) => ["overview", "files", "review", "segments", "ocr", "extraction", "indexing", "tags", "models", "providers", "logs"].includes(tab.key));
   const activePostgresTab = postgresTabs.some((tab) => tab.key === activeTab) ? activeTab : "overview";
   return (
     <main className="pageShell">
@@ -314,6 +314,7 @@ function PostgresRunReportView({
         <Metric label="Provider attempts" value={String(report.summary.provider_attempt_count ?? 0)} />
         <Metric label="Provider selections" value={String(report.summary.provider_selection_count ?? report.provider_selections?.length ?? 0)} />
         <Metric label="Quality checks" value={String(report.summary.quality_check_count ?? report.quality_checks?.length ?? 0)} />
+        <Metric label="Tag evidence" value={String(report.summary.tagging_evidence_count ?? report.tagging_evidence?.length ?? 0)} />
         <Metric label="Graph events" value={String(report.summary.run_event_count ?? 0)} />
       </section>
 
@@ -332,6 +333,7 @@ function PostgresRunReportView({
       {activePostgresTab === "ocr" ? <PostgresParserTab report={report} /> : null}
       {activePostgresTab === "extraction" ? <PostgresExtractionTab report={report} /> : null}
       {activePostgresTab === "indexing" ? <PostgresIndexingTab report={report} /> : null}
+      {activePostgresTab === "tags" ? <PostgresTagsTab report={report} /> : null}
       {activePostgresTab === "models" ? <JsonTable title="Model Calls" rows={report.model_usage ?? []} /> : null}
       {activePostgresTab === "providers" ? <PostgresProvidersTab report={report} /> : null}
       {activePostgresTab === "logs" ? <LogsTab events={report.run_events ?? []} postgresBacked /> : null}
@@ -355,6 +357,7 @@ function PostgresOverviewTab({ report }: { report: PostgresRunReport }) {
         <Breakdown title="Selection Reasons" values={report.summary.provider_selection_reason ?? {}} />
         <Breakdown title="Quality Check Status" values={report.summary.quality_check_status ?? {}} />
         <Breakdown title="Quality Gate Labels" values={report.summary.quality_check_quality ?? {}} />
+        <Breakdown title="Tag Evidence" values={report.summary.tagging_evidence_type ?? {}} />
         <Breakdown title="Parser Quality" values={report.summary.parser_quality ?? {}} />
         <Breakdown title="Parser Providers" values={report.summary.parser_provider ?? {}} />
         <Breakdown title="Graph Events" values={report.summary.run_event_status ?? {}} />
@@ -607,6 +610,31 @@ function PostgresIndexingTab({ report }: { report: PostgresRunReport }) {
       </div>
       <JsonTable title="Chunks" rows={chunks} />
       <JsonTable title="Chunk Embeddings" rows={embeddings} />
+    </section>
+  );
+}
+
+function PostgresTagsTab({ report }: { report: PostgresRunReport }) {
+  const rows = report.tagging_evidence ?? [];
+  return (
+    <section className="panel">
+      <div className="sectionHeader">
+        <div>
+          <h2>Tagging Evidence</h2>
+          <span>{rows.length} retrieval, semantic, LLM, candidate, calibration, placement, and routing rows</span>
+        </div>
+      </div>
+      <div className="metrics compactMetrics">
+        <Metric label="Rows" value={String(report.summary.tagging_evidence_count ?? rows.length)} />
+      </div>
+      <div className="reportGrid">
+        <Breakdown title="Evidence Type" values={report.summary.tagging_evidence_type ?? {}} />
+        <Breakdown title="Primary Tag" values={report.summary.tagging_primary_tag ?? {}} />
+        <Breakdown title="Assignment Source" values={report.summary.tagging_assignment_source ?? {}} />
+        <Breakdown title="Route Status" values={report.summary.tagging_route_status ?? {}} />
+        <Breakdown title="Placement Status" values={report.summary.tagging_placement_status ?? {}} />
+      </div>
+      <JsonTable title="Tagging Evidence Rows" rows={rows} />
     </section>
   );
 }

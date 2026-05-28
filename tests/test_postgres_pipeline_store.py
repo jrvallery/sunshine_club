@@ -69,6 +69,7 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
         "provider_attempts": 1,
         "pipeline_provider_selections": 1,
         "pipeline_quality_checks": 4,
+        "pipeline_tagging_evidence": 8,
         "pipeline_parser_results": 1,
         "document_segments": 1,
         "review_items": 1,
@@ -85,6 +86,7 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
     assert "insert into provider_attempts" in executed_sql
     assert "insert into pipeline_provider_selections" in executed_sql
     assert "insert into pipeline_quality_checks" in executed_sql
+    assert "insert into pipeline_tagging_evidence" in executed_sql
     assert "insert into pipeline_parser_results" in executed_sql
     assert "insert into document_segments" in executed_sql
     assert "insert into review_items_v2" in executed_sql
@@ -106,6 +108,8 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
     assert json.loads(provider_selection_params[6]) == ["current", "cortex_ocr"]
     quality_check_params = next(params for query, params in connection.executed if "insert into pipeline_quality_checks" in query)
     assert quality_check_params[1:6] == ("/source/a.pdf", "Sunshine/a.pdf", "extraction_validation", "valid", None)
+    tagging_evidence_params = next(params for query, params in connection.executed if "insert into pipeline_tagging_evidence" in query)
+    assert tagging_evidence_params[1:6] == ("/source/a.pdf", "Sunshine/a.pdf", "retrieval_result", "ok", "qdrant")
     parser_params = next(params for query, params in connection.executed if "insert into pipeline_parser_results" in query)
     assert parser_params[1:9] == (
         "/source/a.pdf",
@@ -688,6 +692,7 @@ def test_postgres_pipeline_store_deletes_run_with_cascade_counts() -> None:
                         "provider_attempts": 5,
                         "pipeline_provider_selections": 6,
                         "pipeline_quality_checks": 10,
+                        "pipeline_tagging_evidence": 11,
                         "pipeline_parser_results": 9,
                         "document_segments": 6,
                         "review_items": 7,
@@ -717,6 +722,7 @@ def test_postgres_pipeline_store_deletes_run_with_cascade_counts() -> None:
         "provider_attempts": 5,
         "pipeline_provider_selections": 6,
         "pipeline_quality_checks": 10,
+        "pipeline_tagging_evidence": 11,
         "pipeline_parser_results": 9,
         "document_segments": 6,
         "review_items": 7,
@@ -762,6 +768,7 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
                             "provider_attempt_count": 1,
                             "provider_selection_count": 1,
                             "quality_check_count": 1,
+                            "tagging_evidence_count": 1,
                             "parser_result_count": 1,
                             "document_segment_count": 1,
                         }
@@ -907,6 +914,33 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
                         }
                     ]
                 )
+            if "from pipeline_tagging_evidence pte" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "tagging-evidence-id",
+                            "run_id": "run-id",
+                            "run_key": "run-report",
+                            "source_path": "/source/scrapbook.pdf",
+                            "relative_path": "History/scrapbook.pdf",
+                            "evidence_type": "tag_candidate",
+                            "status": None,
+                            "provider": None,
+                            "model": None,
+                            "primary_tag": "scrapbooks",
+                            "confidence": 0.92,
+                            "assignment_source": "deterministic+semantic",
+                            "route_status": None,
+                            "review_reason": None,
+                            "placement_status": None,
+                            "destination_path": None,
+                            "warnings": [],
+                            "evidence": ["matched:scrapbook"],
+                            "result": {"tag": "scrapbooks"},
+                            "created_at": None,
+                        }
+                    ]
+                )
             if "from pipeline_parser_results ppr" in normalized:
                 return _Cursor(
                     rows=[
@@ -1035,6 +1069,7 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     assert report["summary"]["provider_selection_count"] == 1
     assert report["summary"]["quality_check_count"] == 1
     assert report["summary"]["quality_review_required_count"] == 0
+    assert report["summary"]["tagging_evidence_count"] == 1
     assert report["summary"]["parser_result_count"] == 1
     assert report["summary"]["parser_status"] == {"extracted": 1}
     assert report["summary"]["parser_quality"] == {"ok": 1}
@@ -1053,6 +1088,8 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     assert report["summary"]["provider_selection_reason"] == {"preferred_docling_available": 1}
     assert report["summary"]["quality_check_type"] == {"quality_gate": 1}
     assert report["summary"]["quality_check_status"] == {"ok": 1}
+    assert report["summary"]["tagging_evidence_type"] == {"tag_candidate": 1}
+    assert report["summary"]["tagging_primary_tag"] == {"scrapbooks": 1}
     assert report["results"][0]["top_tag_candidate"] == "scrapbooks"
     assert report["review_items"][0]["segment_id"] == "scrapbook:segment-001"
     assert report["model_usage"][0]["provider"] == "cortex"
@@ -1061,6 +1098,7 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     assert report["provider_selections"][0]["selected_provider"] == "docling"
     assert report["provider_selections"][0]["provider_chain"] == ["docling", "current", "cortex_ocr"]
     assert report["quality_checks"][0]["check_type"] == "quality_gate"
+    assert report["tagging_evidence"][0]["primary_tag"] == "scrapbooks"
     assert report["parser_results"][0]["provider"] == "docling"
     assert report["parser_results"][0]["page_text_coverage_rate"] == 0.92
     assert report["chunks"][0]["chunk_kind"] == "segment_text"
@@ -2052,6 +2090,108 @@ def _postgres_import_artifacts(tmp_path: Path) -> Path:
                 "page_structure_available": True,
                 "page_text_coverage_rate": 1.0,
                 "layout_signal_count": 1,
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-retrieval-results.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "provider": "qdrant",
+                "status": "ok",
+                "query_count": 1,
+                "result_count": 1,
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-semantic-examples.jsonl",
+        [
+            {
+                "source_path": "/source/example.pdf",
+                "relative_path": "Sunshine/example.pdf",
+                "correct_primary_tag": "meeting_records",
+                "score": 0.89,
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-llm-tag-inspection-results.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "provider": "cortex",
+                "model": "gemma4-26b",
+                "status": "inspected",
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-llm-tag-inspections.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "provider": "cortex",
+                "model": "gemma4-26b",
+                "llm_status": "inspected",
+                "primary_tag": "meeting_records",
+                "confidence": 0.9,
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-tag-candidates.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "tag": "meeting_records",
+                "confidence": 0.95,
+                "assignment_source": "deterministic+semantic",
+                "evidence": ["matched:minutes"],
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-confidence-calibrations.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "status": "calibrated",
+                "top_tag": "meeting_records",
+                "calibrated_confidence": 0.95,
+                "requires_review": False,
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-placement-proposals.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "primary_tag": "meeting_records",
+                "proposal": {
+                    "placement_status": "resolved",
+                    "destination_path": "01_Governance_Admin/2026/a.pdf",
+                },
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-route-decisions.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "route_status": "route_candidate",
+                "review_reason": None,
+                "evidence": ["tag_confidence:0.95"],
             }
         ],
     )

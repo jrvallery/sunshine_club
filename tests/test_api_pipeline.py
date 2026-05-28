@@ -282,6 +282,7 @@ def test_local_infrastructure_status_is_local_only(monkeypatch) -> None:
     assert "0008_model_usage_host.sql" in payload["postgres"]["v2_migrations"]["present"]
     assert "0009_pipeline_provider_selections.sql" in payload["postgres"]["v2_migrations"]["present"]
     assert "0010_pipeline_quality_checks.sql" in payload["postgres"]["v2_migrations"]["present"]
+    assert "0011_pipeline_tagging_evidence.sql" in payload["postgres"]["v2_migrations"]["present"]
     assert payload["qdrant"]["provider"] == "qdrant"
     assert payload["qdrant"]["local_only"] is True
     assert payload["qdrant"]["compose_service"] == "qdrant"
