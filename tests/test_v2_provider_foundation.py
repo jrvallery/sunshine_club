@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+import types
 from dataclasses import replace
 from pathlib import Path
 
@@ -381,11 +383,50 @@ def test_retrieval_and_rerank_provider_boundaries_are_local_only() -> None:
     assert qdrant_examples == []
     assert qdrant_attempt.provider == "qdrant"
     assert qdrant_attempt.status == "skipped"
-    assert "qdrant_semantic_retrieval_not_enabled" in qdrant_attempt.warnings
+    assert "qdrant_embedding_provider_missing" in qdrant_attempt.warnings
     assert reranked == [{"text": "minutes"}]
     assert rerank_attempt.provider == "cortex"
     assert rerank_attempt.status == "skipped"
     assert rerank_attempt.metadata["local_only"] is True
+
+
+def test_qdrant_retrieval_provider_queries_local_collection(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakePoint:
+        score = 0.87
+        payload = {"source_path": "/source/minutes.pdf", "correct_primary_tag": "meeting_records", "text": "minutes"}
+
+    class FakeClient:
+        def __init__(self, *, url: str) -> None:
+            captured["url"] = url
+
+        def search(self, *, collection_name: str, query_vector: list[float], limit: int, with_payload: bool) -> list[FakePoint]:
+            captured["collection_name"] = collection_name
+            captured["query_vector"] = query_vector
+            captured["limit"] = limit
+            captured["with_payload"] = with_payload
+            return [FakePoint()]
+
+    fake_module = types.SimpleNamespace(QdrantClient=FakeClient)
+    monkeypatch.setitem(sys.modules, "qdrant_client", fake_module)
+    provider = QdrantSemanticRetrievalProvider(
+        embedding_provider=PlaceholderEmbeddingProvider(dimensions=3),
+        url="http://127.0.0.1:6333",
+        collection="sunshine-test",
+    )
+
+    examples, attempt = provider.retrieve(index_path=None, query_text="meeting minutes", limit=2)
+
+    assert attempt.status == "retrieved"
+    assert attempt.query_count == 1
+    assert attempt.result_count == 1
+    assert captured["collection_name"] == "sunshine-test"
+    assert captured["limit"] == 2
+    assert len(captured["query_vector"]) == 3
+    assert examples[0]["correct_primary_tag"] == "meeting_records"
+    assert examples[0]["retrieval_provider"] == "qdrant"
+    assert examples[0]["score"] == 0.87
 
 
 def test_current_llm_tag_inspection_provider_wraps_existing_behavior(tmp_path: Path) -> None:

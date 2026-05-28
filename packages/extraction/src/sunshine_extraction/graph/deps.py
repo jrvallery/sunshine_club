@@ -17,7 +17,7 @@ from sunshine_extraction.providers.embeddings import ChunkEmbeddingProvider, Cur
 from sunshine_extraction.providers.extraction import ExtractionProvider, extraction_provider_from_env
 from sunshine_extraction.providers.llm import CurrentLLMTagInspectionProvider, LLMTagInspectionProvider
 from sunshine_extraction.providers.observability import ObservabilityProvider, observability_provider_from_env
-from sunshine_extraction.providers.retrieval import CurrentSemanticRetrievalProvider, SemanticRetrievalProvider
+from sunshine_extraction.providers.retrieval import CurrentSemanticRetrievalProvider, QdrantSemanticRetrievalProvider, SemanticRetrievalProvider
 from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider, VectorStoreProvider
 from sunshine_extraction.services.extraction import OcrExecutor, ocr_executor_from_env
 from sunshine_extraction.services.imports import RunResultsImporter, run_results_importer_from_env
@@ -53,7 +53,7 @@ def _resolve_deps(
         "chunking_provider": chunking_provider or CurrentChunkingProvider(),
         "chunk_embedding_provider": chunk_embedding_provider or CurrentChunkEmbeddingProvider(embedding_provider),
         "vector_store": vector_store or _vector_store_from_env(),
-        "semantic_retrieval_provider": semantic_retrieval_provider or CurrentSemanticRetrievalProvider(embedding_provider),
+        "semantic_retrieval_provider": semantic_retrieval_provider or _semantic_retrieval_provider_from_env(embedding_provider),
         "llm_tag_inspection_provider": llm_tag_inspection_provider or CurrentLLMTagInspectionProvider(active_llm_tag_inspector),
         "embedding_provider": embedding_provider,
         "embedding_failure_mode": _embedding_failure_mode(embedding_failure_mode),
@@ -79,6 +79,13 @@ def _vector_store_from_env() -> VectorStoreProvider:
     if provider_name == "qdrant":
         return QdrantVectorStoreProvider()
     return NoopVectorStoreProvider()
+
+
+def _semantic_retrieval_provider_from_env(embedding_provider: EmbeddingProvider) -> SemanticRetrievalProvider:
+    provider_name = os.environ.get("SUNSHINE_RETRIEVAL_PROVIDER", "sqlite_semantic_index").strip().lower()
+    if provider_name == "qdrant":
+        return QdrantSemanticRetrievalProvider(embedding_provider=embedding_provider)
+    return CurrentSemanticRetrievalProvider(embedding_provider)
 
 
 def _semantic_index_path_from_env() -> str | None:
