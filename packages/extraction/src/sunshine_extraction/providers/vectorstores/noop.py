@@ -1,0 +1,27 @@
+"""No-op vector store used when Qdrant is not configured."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from sunshine_extraction.providers.vectorstores.base import VectorStoreUpsertResult
+
+
+class NoopVectorStoreProvider:
+    provider_name = "noop"
+
+    def dependency_status(self) -> dict[str, Any]:
+        return {"provider": self.provider_name, "available": True, "local_only": True}
+
+    def upsert_embeddings(self, chunks: list[dict[str, Any]], embeddings: list[dict[str, Any]]) -> VectorStoreUpsertResult:
+        skipped = len([row for row in embeddings if row.get("embedding_status") == "embedded"])
+        return VectorStoreUpsertResult(
+            provider=self.provider_name,
+            collection=None,
+            status="skipped",
+            indexed_count=0,
+            skipped_count=skipped,
+            warnings=["vector_store_not_configured"] if skipped else [],
+            metadata={"local_only": True, "chunk_count": len(chunks), "embedding_count": len(embeddings)},
+        )
+

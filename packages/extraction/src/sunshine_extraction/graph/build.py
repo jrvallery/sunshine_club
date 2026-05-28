@@ -8,7 +8,7 @@ from langgraph.graph import END, START, StateGraph
 
 from sunshine_extraction.graph.node_runtime import _run_node
 from sunshine_extraction.graph.nodes.classification import _classify_content_type, _plan_extraction
-from sunshine_extraction.graph.nodes.embeddings import _embed_chunks_node, _retrieve_labeled_examples_node
+from sunshine_extraction.graph.nodes.embeddings import _embed_chunks_node, _index_chunks_node, _retrieve_labeled_examples_node
 from sunshine_extraction.graph.nodes.extraction import (
     _after_quality_gate,
     _chunk_content_node,
@@ -36,6 +36,7 @@ def build_document_graph(deps: DocumentPipelineDeps | None = None, *, checkpoint
     builder.add_node("propose_document_segments", lambda state: _run_node("propose_document_segments", state, _propose_document_segments_node))
     builder.add_node("chunk_content", lambda state: _run_node("chunk_content", state, _chunk_content_node))
     builder.add_node("embed_chunks", lambda state: _run_node("embed_chunks", state, lambda active: _embed_chunks_node(active, active_deps)))
+    builder.add_node("index_chunks", lambda state: _run_node("index_chunks", state, lambda active: _index_chunks_node(active, active_deps)))
     builder.add_node("retrieve_labeled_examples", lambda state: _run_node("retrieve_labeled_examples", state, lambda active: _retrieve_labeled_examples_node(active, active_deps)))
     builder.add_node("assign_deterministic_tags", lambda state: _run_node("assign_deterministic_tags", state, _assign_deterministic_tags))
     builder.add_node("inspect_tags_with_llm", lambda state: _run_node("inspect_tags_with_llm", state, lambda active: _inspect_tags_with_llm(active, active_deps)))
@@ -61,7 +62,8 @@ def build_document_graph(deps: DocumentPipelineDeps | None = None, *, checkpoint
     )
     builder.add_edge("propose_document_segments", "chunk_content")
     builder.add_edge("chunk_content", "embed_chunks")
-    builder.add_edge("embed_chunks", "retrieve_labeled_examples")
+    builder.add_edge("embed_chunks", "index_chunks")
+    builder.add_edge("index_chunks", "retrieve_labeled_examples")
     builder.add_edge("retrieve_labeled_examples", "assign_deterministic_tags")
     builder.add_edge("assign_deterministic_tags", "inspect_tags_with_llm")
     builder.add_edge("inspect_tags_with_llm", "combine_tag_evidence")

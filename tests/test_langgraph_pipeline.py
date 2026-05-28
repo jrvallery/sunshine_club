@@ -159,6 +159,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     review_rows = [json.loads(line) for line in (output_dir / "sample-review-queue.jsonl").read_text().splitlines()]
     chunk_rows = [json.loads(line) for line in (output_dir / "sample-chunks.jsonl").read_text().splitlines()]
     embedding_rows = [json.loads(line) for line in (output_dir / "sample-embeddings.jsonl").read_text().splitlines()]
+    indexing_rows = [json.loads(line) for line in (output_dir / "sample-indexing.jsonl").read_text().splitlines()]
     semantic_rows = [json.loads(line) for line in (output_dir / "sample-semantic-examples.jsonl").read_text().splitlines()]
     llm_rows = [json.loads(line) for line in (output_dir / "sample-llm-tag-inspections.jsonl").read_text().splitlines()]
     model_usage_rows = [json.loads(line) for line in (output_dir / "sample-model-usage.jsonl").read_text().splitlines()]
@@ -175,6 +176,8 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert review_rows == []
     assert chunk_rows[0]["chunk_kind"] == "text"
     assert embedding_rows[0]["embedding_status"] == "placeholder"
+    assert indexing_rows[0]["provider"] == "noop"
+    assert indexing_rows[0]["status"] == "skipped"
     assert semantic_rows == []
     assert llm_rows[0]["primary_tag"] == "annual_spring_tea"
     assert segment_rows[0]["segment_type"] == "single_document"
@@ -191,6 +194,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
         "propose_document_segments",
         "chunk_content",
         "embed_chunks",
+        "index_chunks",
         "retrieve_labeled_examples",
         "assign_deterministic_tags",
         "inspect_tags_with_llm",

@@ -66,6 +66,7 @@ from sunshine_extraction.graph.build import build_document_graph
 from sunshine_extraction.graph.deps import SEMANTIC_INDEX_FROM_ENV, _resolve_deps
 from sunshine_extraction.graph.utils import _json_safe, _write_jsonl
 from sunshine_extraction.providers.extraction import ExtractionProvider
+from sunshine_extraction.providers.vectorstores import VectorStoreProvider
 
 def run_document_graph(
     input_file: str | Path,
@@ -80,6 +81,7 @@ def run_document_graph(
     sample_number: int = 1,
     index_metadata: dict[str, Any] | None = None,
     extraction_provider: ExtractionProvider | None = None,
+    vector_store: VectorStoreProvider | None = None,
     embedding_provider: EmbeddingProvider | None = None,
     embedding_failure_mode: str | None = None,
     llm_tag_inspector: LLMTagInspector | None = None,
@@ -125,6 +127,7 @@ def run_document_graph(
 
     deps = _resolve_deps(
         extraction_provider=extraction_provider,
+        vector_store=vector_store,
         embedding_provider=embedding_provider,
         embedding_failure_mode=embedding_failure_mode,
         llm_tag_inspector=llm_tag_inspector,

@@ -8,6 +8,7 @@ from typing import Any, TypedDict
 
 from sunshine_extraction.embeddings import EmbeddingProvider
 from sunshine_extraction.providers.extraction import ExtractionProvider
+from sunshine_extraction.providers.vectorstores import VectorStoreProvider
 from sunshine_extraction.services.content import SampleFile
 from sunshine_extraction.services.extraction import ExtractionResult, OcrExecutor
 from sunshine_extraction.services.tagging import LLMTagInspector
@@ -41,6 +42,7 @@ class DocumentPipelineState(TypedDict, total=False):
     document_segments: list[dict[str, Any]]
     chunks: list[dict[str, Any]]
     embeddings: list[dict[str, Any]]
+    indexing_result: dict[str, Any]
     semantic_examples: list[dict[str, Any]]
     deterministic_tag_candidates: list[dict[str, Any]]
     llm_tag_inspection: dict[str, Any]
@@ -57,6 +59,7 @@ class DocumentPipelineState(TypedDict, total=False):
 
 class DocumentPipelineDeps(TypedDict, total=False):
     extraction_provider: ExtractionProvider
+    vector_store: VectorStoreProvider
     embedding_provider: EmbeddingProvider
     embedding_failure_mode: str
     llm_tag_inspector: LLMTagInspector

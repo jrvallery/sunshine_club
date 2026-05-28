@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from sunshine_extraction.providers.extraction import CurrentExtractionProvider, DoclingExtractionProvider
+from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider
 from sunshine_extraction.sample_pipeline import SampleFile, llm_tag_inspector_from_env, ocr_executor_from_env
 from sunshine_extraction.services.provider_policy import assert_local_provider
 from sunshine_extraction.services.segmentation import propose_document_segments
@@ -40,6 +41,27 @@ def test_docling_provider_is_optional_and_local_only() -> None:
     assert status["provider"] == "docling"
     assert status["local_only"] is True
     assert "available" in status
+
+
+def test_qdrant_vector_provider_is_optional_and_local_only() -> None:
+    status = QdrantVectorStoreProvider(url="http://127.0.0.1:6333", collection="test").dependency_status()
+
+    assert status["provider"] == "qdrant"
+    assert status["local_only"] is True
+    assert status["url"] == "http://127.0.0.1:6333"
+    assert status["collection"] == "test"
+
+
+def test_noop_vector_provider_records_unconfigured_indexing() -> None:
+    result = NoopVectorStoreProvider().upsert_embeddings(
+        [{"chunk_id": "chunk-1", "text": "hello"}],
+        [{"chunk_id": "chunk-1", "embedding_status": "embedded", "embedding": [0.1]}],
+    )
+
+    assert result.status == "skipped"
+    assert result.indexed_count == 0
+    assert result.skipped_count == 1
+    assert "vector_store_not_configured" in result.warnings
 
 
 def test_hosted_provider_policy_blocks_openai() -> None:

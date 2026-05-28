@@ -10,6 +10,7 @@ from sunshine_extraction.embeddings import EmbeddingConfigurationError, Embeddin
 from sunshine_extraction.graph.model_usage import _cost_basis, _embedding_model_usage_row, _model_usage_row
 from sunshine_extraction.graph.node_utils import _empty_extraction
 from sunshine_extraction.graph.state import DocumentPipelineDeps, DocumentPipelineState
+from sunshine_extraction.services.indexing import index_chunks
 from sunshine_extraction.services.vectorization import embed_chunks, embed_chunks_with_fallback
 from sunshine_extraction.semantic_index import search_semantic_index
 
@@ -61,6 +62,11 @@ def _embed_chunks_node(state: DocumentPipelineState, deps: DocumentPipelineDeps)
         "warnings": [*state.get("warnings", []), *embedding_warnings],
         "model_usage": [*state.get("model_usage", []), usage_row] if usage_row else state.get("model_usage", []),
     }
+
+def _index_chunks_node(state: DocumentPipelineState, deps: DocumentPipelineDeps) -> dict[str, Any]:
+    result = index_chunks(state.get("chunks", []), state.get("embeddings", []), deps["vector_store"])
+    warnings = [*state.get("warnings", []), *result.get("warnings", [])]
+    return {"indexing_result": result, "warnings": warnings}
 
 def _retrieve_labeled_examples_node(state: DocumentPipelineState, deps: DocumentPipelineDeps) -> dict[str, Any]:
     index_path = deps.get("semantic_index_path")
