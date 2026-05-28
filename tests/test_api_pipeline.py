@@ -41,6 +41,27 @@ def test_api_pipeline_run_file_processes_one_file(tmp_path: Path, monkeypatch) -
     assert checkpoint_path.exists()
 
 
+def test_local_infrastructure_status_is_local_only(monkeypatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://sunshine:local@localhost:5432/sunshine_club")
+    monkeypatch.setenv("SUNSHINE_QDRANT_URL", "http://127.0.0.1:6333")
+    monkeypatch.setenv("CORTEX_OPENAI_BASE_URL", "http://127.0.0.1:11434/v1")
+    monkeypatch.setenv("CORTEX_MODEL", "gemma4-26b")
+
+    response = TestClient(app).get("/admin/system/local-infrastructure")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["local_only"] is True
+    assert payload["policy"]["hosted_third_party_apis_allowed"] is False
+    assert payload["policy"]["source_files_mutable"] is False
+    assert payload["postgres"]["configured"] is True
+    assert payload["qdrant"]["provider"] == "qdrant"
+    assert payload["qdrant"]["local_only"] is True
+    assert payload["docling"]["provider"] == "docling"
+    assert payload["docling"]["local_only"] is True
+    assert payload["cortex"]["configured"] is True
+
+
 def test_model_usage_report_infers_calls_from_legacy_artifacts(tmp_path: Path) -> None:
     output_dir = tmp_path / "legacy-run"
     output_dir.mkdir()

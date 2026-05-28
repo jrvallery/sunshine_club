@@ -34,6 +34,7 @@ router = APIRouter()
 from sunshine_core.models import FoundationRunRequest, ThinSliceOutcome
 from sunshine_core.repository import InMemoryFoundationRepository
 from sunshine_core.thin_slice import run_foundation_slice
+from sunshine_api.services.local_infrastructure import local_infrastructure_status
 
 repository = InMemoryFoundationRepository()
 
@@ -43,7 +44,11 @@ def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@router.get("/admin/system/local-infrastructure")
+def local_infrastructure() -> dict[str, Any]:
+    return local_infrastructure_status()
+
+
 @router.post("/admin/foundation/run-staged-file", response_model=ThinSliceOutcome)
 def run_staged_file(request: FoundationRunRequest) -> ThinSliceOutcome:
     return run_foundation_slice(request, repository)
-
