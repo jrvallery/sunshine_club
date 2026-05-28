@@ -57,6 +57,7 @@ def _persist_outputs(state: DocumentPipelineState) -> dict[str, Any]:
     if state.get("sample") and state.get("llm_tag_inspection"):
         artifacts["sample-llm-tag-inspections.jsonl"] = [llm_inspection_row(state["sample"], state["llm_tag_inspection"])]
     artifacts["sample-tag-candidates.jsonl"] = state.get("tag_candidates", [])
+    artifacts["sample-confidence-calibrations.jsonl"] = [state["confidence_calibration_result"]] if state.get("confidence_calibration_result") else []
     artifacts["sample-model-usage.jsonl"] = state.get("model_usage", [])
 
     for filename, rows in artifacts.items():

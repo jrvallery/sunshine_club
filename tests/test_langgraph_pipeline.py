@@ -181,6 +181,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     provider_selection_rows = [json.loads(line) for line in (output_dir / "sample-provider-selections.jsonl").read_text().splitlines()]
     placement_rows = [json.loads(line) for line in (output_dir / "sample-placement-proposals.jsonl").read_text().splitlines()]
     route_rows = [json.loads(line) for line in (output_dir / "sample-route-decisions.jsonl").read_text().splitlines()]
+    calibration_rows = [json.loads(line) for line in (output_dir / "sample-confidence-calibrations.jsonl").read_text().splitlines()]
     import_rows = [json.loads(line) for line in (output_dir / "sample-import-results.jsonl").read_text().splitlines()]
     manifest = json.loads((output_dir / "artifact-manifest.json").read_text())
     manifest_by_name = {artifact["name"]: artifact for artifact in manifest["artifacts"]}
@@ -245,11 +246,16 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert route_rows[0]["priority"] == "none"
     assert route_rows[0]["review_stage"] == "accepted"
     assert "top_tag:annual_spring_tea" in route_rows[0]["evidence"]
+    assert calibration_rows[0]["status"] == "calibrated"
+    assert calibration_rows[0]["top_tag"] == "annual_spring_tea"
+    assert calibration_rows[0]["calibrated_confidence"] == final_result["tag_confidence"]
+    assert calibration_rows[0]["candidate_count"] == len(result["tag_candidates"])
     assert import_rows[0]["import_status"] == "skipped"
     assert import_rows[0]["importer"] == "noop"
     assert manifest_by_name["sample-pipeline-results.jsonl"]["row_count"] == 1
     assert manifest_by_name["sample-route-decisions.jsonl"]["row_count"] == 1
     assert manifest_by_name["sample-llm-tag-inspection-results.jsonl"]["row_count"] == 1
+    assert manifest_by_name["sample-confidence-calibrations.jsonl"]["row_count"] == 1
     assert manifest_by_name["sample-document-segments.jsonl"]["row_count"] == 1
     assert manifest_by_name["sample-chunking-results.jsonl"]["row_count"] == 1
     assert manifest_by_name["sample-embedding-results.jsonl"]["row_count"] == 1
@@ -577,6 +583,7 @@ def test_langgraph_batch_aggregates_artifacts_and_continues_after_file_failure(t
     assert manifest_by_name["sample-embedding-results.jsonl"]["row_count"] == 1
     assert manifest_by_name["sample-retrieval-results.jsonl"]["row_count"] == 1
     assert manifest_by_name["sample-llm-tag-inspection-results.jsonl"]["row_count"] == 1
+    assert manifest_by_name["sample-confidence-calibrations.jsonl"]["row_count"] == 1
     assert manifest_by_name["graph-batch-summary.json"]["kind"] == "json"
     assert len(manifest_by_name["sample-pipeline-summary.json"]["sha256"]) == 64
     assert (output_dir / "graph-runs" / "00001" / "graph-result.json").exists()

@@ -210,6 +210,7 @@ def _run_artifacts(output_dir: Path) -> list[dict[str, Any]]:
         "sample-placement-proposals.jsonl",
         "sample-route-decisions.jsonl",
         "sample-llm-tag-inspection-results.jsonl",
+        "sample-confidence-calibrations.jsonl",
         "sample-import-results.jsonl",
         "artifact-manifest.json",
         "graph-result.json",

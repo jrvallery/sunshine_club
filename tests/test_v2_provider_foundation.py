@@ -16,6 +16,7 @@ from sunshine_extraction.providers.retrieval import CurrentSemanticRetrievalProv
 from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider
 from sunshine_extraction.sample_pipeline import SampleFile, llm_tag_inspector_from_env, ocr_executor_from_env
 from sunshine_extraction.services.provider_policy import assert_local_provider
+from sunshine_extraction.services.confidence import calibrate_confidence, confidence_calibration_row
 from sunshine_extraction.services.segmentation import propose_document_segments
 from sunshine_extraction.services.extraction import ExtractionResult
 from sunshine_extraction.services.structure import normalize_document_structure
@@ -183,6 +184,41 @@ def test_current_llm_tag_inspection_provider_wraps_existing_behavior(tmp_path: P
     assert attempt.status == "inspected"
     assert attempt.input_tokens == 10
     assert attempt.total_tokens == 15
+
+
+def test_confidence_calibration_service_writes_auditable_row() -> None:
+    candidates, calibration = calibrate_confidence(
+        [
+            {
+                "tag": "annual_spring_tea",
+                "confidence": 0.9,
+                "evidence": ["tea evidence"],
+                "secondary_tags": [],
+                "assignment_source": "deterministic",
+            }
+        ],
+        {"quality": "ok", "requires_review": False},
+        {"strategy": "text_extraction"},
+        llm_inspection={"llm_status": "skipped"},
+        semantic_examples=[],
+        embeddings=[],
+    )
+
+    row = confidence_calibration_row(
+        calibration,
+        source_path="/source/tea.pdf",
+        relative_path="Teas/tea.pdf",
+        top_candidate=candidates[0],
+        quality={"quality": "ok"},
+        plan={"strategy": "text_extraction"},
+        candidate_count=len(candidates),
+    )
+
+    assert row["status"] == "calibrated"
+    assert row["top_tag"] == "annual_spring_tea"
+    assert row["calibrated_confidence"] == candidates[0]["confidence"]
+    assert row["candidate_count"] == 1
+    assert row["extraction_strategy"] == "text_extraction"
 
 
 def test_docling_provider_is_optional_and_local_only() -> None:

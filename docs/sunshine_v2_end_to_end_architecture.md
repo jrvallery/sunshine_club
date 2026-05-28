@@ -1008,6 +1008,12 @@ Success criteria:
 - Calibration reasons are visible.
 - Golden eval gates enforce high-confidence accuracy.
 
+Current implementation:
+
+- `services/confidence/calibration.py` defines the confidence calibration service boundary.
+- Graph runs write `sample-confidence-calibrations.jsonl` with top tag, base/calibrated confidence, review requirement, factors, quality, strategy, and candidate count.
+- Final route decisions consume the calibrated candidate output, so confidence factors remain tied to accepted/review outcomes.
+
 ### 21. `propose_placement`
 
 Purpose:
@@ -1133,6 +1139,7 @@ Artifacts:
 - `sample-llm-tag-inspection-results.jsonl`
 - `sample-llm-tag-inspections.jsonl`
 - `sample-tag-candidates.jsonl`
+- `sample-confidence-calibrations.jsonl`
 - `sample-placement-proposals.jsonl`
 - `sample-route-decisions.jsonl`
 - `sample-model-usage.jsonl`
@@ -1689,6 +1696,7 @@ Required artifacts:
 - `sample-llm-tag-inspection-results.jsonl`
 - `sample-llm-tag-inspections.jsonl`
 - `sample-tag-candidates.jsonl`
+- `sample-confidence-calibrations.jsonl`
 - `sample-placement-proposals.jsonl`
 - `sample-route-decisions.jsonl`
 - `sample-model-usage.jsonl`

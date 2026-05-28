@@ -8,10 +8,10 @@ from typing import Any
 from sunshine_extraction.graph.model_usage import _llm_tag_model_usage_row
 from sunshine_extraction.graph.node_utils import _empty_extraction, _llm_inspection_warnings, _unique_strings
 from sunshine_extraction.graph.state import DocumentPipelineDeps, DocumentPipelineState
+from sunshine_extraction.services.confidence import calibrate_confidence, confidence_calibration_row
 from sunshine_extraction.services.tagging import (
     DEFAULT_TAXONOMY_PATH,
     assign_tag_candidates,
-    calibrate_tag_confidence,
     combine_tag_candidates,
     load_taxonomy_options,
 )
@@ -54,7 +54,7 @@ def _combine_tag_evidence(state: DocumentPipelineState) -> dict[str, Any]:
     }
 
 def _calibrate_tag_confidence_node(state: DocumentPipelineState) -> dict[str, Any]:
-    tag_candidates, calibration = calibrate_tag_confidence(
+    tag_candidates, calibration = calibrate_confidence(
         state.get("tag_candidates", []),
         state.get("extraction_quality", {"quality": "failed", "requires_review": True}),
         state["extraction_plan"],
@@ -62,4 +62,16 @@ def _calibrate_tag_confidence_node(state: DocumentPipelineState) -> dict[str, An
         semantic_examples=state.get("semantic_examples", []),
         embeddings=state.get("embeddings", []),
     )
-    return {"tag_candidates": tag_candidates, "confidence_calibration": calibration}
+    return {
+        "tag_candidates": tag_candidates,
+        "confidence_calibration": calibration,
+        "confidence_calibration_result": confidence_calibration_row(
+            calibration,
+            source_path=state.get("source_path"),
+            relative_path=state.get("relative_path"),
+            top_candidate=tag_candidates[0] if tag_candidates else None,
+            quality=state.get("extraction_quality", {}),
+            plan=state["extraction_plan"],
+            candidate_count=len(tag_candidates),
+        ),
+    }
