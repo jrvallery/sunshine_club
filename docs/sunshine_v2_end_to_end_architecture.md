@@ -1281,6 +1281,7 @@ Artifacts:
 - `sample-extraction-repairs.jsonl`
 - `sample-quality-gates.jsonl`
 - `sample-parser-results.jsonl`
+- `sample-raw-provider-artifacts.jsonl`
 - `sample-ocr-pages.jsonl`
 - `sample-ocr-documents.jsonl`
 - `sample-structure.jsonl`
@@ -1365,6 +1366,7 @@ Current implementation:
 - Review queue artifacts are segment-aware for segment-boundary routes. When a long packet produces review-required page-range candidates, `sample-review-queue.jsonl` emits one row per reviewable segment with segment ID, title, type, page range, confidence, and boundary evidence, allowing Postgres review rows and golden labels to attach corrections to the child-document candidate.
 - The segmenter can now propose related consecutive page groups from page-level text signals, including newspaper/article pages, scrapbook/photo pages, meeting packet pages, financial packet pages, and historical context pages. These are still review-only logical segments; no source PDF is split or modified automatically.
 - The Docling provider now recovers page text from Docling text-item provenance when page objects do not export their own text. This improves the normalized structure rows that feed `propose_document_segments` and makes future scrapbook/newspaper packet benchmarks less dependent on a single provider object shape.
+- Non-current extraction providers now write run-owned raw-provider snapshot artifacts under `raw-providers/` and emit references through `sample-raw-provider-artifacts.jsonl`, provider-attempt metadata, and extraction metadata. This keeps normalized rows small while making Docling/local parser evidence traceable by path and hash.
 - `GET /admin/files`, `/admin/files/search`, `/admin/files/facets`, `/admin/files/{result_id}`, `/admin/files/{result_id}/inspection`, `/admin/files/{result_id}/text`, `/admin/files/{result_id}/preview`, and `/admin/files/{result_id}/download` can opt into the V2 Postgres file read model with `source=postgres`. Postgres file detail uses `pipeline_results.id`, reconstructs text from imported chunks when available, and serves only existing corpus/sample paths. `POST /admin/files/{result_id}/review?source=postgres` can enqueue or reopen the parent-file result in `review_items_v2` without writing a legacy SQLite review row.
 - `POST /admin/files/{result_id}/run?source=postgres` can start a LangGraph single-file run from a Postgres file result by resolving the existing source/sample file path and preserving the original `source_path` and `relative_path` in the command. The current run queue still uses the dashboard run tracker for progress/logs, and successful runs import artifacts into Postgres when configured.
 - The Files dashboard now exposes the same SQLite/Postgres source switch used by review/golden-label workflows. The selected source is preserved in file-detail links, search/facet requests, preview/download URLs, add-to-review actions, and single-file run actions.

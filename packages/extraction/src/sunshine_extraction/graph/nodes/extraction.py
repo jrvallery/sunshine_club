@@ -11,6 +11,7 @@ from sunshine_extraction.providers.extraction.router import select_extraction_pr
 from sunshine_extraction.services.extraction import (
     OcrArtifacts,
 )
+from sunshine_extraction.services.raw_provider_artifacts import write_raw_provider_artifact
 
 
 def _select_extraction_provider_node(state: DocumentPipelineState, deps: DocumentPipelineDeps) -> dict[str, Any]:
@@ -43,9 +44,17 @@ def _extract_content_node(state: DocumentPipelineState, deps: DocumentPipelineDe
         "sample_path": str(state["sample"].sample_path),
         **provider_attempt.as_row(),
     }
+    raw_artifact = write_raw_provider_artifact(state["output_dir"], extraction, provider_attempt_row)
+    if raw_artifact:
+        extraction = _with_raw_provider_artifact(extraction, raw_artifact)
+        provider_attempt_row = {
+            **provider_attempt_row,
+            "metadata": {**provider_attempt_row.get("metadata", {}), "raw_provider_artifact": raw_artifact},
+        }
     updates: dict[str, Any] = {
         "extraction_result": extraction,
         "provider_attempts": [*state.get("provider_attempts", []), provider_attempt_row],
+        "raw_provider_artifacts": [*state.get("raw_provider_artifacts", []), raw_artifact] if raw_artifact else state.get("raw_provider_artifacts", []),
         "ocr_pages": ocr_artifacts.pages,
         "warnings": [*state.get("warnings", []), *extraction.warnings],
     }
@@ -55,6 +64,18 @@ def _extract_content_node(state: DocumentPipelineState, deps: DocumentPipelineDe
     if usage_rows:
         updates["model_usage"] = [*state.get("model_usage", []), *usage_rows]
     return updates
+
+
+def _with_raw_provider_artifact(extraction: Any, raw_artifact: dict[str, Any]) -> Any:
+    return type(extraction)(
+        sample=extraction.sample,
+        plan=extraction.plan,
+        extraction_status=extraction.extraction_status,
+        text=extraction.text,
+        metadata={**extraction.metadata, "raw_provider_artifact": raw_artifact},
+        page_count=extraction.page_count,
+        warnings=extraction.warnings,
+    )
 
 
 def _provider_for_selection(selection: dict[str, Any], deps: DocumentPipelineDeps) -> Any:

@@ -81,6 +81,7 @@ def run_document_batch(
         "sample-extraction-repairs.jsonl": [],
         "sample-quality-gates.jsonl": [],
         "sample-provider-attempts.jsonl": [],
+        "sample-raw-provider-artifacts.jsonl": [],
         "sample-parser-results.jsonl": [],
         "sample-ocr-pages.jsonl": [],
         "sample-ocr-documents.jsonl": [],
@@ -312,6 +313,7 @@ def _append_batch_rows(artifact_rows: dict[str, list[dict[str, Any]]], result: d
     if result.get("quality_gate_result"):
         artifact_rows["sample-quality-gates.jsonl"].append(result["quality_gate_result"])
     artifact_rows["sample-provider-attempts.jsonl"].extend(result.get("provider_attempts", []))
+    artifact_rows["sample-raw-provider-artifacts.jsonl"].extend(result.get("raw_provider_artifacts", []))
     if extraction_result and extraction_quality:
         artifact_rows["sample-parser-results.jsonl"].append(
             parser_result_row(

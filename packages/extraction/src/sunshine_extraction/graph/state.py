@@ -51,6 +51,7 @@ class DocumentPipelineState(TypedDict, total=False):
     extraction_quality: dict[str, Any]
     quality_gate_result: dict[str, Any]
     provider_attempts: list[dict[str, Any]]
+    raw_provider_artifacts: list[dict[str, Any]]
     ocr_pages: list[dict[str, Any]]
     ocr_document: dict[str, Any]
     document_structure: dict[str, Any]

@@ -7,11 +7,11 @@ from pathlib import Path
 from pypdf import PdfWriter
 
 from sunshine_extraction.embeddings import EmbeddingProviderError, PlaceholderEmbeddingProvider
-from sunshine_extraction.providers.extraction import CurrentExtractionProvider
+from sunshine_extraction.providers.extraction import CurrentExtractionProvider, ExtractionProviderAttempt
 from sunshine_extraction.semantic_index import build_semantic_index
 from sunshine_extraction.langgraph_pipeline import run_document_batch, run_document_graph
 from sunshine_extraction.domain.documents import SampleFile
-from sunshine_extraction.domain.extraction import OcrDocumentResult, OcrExecutor, OcrPageResult
+from sunshine_extraction.domain.extraction import ExtractionResult, OcrDocumentResult, OcrExecutor, OcrPageResult
 from sunshine_extraction.services.tagging import LLMTagInspector
 
 
@@ -36,6 +36,41 @@ class _FailingEmbeddingProvider:
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         raise EmbeddingProviderError("embedding service unavailable")
+
+
+class _LocalRawExtractionProvider:
+    provider_name = "docling"
+
+    def dependency_status(self) -> dict:
+        return {"provider": self.provider_name, "available": True, "local_only": True}
+
+    def extract(self, sample: SampleFile, plan: dict, *, ocr_executor=None, ocr_artifacts=None):
+        text = "Sunshine founders history and meeting notes."
+        extraction = ExtractionResult(
+            sample=sample,
+            plan={**plan, "provider": self.provider_name},
+            extraction_status="extracted",
+            text=text,
+            metadata={
+                "provider": self.provider_name,
+                "local_only": True,
+                "docling_structure": {
+                    "page_count": 1,
+                    "pages": [{"page_number": 1, "text": text, "text_length": len(text), "word_count": len(text.split())}],
+                },
+            },
+            page_count=1,
+            warnings=[],
+        )
+        attempt = ExtractionProviderAttempt(
+            provider=self.provider_name,
+            status="extracted",
+            strategy=plan.get("strategy"),
+            seconds=0.1,
+            warnings=[],
+            metadata={"local_only": True},
+        )
+        return extraction, attempt
 
 
 class _TeaLLMTagInspector(LLMTagInspector):
@@ -533,6 +568,43 @@ def test_langgraph_missing_file_persists_failure_state(tmp_path: Path) -> None:
     assert manifest_by_name["sample-import-results.jsonl"]["row_count"] == 1
     assert len(manifest_by_name["graph-result.json"]["sha256"]) == 64
     assert [event["node"] for event in audit_events] == ["load_file_context", "persist_outputs", "import_run_results"]
+
+
+def test_langgraph_writes_raw_provider_artifact_reference_for_non_current_extractor(tmp_path: Path) -> None:
+    source = tmp_path / "docling-source.txt"
+    source.write_text("Docling source placeholder.", encoding="utf-8")
+    output_dir = tmp_path / "graph-out"
+
+    result = run_document_graph(
+        source,
+        output_dir=output_dir,
+        content_class={"final_class": "scanned_document", "final_status": "accepted"},
+        extraction_plan={
+            "strategy": "ocr_page_level",
+            "document_subtype": "docling_test_scan",
+            "provider_hints": {"preferred_parser": "docling"},
+        },
+        extraction_provider=_LocalRawExtractionProvider(),
+        embedding_provider=PlaceholderEmbeddingProvider(dimensions=4),
+        llm_tag_inspector=LLMTagInspector(),
+    )
+
+    raw_rows = [json.loads(line) for line in (output_dir / "sample-raw-provider-artifacts.jsonl").read_text().splitlines()]
+    provider_attempts = [json.loads(line) for line in (output_dir / "sample-provider-attempts.jsonl").read_text().splitlines()]
+    extraction_rows = [json.loads(line) for line in (output_dir / "sample-extraction-results.jsonl").read_text().splitlines()]
+    manifest = json.loads((output_dir / "artifact-manifest.json").read_text())
+    raw_artifact = raw_rows[0]
+    raw_payload = json.loads(Path(raw_artifact["path"]).read_text(encoding="utf-8"))
+
+    assert result["extraction_result"].metadata["raw_provider_artifact"]["sha256"] == raw_artifact["sha256"]
+    assert raw_artifact["kind"] == "raw_provider_snapshot"
+    assert raw_artifact["relative_path"].startswith("raw-providers/docling-")
+    assert Path(raw_artifact["path"]).exists()
+    assert raw_payload["provider"] == "docling"
+    assert raw_payload["raw_artifact"]["full_sha256"]
+    assert provider_attempts[0]["metadata"]["raw_provider_artifact"]["sha256"] == raw_artifact["sha256"]
+    assert extraction_rows[0]["metadata"]["raw_provider_artifact"]["path"] == raw_artifact["path"]
+    assert any(artifact["name"] == "sample-raw-provider-artifacts.jsonl" and artifact["row_count"] == 1 for artifact in manifest["artifacts"])
 
 
 def test_langgraph_batch_aggregates_artifacts_and_continues_after_file_failure(tmp_path: Path) -> None:
