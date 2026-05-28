@@ -39,6 +39,8 @@ export default function PipelineEvalPage() {
   const [benchmarkOutputDir, setBenchmarkOutputDir] = useState(".local/provider-benchmarks");
   const [benchmarkSampleManifest, setBenchmarkSampleManifest] = useState("docs/provider_benchmark_canonical_samples.example.json");
   const [benchmarkSampleRoot, setBenchmarkSampleRoot] = useState("");
+  const [benchmarkSampleCategories, setBenchmarkSampleCategories] = useState("");
+  const [benchmarkSampleLimit, setBenchmarkSampleLimit] = useState("");
   const [benchmarkPaths, setBenchmarkPaths] = useState("");
   const [benchmarkProviders, setBenchmarkProviders] = useState<ExtractionProviderName[]>(["current", "docling"]);
 
@@ -108,6 +110,11 @@ export default function PipelineEvalPage() {
         output_dir: benchmarkOutputDir,
         sample_manifest: benchmarkSampleManifest || undefined,
         sample_root: benchmarkSampleRoot || undefined,
+        sample_categories: benchmarkSampleCategories
+          .split(",")
+          .map((category) => category.trim())
+          .filter(Boolean),
+        sample_limit: Number(benchmarkSampleLimit) > 0 ? Number(benchmarkSampleLimit) : undefined,
         paths: benchmarkPaths
           .split("\n")
           .map((path) => path.trim())
@@ -196,6 +203,13 @@ export default function PipelineEvalPage() {
           <TextInput label="Benchmark output dir" value={benchmarkOutputDir} onChange={(event) => setBenchmarkOutputDir(event.target.value)} />
           <TextInput label="Sample manifest" value={benchmarkSampleManifest} onChange={(event) => setBenchmarkSampleManifest(event.target.value)} />
           <TextInput label="Sample root" value={benchmarkSampleRoot} onChange={(event) => setBenchmarkSampleRoot(event.target.value)} />
+          <TextInput
+            label="Sample categories"
+            value={benchmarkSampleCategories}
+            onChange={(event) => setBenchmarkSampleCategories(event.target.value)}
+            placeholder="image_scan,scanned_pdf"
+          />
+          <TextInput label="Sample limit" value={benchmarkSampleLimit} onChange={(event) => setBenchmarkSampleLimit(event.target.value)} placeholder="2" />
           <TextArea
             label="Extra paths"
             value={benchmarkPaths}
@@ -228,6 +242,7 @@ export default function PipelineEvalPage() {
               <KeyValue label="Samples" value={String(providerBenchmark.data.summary?.total_samples ?? providerBenchmark.data.results?.length ?? 0)} />
               <KeyValue label="Providers" value={providerList(providerBenchmark.data.summary)} />
               <KeyValue label="Recommended" value={recommendedProvider(providerBenchmark.data.recommendations)} />
+              <KeyValue label="Filter" value={benchmarkFilter(providerBenchmark.data.summary)} />
             </section>
             <section>
               <h3>Promotion Notes</h3>
@@ -617,6 +632,7 @@ function ProviderParserRows({ rows }: { rows: Array<Record<string, unknown>> }) 
             <th>Status</th>
             <th>Quality</th>
             <th>Pages</th>
+            <th>Seconds</th>
             <th>Snippet</th>
           </tr>
         </thead>
@@ -635,6 +651,7 @@ function ProviderParserRows({ rows }: { rows: Array<Record<string, unknown>> }) 
               </td>
               <td>{String(row.quality ?? "-")}</td>
               <td>{String(row.page_count ?? "-")}</td>
+              <td>{formatSeconds(row.seconds)}</td>
               <td className="snippetCell">{String(row.text_snippet ?? "-")}</td>
             </tr>
           ))}
@@ -656,6 +673,7 @@ function ProviderBenchmarkRows({ rows }: { rows: Array<Record<string, unknown>> 
             <th>Status</th>
             <th>Quality</th>
             <th>Text</th>
+            <th>Seconds</th>
             <th>Warnings</th>
           </tr>
         </thead>
@@ -674,6 +692,7 @@ function ProviderBenchmarkRows({ rows }: { rows: Array<Record<string, unknown>> 
               </td>
               <td>{String(row.quality ?? row.ocr_quality ?? "-")}</td>
               <td>{String(row.text_length ?? row.total_text_length ?? row.char_count ?? 0)}</td>
+              <td>{formatSeconds(row.seconds)}</td>
               <td>{formatWarnings(row.warnings)}</td>
             </tr>
           ))}
@@ -714,11 +733,29 @@ function recommendedProvider(recommendations: Array<Record<string, unknown>> | u
   return String(first?.recommended_provider ?? first?.provider ?? "-");
 }
 
+function benchmarkFilter(summary: Record<string, unknown> | undefined) {
+  const filter = summary?.sample_filter;
+  if (!filter || typeof filter !== "object" || Array.isArray(filter)) {
+    return "-";
+  }
+  const row = filter as Record<string, unknown>;
+  const categories = Array.isArray(row.categories) ? row.categories.map(String).join(", ") : "";
+  const limit = row.limit ? `limit ${String(row.limit)}` : "";
+  return [categories, limit].filter(Boolean).join("; ") || "-";
+}
+
 function recommendationValue(row: Record<string, unknown>) {
   const provider = String(row.recommended_provider ?? row.provider ?? "-");
   const decision = String(row.decision ?? row.recommendation ?? row.status ?? "-");
   const reason = String(row.reason ?? row.notes ?? row.evidence ?? "");
   return [provider, decision, reason].filter((part) => part && part !== "-").join(": ") || "-";
+}
+
+function formatSeconds(value: unknown) {
+  if (typeof value !== "number") {
+    return "-";
+  }
+  return value >= 10 ? value.toFixed(1) : value.toFixed(3);
 }
 
 function formatWarnings(value: unknown) {
