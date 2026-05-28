@@ -205,7 +205,7 @@ Code source:
 
 - Existing useful code:
   - `graph/nodes/loading.py`
-  - `SampleFile` construction from `sample_pipeline.py`
+  - `SampleFile` construction semantics from `sample_pipeline.py`
 - V2 target:
   - `packages/extraction/src/sunshine_extraction/domain/documents.py`
   - `packages/extraction/src/sunshine_extraction/graph/nodes/loading.py`
@@ -228,6 +228,11 @@ Success criteria:
 - Missing files route to review, not crash.
 - Source files are never modified.
 - Same file gets stable identity across runs.
+
+Current implementation:
+
+- `domain/documents.py` owns the `SampleFile` contract and source extension sets.
+- `services/content.py` re-exports the domain contract for compatibility while legacy imports are retired.
 
 ### 2. `identify_file`
 
@@ -711,6 +716,7 @@ Implementation note:
 - The first implementation pass should create the data model, artifact shape, and conservative “one segment per PDF unless strong boundary evidence exists” behavior.
 - If Docling produces reliable page/section boundaries during the spike, the first pass can also emit candidate page groups for dashboard review.
 - Current implementation emits review-only candidate page segments for multi-page scrapbook/newspaper inputs, separator-based groups when blank pages are detected, and fixed page windows for very large files. These are proposals only; no physical source files are split.
+- Future Docling/Cortex layout signals should plug into this stage as additional boundary evidence, not bypass it, so long scrapbook PDFs can later be promoted into accepted child documents without changing the graph shape.
 
 ### 13. `chunk_document`
 

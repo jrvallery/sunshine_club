@@ -15,7 +15,8 @@ from sunshine_extraction.providers.extraction import CurrentExtractionProvider, 
 from sunshine_extraction.providers.llm import CurrentLLMTagInspectionProvider
 from sunshine_extraction.providers.retrieval import CurrentSemanticRetrievalProvider
 from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider
-from sunshine_extraction.sample_pipeline import SampleFile, llm_tag_inspector_from_env, ocr_executor_from_env
+from sunshine_extraction.domain.documents import IMAGE_EXTENSIONS, SPREADSHEET_EXTENSIONS, TEXT_EXTENSIONS, SampleFile
+from sunshine_extraction.sample_pipeline import llm_tag_inspector_from_env, ocr_executor_from_env
 from sunshine_extraction.services.artifacts.writers import extraction_result_row, sample_input_row, write_pipeline_result
 from sunshine_extraction.services.provider_policy import assert_local_provider
 from sunshine_extraction.services.confidence import calibrate_confidence, confidence_calibration_row
@@ -82,6 +83,12 @@ def _sample(path: Path, *, relative_path: str = "Sunshine shared folders/file.pd
         sample_number=1,
         index_row={"metadata": {}},
     )
+
+
+def test_document_domain_exports_source_file_contract() -> None:
+    assert ".pdf" not in TEXT_EXTENSIONS
+    assert ".jpg" in IMAGE_EXTENSIONS
+    assert ".xlsx" in SPREADSHEET_EXTENSIONS
 
 
 def test_current_extraction_provider_wraps_existing_behavior(tmp_path: Path) -> None:
