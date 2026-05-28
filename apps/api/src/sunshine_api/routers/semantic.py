@@ -158,6 +158,18 @@ def pipeline_eval_run_compare(eval_run_id: int, baseline_eval_run_id: int) -> di
 
 @router.post("/admin/provider-benchmarks/run")
 def provider_benchmark_run(request: ProviderBenchmarkRequest) -> dict[str, Any]:
+    if request.background:
+        if not request.output_dir:
+            raise HTTPException(status_code=400, detail="output_dir is required for background provider benchmarks")
+        thread = threading.Thread(target=_run_provider_benchmark_background, args=(request,), daemon=True)
+        thread.start()
+        return {
+            "ok": True,
+            "status": "started",
+            "background": True,
+            "output_dir": request.output_dir,
+            "providers": list(request.providers),
+        }
     try:
         result = benchmark_extraction_providers(
             request.paths or [],
@@ -174,6 +186,32 @@ def provider_benchmark_run(request: ProviderBenchmarkRequest) -> dict[str, Any]:
     return {"ok": True, **result}
 
 
+def _run_provider_benchmark_background(request: ProviderBenchmarkRequest) -> None:
+    try:
+        benchmark_extraction_providers(
+            request.paths or [],
+            provider_names=list(request.providers),
+            output_dir=request.output_dir,
+            sample_manifest=request.sample_manifest,
+            sample_root=request.sample_root,
+            sample_categories=request.sample_categories,
+            sample_limit=request.sample_limit,
+            max_average_seconds=request.max_average_seconds,
+        )
+    except Exception as error:
+        output_path = Path(str(request.output_dir))
+        output_path.mkdir(parents=True, exist_ok=True)
+        error_row = {
+            "status": "failed",
+            "error_type": error.__class__.__name__,
+            "error": str(error),
+            "providers": list(request.providers),
+            "sample_manifest": request.sample_manifest,
+            "sample_categories": request.sample_categories or [],
+        }
+        (output_path / "provider-benchmark-background-error.json").write_text(json.dumps(error_row, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 @router.get("/admin/provider-benchmarks/latest")
 def provider_benchmark_latest(output_dir: str) -> dict[str, Any]:
     output_path = Path(output_dir)
@@ -182,7 +220,15 @@ def provider_benchmark_latest(output_dir: str) -> dict[str, Any]:
     parser_results_path = output_path / "sample-parser-results.jsonl"
     recommendations_path = output_path / "provider-benchmark-recommendations.jsonl"
     manifest_path = output_path / "artifact-manifest.json"
-    artifact_exists = summary_path.exists() or results_path.exists() or parser_results_path.exists() or recommendations_path.exists() or manifest_path.exists()
+    background_error_path = output_path / "provider-benchmark-background-error.json"
+    artifact_exists = (
+        summary_path.exists()
+        or results_path.exists()
+        or parser_results_path.exists()
+        or recommendations_path.exists()
+        or manifest_path.exists()
+        or background_error_path.exists()
+    )
     if not artifact_exists:
         return {"ok": False, "exists": False, "output_dir": str(output_path)}
     partial = not summary_path.exists()
@@ -209,6 +255,7 @@ def provider_benchmark_latest(output_dir: str) -> dict[str, Any]:
             "results": results,
             "parser_results": parser_results,
             "artifact_manifest": _read_optional_json(manifest_path),
+            "background_error": _read_optional_json(background_error_path),
         }
     try:
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
@@ -224,6 +271,7 @@ def provider_benchmark_latest(output_dir: str) -> dict[str, Any]:
         "results": _read_eval_jsonl(results_path, limit=500),
         "parser_results": _read_eval_jsonl(parser_results_path, limit=500),
         "artifact_manifest": _read_optional_json(manifest_path),
+        "background_error": _read_optional_json(background_error_path),
     }
 
 

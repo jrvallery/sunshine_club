@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import threading
 import json
 
 from fastapi.testclient import TestClient
@@ -284,6 +285,32 @@ def test_provider_benchmark_api_runs_current_provider(tmp_path: Path) -> None:
     assert latest.json()["parser_results"][0]["parser_provider"] == "current"
     assert latest.json()["parser_results"][0]["text_snippet"] == "Meeting minutes and Sunshine Club notes."
     assert latest.json()["artifact_manifest"]["existing_artifact_count"] == 5
+
+
+def test_provider_benchmark_api_can_start_background_run(tmp_path: Path, monkeypatch) -> None:
+    output_dir = tmp_path / "provider-benchmark"
+    called = threading.Event()
+
+    def fake_benchmark(*args, **kwargs) -> dict:
+        Path(kwargs["output_dir"]).mkdir(parents=True, exist_ok=True)
+        (Path(kwargs["output_dir"]) / "provider-benchmark-results.jsonl").write_text(
+            '{"provider":"current","status":"extracted","quality":"ok","requires_review":false}\n',
+            encoding="utf-8",
+        )
+        called.set()
+        return {"summary": {}, "results": [], "parser_results": [], "recommendations": []}
+
+    monkeypatch.setattr("sunshine_api.routers.semantic.benchmark_extraction_providers", fake_benchmark)
+
+    response = TestClient(app).post(
+        "/admin/provider-benchmarks/run",
+        json={"paths": [str(tmp_path / "missing.txt")], "providers": ["current"], "output_dir": str(output_dir), "background": True},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "started"
+    assert response.json()["background"] is True
+    assert called.wait(timeout=2)
 
 
 def test_review_items_can_read_postgres_v2_source(monkeypatch) -> None:

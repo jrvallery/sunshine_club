@@ -157,3 +157,4 @@ class ProviderBenchmarkRequest(BaseModel):
     sample_categories: list[str] | None = None
     sample_limit: int | None = None
     max_average_seconds: float | None = 30.0
+    background: bool = False

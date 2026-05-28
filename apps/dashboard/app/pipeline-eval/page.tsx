@@ -23,6 +23,7 @@ type ProviderBenchmarkLatest = {
   results?: Array<Record<string, unknown>>;
   parser_results?: Array<Record<string, unknown>>;
   artifact_manifest?: Record<string, unknown> | null;
+  background_error?: Record<string, unknown> | null;
 };
 
 const EXTRACTION_PROVIDERS: ExtractionProviderName[] = ["current", "docling", "mineru", "ragflow_deepdoc", "unstructured"];
@@ -123,7 +124,8 @@ export default function PipelineEvalPage() {
           .split("\n")
           .map((path) => path.trim())
           .filter(Boolean),
-        providers: benchmarkProviders
+        providers: benchmarkProviders,
+        background: true
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["provider-benchmark-latest"] });
@@ -238,7 +240,7 @@ export default function PipelineEvalPage() {
             ))}
           </div>
           <Button variant="primary" disabled={runProviderBenchmark.isPending || !benchmarkProviders.length} onClick={() => runProviderBenchmark.mutate()}>
-            {runProviderBenchmark.isPending ? "Benchmarking..." : "Run Benchmark"}
+            {runProviderBenchmark.isPending ? "Starting..." : "Start Benchmark"}
           </Button>
           <Button disabled={providerBenchmark.isFetching} onClick={() => queryClient.invalidateQueries({ queryKey: ["provider-benchmark-latest"] })}>
             {providerBenchmark.isFetching ? "Refreshing..." : "Refresh Latest"}
@@ -256,6 +258,7 @@ export default function PipelineEvalPage() {
               <KeyValue label="Filter" value={benchmarkFilter(providerBenchmark.data.summary)} />
               <KeyValue label="Runtime threshold" value={benchmarkRuntimeThreshold(providerBenchmark.data.summary)} />
               <KeyValue label="Artifacts" value={benchmarkArtifactSummary(providerBenchmark.data.artifact_manifest)} />
+              {providerBenchmark.data.background_error ? <KeyValue label="Background error" value={backgroundErrorSummary(providerBenchmark.data.background_error)} /> : null}
             </section>
             <section>
               <h3>Promotion Notes</h3>
@@ -774,6 +777,10 @@ function benchmarkArtifactSummary(manifest: Record<string, unknown> | null | und
   const missing = Number(manifest.missing_artifact_count ?? 0);
   const size = Number(manifest.total_size_bytes ?? 0);
   return `${existing} present; ${missing} missing; ${size} bytes`;
+}
+
+function backgroundErrorSummary(error: Record<string, unknown>) {
+  return [error.error_type, error.error].map(String).filter(Boolean).join(": ") || "failed";
 }
 
 function recommendationValue(row: Record<string, unknown>) {
