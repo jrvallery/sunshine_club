@@ -405,6 +405,40 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert [event[1]["node"] for event in observability.events] == [event["node"] for event in audit_events]
 
 
+def test_graph_nodes_package_exports_full_v2_node_surface() -> None:
+    from sunshine_extraction.graph import nodes
+
+    expected = {
+        "_load_file_context",
+        "_identify_file",
+        "_probe_file",
+        "_classify_content_type",
+        "_plan_extraction",
+        "_select_extraction_provider_node",
+        "_extract_content_node",
+        "_validate_extraction_node",
+        "_repair_or_escalate_extraction_node",
+        "_quality_gate",
+        "_normalize_document_structure_node",
+        "_propose_document_segments_node",
+        "_chunk_content_node",
+        "_embed_chunks_node",
+        "_index_chunks_node",
+        "_retrieve_labeled_examples_node",
+        "_assign_deterministic_tags",
+        "_inspect_tags_with_llm",
+        "_combine_tag_evidence",
+        "_calibrate_tag_confidence_node",
+        "_propose_placement_node",
+        "_resolve_route_or_review_node",
+        "_persist_outputs",
+        "_import_run_results_node",
+    }
+
+    assert expected.issubset(set(nodes.__all__))
+    assert all(callable(getattr(nodes, name)) for name in expected)
+
+
 def test_langgraph_probe_routes_image_only_pdf_to_ocr(tmp_path: Path) -> None:
     source = tmp_path / "scan.pdf"
     writer = PdfWriter()
