@@ -43,6 +43,8 @@ services:
       POSTGRES_PWD: ${POSTGRES_PASSWORD:-local}
       POSTGRES_SEEDS: db
       DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/docker.yaml
+    volumes:
+      - ./infra/temporal/dynamicconfig:/etc/temporal/config/dynamicconfig:ro
     ports:
       - "${TEMPORAL_PORT:-7233}:7233"
 
