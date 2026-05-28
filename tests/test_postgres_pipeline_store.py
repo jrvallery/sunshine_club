@@ -67,6 +67,7 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
         "pipeline_run_events": 1,
         "model_usage": 1,
         "provider_attempts": 1,
+        "pipeline_provider_selections": 1,
         "pipeline_parser_results": 1,
         "document_segments": 1,
         "review_items": 1,
@@ -81,6 +82,7 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
     assert "insert into pipeline_run_events" in executed_sql
     assert "insert into model_usage" in executed_sql
     assert "insert into provider_attempts" in executed_sql
+    assert "insert into pipeline_provider_selections" in executed_sql
     assert "insert into pipeline_parser_results" in executed_sql
     assert "insert into document_segments" in executed_sql
     assert "insert into review_items_v2" in executed_sql
@@ -97,6 +99,9 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
     assert json.loads(model_usage_params[-1])["host"] == "cortex.vallery.net"
     provider_attempt_params = next(params for query, params in connection.executed if "insert into provider_attempts" in query)
     assert provider_attempt_params[1:4] == ("/source/a.pdf", "Sunshine/a.pdf", "current")
+    provider_selection_params = next(params for query, params in connection.executed if "insert into pipeline_provider_selections" in query)
+    assert provider_selection_params[1:6] == ("/source/a.pdf", "Sunshine/a.pdf", "current", "current", "current")
+    assert json.loads(provider_selection_params[6]) == ["current", "cortex_ocr"]
     parser_params = next(params for query, params in connection.executed if "insert into pipeline_parser_results" in query)
     assert parser_params[1:9] == (
         "/source/a.pdf",
@@ -677,6 +682,7 @@ def test_postgres_pipeline_store_deletes_run_with_cascade_counts() -> None:
                         "pipeline_run_events": 8,
                         "model_usage": 4,
                         "provider_attempts": 5,
+                        "pipeline_provider_selections": 6,
                         "pipeline_parser_results": 9,
                         "document_segments": 6,
                         "review_items": 7,
@@ -704,6 +710,7 @@ def test_postgres_pipeline_store_deletes_run_with_cascade_counts() -> None:
         "pipeline_run_events": 8,
         "model_usage": 4,
         "provider_attempts": 5,
+        "pipeline_provider_selections": 6,
         "pipeline_parser_results": 9,
         "document_segments": 6,
         "review_items": 7,
@@ -747,6 +754,7 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
                             "review_required_count": 1,
                             "model_usage_count": 1,
                             "provider_attempt_count": 1,
+                            "provider_selection_count": 1,
                             "parser_result_count": 1,
                             "document_segment_count": 1,
                         }
@@ -843,6 +851,26 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
                             "strategy": "ocr_page_level",
                             "runtime_ms": 420,
                             "warnings": [],
+                            "metadata": {"local_only": True},
+                            "created_at": None,
+                        }
+                    ]
+                )
+            if "from pipeline_provider_selections pps" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "selection-id",
+                            "run_id": "run-id",
+                            "run_key": "run-report",
+                            "source_path": "/source/scrapbook.pdf",
+                            "relative_path": "History/scrapbook.pdf",
+                            "selected_provider": "docling",
+                            "preferred_provider": "docling",
+                            "configured_provider": "current",
+                            "provider_chain": ["docling", "current", "cortex_ocr"],
+                            "skipped_providers": [],
+                            "provider_selection_reason": "preferred_docling_available",
                             "metadata": {"local_only": True},
                             "created_at": None,
                         }
@@ -973,6 +1001,7 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     assert report["summary"]["open_review_item_count"] == 1
     assert report["summary"]["model_call_count"] == 1
     assert report["summary"]["local_model_call_count"] == 1
+    assert report["summary"]["provider_selection_count"] == 1
     assert report["summary"]["parser_result_count"] == 1
     assert report["summary"]["parser_status"] == {"extracted": 1}
     assert report["summary"]["parser_quality"] == {"ok": 1}
@@ -987,11 +1016,15 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     assert report["summary"]["chunk_kind"] == {"segment_text": 1}
     assert report["summary"]["embedding_provider"] == {"cortex": 1}
     assert report["summary"]["embedding_status"] == {"embedded": 1}
+    assert report["summary"]["selected_provider"] == {"docling": 1}
+    assert report["summary"]["provider_selection_reason"] == {"preferred_docling_available": 1}
     assert report["results"][0]["top_tag_candidate"] == "scrapbooks"
     assert report["review_items"][0]["segment_id"] == "scrapbook:segment-001"
     assert report["model_usage"][0]["provider"] == "cortex"
     assert report["model_usage"][0]["host"] == "cortex.vallery.net"
     assert report["provider_attempts"][0]["provider"] == "docling"
+    assert report["provider_selections"][0]["selected_provider"] == "docling"
+    assert report["provider_selections"][0]["provider_chain"] == ["docling", "current", "cortex_ocr"]
     assert report["parser_results"][0]["provider"] == "docling"
     assert report["parser_results"][0]["page_text_coverage_rate"] == 0.92
     assert report["chunks"][0]["chunk_kind"] == "segment_text"
@@ -1891,6 +1924,22 @@ def _postgres_import_artifacts(tmp_path: Path) -> Path:
                 "seconds": 0.25,
                 "warnings": [],
                 "metadata": {"local_only": True},
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-provider-selections.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "selected_provider": "current",
+                "preferred_provider": "current",
+                "configured_provider": "current",
+                "provider_chain": ["current", "cortex_ocr"],
+                "skipped_providers": [],
+                "provider_selection_reason": "configured_provider_matches_preferred",
+                "local_only": True,
             }
         ],
     )

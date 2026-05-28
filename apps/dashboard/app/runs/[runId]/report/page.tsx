@@ -310,6 +310,7 @@ function PostgresRunReportView({
         <Metric label="Parser review" value={String(report.summary.parser_review_required_count ?? 0)} />
         <Metric label="Model calls" value={String(modelCalls)} />
         <Metric label="Provider attempts" value={String(report.summary.provider_attempt_count ?? 0)} />
+        <Metric label="Provider selections" value={String(report.summary.provider_selection_count ?? report.provider_selections?.length ?? 0)} />
         <Metric label="Graph events" value={String(report.summary.run_event_count ?? 0)} />
       </section>
 
@@ -328,7 +329,7 @@ function PostgresRunReportView({
       {activePostgresTab === "ocr" ? <PostgresParserTab report={report} /> : null}
       {activePostgresTab === "indexing" ? <PostgresIndexingTab report={report} /> : null}
       {activePostgresTab === "models" ? <JsonTable title="Model Calls" rows={report.model_usage ?? []} /> : null}
-      {activePostgresTab === "providers" ? <ProviderAttemptsTab rows={report.provider_attempts ?? []} summary={report.summary} /> : null}
+      {activePostgresTab === "providers" ? <PostgresProvidersTab report={report} /> : null}
       {activePostgresTab === "logs" ? <LogsTab events={report.run_events ?? []} postgresBacked /> : null}
     </main>
   );
@@ -346,6 +347,8 @@ function PostgresOverviewTab({ report }: { report: PostgresRunReport }) {
         <Breakdown title="Embedding Status" values={report.summary.embedding_status ?? {}} />
         <Breakdown title="Embedding Providers" values={report.summary.embedding_provider ?? {}} />
         <Breakdown title="Provider Attempts" values={report.summary.provider_attempt_status ?? {}} />
+        <Breakdown title="Selected Providers" values={report.summary.selected_provider ?? {}} />
+        <Breakdown title="Selection Reasons" values={report.summary.provider_selection_reason ?? {}} />
         <Breakdown title="Parser Quality" values={report.summary.parser_quality ?? {}} />
         <Breakdown title="Parser Providers" values={report.summary.parser_provider ?? {}} />
         <Breakdown title="Graph Events" values={report.summary.run_event_status ?? {}} />
@@ -583,6 +586,28 @@ function ProviderAttemptsTab({ rows, summary }: { rows: Array<Record<string, unk
         <Breakdown title="Status" values={byStatus} />
       </div>
       <JsonTable title="Provider Attempt Rows" rows={rows} />
+    </section>
+  );
+}
+
+function PostgresProvidersTab({ report }: { report: PostgresRunReport }) {
+  const attempts = report.provider_attempts ?? [];
+  const selections = report.provider_selections ?? [];
+  return (
+    <section className="panel">
+      <div className="sectionHeader">
+        <div>
+          <h2>Providers</h2>
+          <span>{selections.length} selections, {attempts.length} provider attempts</span>
+        </div>
+      </div>
+      <div className="reportGrid">
+        <Breakdown title="Selected Provider" values={report.summary.selected_provider ?? {}} />
+        <Breakdown title="Selection Reason" values={report.summary.provider_selection_reason ?? {}} />
+        <Breakdown title="Attempt Status" values={report.summary.provider_attempt_status ?? {}} />
+      </div>
+      <JsonTable title="Provider Selections" rows={selections} />
+      <JsonTable title="Provider Attempts" rows={attempts} />
     </section>
   );
 }

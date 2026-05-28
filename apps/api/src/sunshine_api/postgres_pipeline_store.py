@@ -52,6 +52,7 @@ class PostgresPipelineStore:
                 "pipeline_run_events": self._import_run_events(connection, run_id, output_path),
                 "model_usage": self._import_model_usage(connection, run_id, output_path),
                 "provider_attempts": self._import_provider_attempts(connection, run_id, output_path),
+                "pipeline_provider_selections": self._import_provider_selections(connection, run_id, output_path),
                 "pipeline_parser_results": self._import_parser_results(connection, run_id, output_path),
                 "document_segments": self._import_document_segments(connection, run_id, output_path),
                 "review_items": self._import_review_items(connection, run_id, output_path),
@@ -72,6 +73,7 @@ class PostgresPipelineStore:
                 "review_items": _scalar_count(connection, "select count(*) from review_items_v2"),
                 "model_usage": _scalar_count(connection, "select count(*) from model_usage"),
                 "provider_attempts": _scalar_count(connection, "select count(*) from provider_attempts"),
+                "pipeline_provider_selections": _scalar_count(connection, "select count(*) from pipeline_provider_selections"),
                 "pipeline_parser_results": _scalar_count(connection, "select count(*) from pipeline_parser_results"),
                 "pipeline_run_events": _scalar_count(connection, "select count(*) from pipeline_run_events"),
                 "document_segments": _scalar_count(connection, "select count(*) from document_segments"),
@@ -224,6 +226,7 @@ class PostgresPipelineStore:
                     (select count(*) from pipeline_run_events pre where pre.run_id = r.id) as pipeline_run_events,
                     (select count(*) from model_usage mu where mu.run_id = r.id) as model_usage,
                     (select count(*) from provider_attempts pa where pa.run_id = r.id) as provider_attempts,
+                    (select count(*) from pipeline_provider_selections pps where pps.run_id = r.id) as pipeline_provider_selections,
                     (select count(*) from pipeline_parser_results ppr where ppr.run_id = r.id) as pipeline_parser_results,
                     (select count(*) from document_segments ds where ds.run_id = r.id) as document_segments,
                     (select count(*) from review_items_v2 ri where ri.run_id = r.id) as review_items
@@ -249,6 +252,7 @@ class PostgresPipelineStore:
                     "pipeline_run_events": _int_value(run_row.get("pipeline_run_events")),
                     "model_usage": _int_value(run_row.get("model_usage")),
                     "provider_attempts": _int_value(run_row.get("provider_attempts")),
+                    "pipeline_provider_selections": _int_value(run_row.get("pipeline_provider_selections")),
                     "pipeline_parser_results": _int_value(run_row.get("pipeline_parser_results")),
                     "document_segments": _int_value(run_row.get("document_segments")),
                     "review_items": _int_value(run_row.get("review_items")),
@@ -277,6 +281,7 @@ class PostgresPipelineStore:
             review_items = self._list_review_items(connection, run_key=run_key, limit=capped_limit)
             model_usage = self._list_model_usage(connection, run_key=run_key, limit=capped_limit)
             provider_attempts = self._list_provider_attempts(connection, run_key=run_key, limit=capped_limit)
+            provider_selections = self._list_provider_selections(connection, run_key=run_key, limit=capped_limit)
             parser_results = self._list_parser_results(connection, run_key=run_key, limit=capped_limit)
             document_segments = self._list_document_segments(connection, run_key=run_key, limit=capped_limit)
             chunks = self._list_chunks(connection, run_key=run_key, limit=capped_limit)
@@ -289,6 +294,7 @@ class PostgresPipelineStore:
                     review_items=review_items,
                     model_usage=model_usage,
                     provider_attempts=provider_attempts,
+                    provider_selections=provider_selections,
                     parser_results=parser_results,
                     document_segments=document_segments,
                     chunks=chunks,
@@ -299,6 +305,7 @@ class PostgresPipelineStore:
                 "review_items": review_items,
                 "model_usage": model_usage,
                 "provider_attempts": provider_attempts,
+                "provider_selections": provider_selections,
                 "parser_results": parser_results,
                 "document_segments": document_segments,
                 "chunks": chunks,
@@ -1574,6 +1581,7 @@ class PostgresPipelineStore:
                 (select count(*) from pipeline_results pr where pr.run_id = r.id and pr.route_status <> 'route_candidate') as review_required_count,
                 (select count(*) from model_usage mu where mu.run_id = r.id) as model_usage_count,
                 (select count(*) from provider_attempts pa where pa.run_id = r.id) as provider_attempt_count,
+                (select count(*) from pipeline_provider_selections pps where pps.run_id = r.id) as provider_selection_count,
                 (select count(*) from pipeline_parser_results ppr where ppr.run_id = r.id) as parser_result_count,
                 (select count(*) from document_segments ds where ds.run_id = r.id) as document_segment_count
             from pipeline_runs r
@@ -1733,6 +1741,33 @@ class PostgresPipelineStore:
             join pipeline_runs r on r.id = pa.run_id
             where r.run_key = %s
             order by pa.created_at asc, pa.source_path asc nulls last, pa.provider asc
+            limit %s
+            """,
+            (run_key, max(1, min(int(limit), 1000))),
+        ).fetchall()
+        return [_json_safe_row(_row_to_dict(row)) for row in rows]
+
+    def _list_provider_selections(self, connection: PostgresConnection, *, run_key: str, limit: int) -> list[dict[str, Any]]:
+        rows = connection.execute(
+            """
+            select
+                pps.id,
+                pps.run_id,
+                r.run_key,
+                pps.source_path,
+                pps.relative_path,
+                pps.selected_provider,
+                pps.preferred_provider,
+                pps.configured_provider,
+                pps.provider_chain,
+                pps.skipped_providers,
+                pps.provider_selection_reason,
+                pps.metadata,
+                pps.created_at
+            from pipeline_provider_selections pps
+            join pipeline_runs r on r.id = pps.run_id
+            where r.run_key = %s
+            order by pps.created_at asc, pps.source_path asc nulls last, pps.selected_provider asc
             limit %s
             """,
             (run_key, max(1, min(int(limit), 1000))),
@@ -2273,6 +2308,47 @@ class PostgresPipelineStore:
             )
         return len(rows)
 
+    def _import_provider_selections(self, connection: PostgresConnection, run_id: str, output_path: Path) -> int:
+        rows = _read_jsonl(output_path / "sample-provider-selections.jsonl")
+        connection.execute("delete from pipeline_provider_selections where run_id = %s", (run_id,))
+        for row in rows:
+            metadata = {
+                key: value
+                for key, value in row.items()
+                if key
+                not in {
+                    "source_path",
+                    "relative_path",
+                    "selected_provider",
+                    "preferred_provider",
+                    "configured_provider",
+                    "provider_chain",
+                    "skipped_providers",
+                    "provider_selection_reason",
+                }
+            }
+            connection.execute(
+                """
+                insert into pipeline_provider_selections (
+                    run_id, source_path, relative_path, selected_provider, preferred_provider,
+                    configured_provider, provider_chain, skipped_providers, provider_selection_reason, metadata
+                ) values (%s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s::jsonb)
+                """,
+                (
+                    run_id,
+                    row.get("source_path"),
+                    row.get("relative_path"),
+                    row.get("selected_provider") or "unknown",
+                    row.get("preferred_provider"),
+                    row.get("configured_provider"),
+                    json.dumps(row.get("provider_chain") or []),
+                    json.dumps(row.get("skipped_providers") or []),
+                    row.get("provider_selection_reason"),
+                    json.dumps(metadata, sort_keys=True),
+                ),
+            )
+        return len(rows)
+
     def _import_parser_results(self, connection: PostgresConnection, run_id: str, output_path: Path) -> int:
         rows = _read_jsonl(output_path / "sample-parser-results.jsonl")
         connection.execute("delete from pipeline_parser_results where run_id = %s", (run_id,))
@@ -2394,6 +2470,7 @@ def _run_summary_from_artifacts(output_path: Path) -> dict[str, Any]:
     result_rows = _read_jsonl(output_path / "sample-pipeline-results.jsonl")
     model_usage_rows = _read_jsonl(output_path / "sample-model-usage.jsonl")
     provider_attempt_rows = _read_jsonl(output_path / "sample-provider-attempts.jsonl")
+    provider_selection_rows = _read_jsonl(output_path / "sample-provider-selections.jsonl")
     parser_result_rows = _read_jsonl(output_path / "sample-parser-results.jsonl")
     indexing_rows = _read_jsonl(output_path / "sample-indexing.jsonl")
     manifest = _read_json(output_path / "artifact-manifest.json")
@@ -2410,6 +2487,7 @@ def _run_summary_from_artifacts(output_path: Path) -> dict[str, Any]:
             "review_required": sum(1 for row in result_rows if row.get("route_status") != "route_candidate"),
             "model_usage": len(model_usage_rows),
             "provider_attempts": len(provider_attempt_rows),
+            "provider_selections": len(provider_selection_rows),
             "parser_results": len(parser_result_rows),
             "indexing": len(indexing_rows),
         },
@@ -2837,6 +2915,7 @@ def _run_report_summary(
     review_items: list[dict[str, Any]],
     model_usage: list[dict[str, Any]],
     provider_attempts: list[dict[str, Any]],
+    provider_selections: list[dict[str, Any]],
     parser_results: list[dict[str, Any]],
     document_segments: list[dict[str, Any]],
     chunks: list[dict[str, Any]],
@@ -2854,6 +2933,7 @@ def _run_report_summary(
         "local_model_call_count": sum(_int_value(row.get("call_count"), default=1) for row in model_usage if row.get("local_only") is True),
         "nonlocal_model_call_count": sum(_int_value(row.get("call_count"), default=1) for row in model_usage if row.get("local_only") is False),
         "provider_attempt_count": len(provider_attempts),
+        "provider_selection_count": len(provider_selections),
         "parser_result_count": len(parser_results),
         "parser_review_required_count": sum(1 for row in parser_results if row.get("requires_review") is True),
         "run_event_count": len(run_events),
@@ -2873,6 +2953,8 @@ def _run_report_summary(
         "embedding_status": _count_values(chunk_embeddings, "embedding_status"),
         "embedding_model": _count_values(chunk_embeddings, "embedding_model"),
         "provider_attempt_status": _count_values(provider_attempts, "status"),
+        "selected_provider": _count_values(provider_selections, "selected_provider"),
+        "provider_selection_reason": _count_values(provider_selections, "provider_selection_reason"),
         "parser_status": _count_values(parser_results, "status"),
         "parser_quality": _count_values(parser_results, "quality"),
         "parser_provider": _count_values(parser_results, "provider"),
