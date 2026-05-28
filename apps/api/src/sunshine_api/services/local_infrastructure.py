@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from sunshine_extraction.config import provider_registry_rows, validate_provider_registry
 from sunshine_extraction.providers.extraction import DoclingExtractionProvider
 from sunshine_extraction.providers.observability import observability_provider_from_env
 from sunshine_extraction.providers.retrieval import QdrantSemanticRetrievalProvider
@@ -46,6 +47,10 @@ def local_infrastructure_status() -> dict[str, Any]:
             "task_queue": os.environ.get("SUNSHINE_TEMPORAL_TASK_QUEUE") or "sunshine-pipeline",
         },
         "observability": observability.dependency_status(),
+        "provider_registry": {
+            "validation": validate_provider_registry(),
+            "providers": provider_registry_rows(),
+        },
         "policy": {
             "hosted_third_party_apis_allowed": False,
             "source_files_mutable": False,

@@ -66,6 +66,8 @@ def test_local_infrastructure_status_is_local_only(monkeypatch) -> None:
     assert payload["temporal"]["configured"] is True
     assert payload["temporal"]["worker_registered"] is True
     assert payload["observability"]["local_only"] is True
+    assert payload["provider_registry"]["validation"]["ok"] is True
+    assert any(provider["key"] == "ocr.openai" and provider["enabled"] is False for provider in payload["provider_registry"]["providers"])
 
 
 def test_run_request_rejects_hosted_openai_provider(tmp_path: Path, monkeypatch) -> None:

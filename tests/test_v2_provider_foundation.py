@@ -8,7 +8,8 @@ from pathlib import Path
 import pytest
 from pypdf import PdfWriter
 
-from sunshine_extraction.config.provider_registry import DEFAULT_PROVIDER_REGISTRY
+from sunshine_extraction.config.models import ProviderConfig
+from sunshine_extraction.config.provider_registry import DEFAULT_PROVIDER_REGISTRY, REQUIRED_CAPABILITIES, provider_registry_rows, validate_provider_registry
 from sunshine_extraction.embeddings import EmbeddingConfigurationError, PlaceholderEmbeddingProvider, provider_from_env
 from sunshine_extraction.domain.artifacts import ArtifactManifestEntry
 from sunshine_extraction.domain.chunks import chunk_row
@@ -706,6 +707,31 @@ def test_sqlite_golden_vectorstore_and_observability_boundaries_are_local_only()
     assert noop_status == {"provider": "noop", "available": True, "local_only": True}
     assert DEFAULT_PROVIDER_REGISTRY["ocr.openai"].enabled is False
     assert DEFAULT_PROVIDER_REGISTRY["observability.langfuse"].name == "langfuse"
+
+
+def test_provider_registry_enforces_local_only_capability_coverage() -> None:
+    validation = validate_provider_registry()
+    rows = provider_registry_rows()
+
+    assert validation["ok"] is True
+    assert validation["missing_capabilities"] == []
+    assert REQUIRED_CAPABILITIES <= set(validation["enabled_by_capability"])
+    assert all(not row["hosted"] for row in rows if row["enabled"])
+    assert any(row["key"] == "retrieval.qdrant" for row in rows)
+    assert any(row["key"] == "embedding.openai" and row["hosted"] and not row["enabled"] for row in rows)
+
+
+def test_provider_registry_reports_enabled_hosted_provider_as_error() -> None:
+    registry = {
+        **DEFAULT_PROVIDER_REGISTRY,
+        "llm.openai": ProviderConfig(name="openai", capability="llm", hosted=True, local_only=False),
+    }
+
+    validation = validate_provider_registry(registry)
+
+    assert validation["ok"] is False
+    assert "llm.openai: hosted provider is enabled" in validation["errors"]
+    assert "llm.openai: enabled provider is not local-only" in validation["errors"]
 
 
 def test_native_probe_detects_image_only_pdf_likelihood(tmp_path: Path) -> None:

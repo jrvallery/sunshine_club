@@ -1289,7 +1289,8 @@ Current implementation:
 - Run reports expose import status rows, while the existing dashboard runner can continue importing completed subprocess output with its known dashboard run ID.
 - `apps/api/src/sunshine_api/services/imports.py` exposes the Postgres artifact import service facade so API routes can call a service boundary instead of the raw store class.
 - `config/defaults.py` owns shared default paths/provider constants and `config/__init__.py` preserves the existing `sunshine_extraction.config` import API.
-- `config/models.py` and `config/provider_registry.py` establish the target provider-config package shape for later richer validation.
+- `config/models.py` and `config/provider_registry.py` define provider capabilities, local-only/hosted policy flags, package hints, and validation that blocks enabled hosted providers and checks required capability coverage.
+- The local-infrastructure API exposes provider-registry validation and provider rows so the dashboard can show local-only readiness from one endpoint.
 - `cli/langgraph_pipeline.py` and `cli/provider_benchmark.py` own target CLI entry points; top-level modules remain compatibility wrappers for existing `python -m` commands and imports.
 - `services/env.py` owns `.env` loading and Cortex environment alias normalization, so graph/eval/semantic-index entry points no longer import environment setup from the legacy sample runner.
 - `services/samples.py` owns QA sample discovery and corrected-plan/content lookup helpers used by batch orchestration.

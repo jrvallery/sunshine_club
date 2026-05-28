@@ -16,7 +16,7 @@ from sunshine_extraction.config.defaults import (
     INITIAL_SAMPLE_LIMITS,
 )
 from sunshine_extraction.config.models import ProviderConfig
-from sunshine_extraction.config.provider_registry import DEFAULT_PROVIDER_REGISTRY
+from sunshine_extraction.config.provider_registry import DEFAULT_PROVIDER_REGISTRY, REQUIRED_CAPABILITIES, provider_registry_rows, validate_provider_registry
 
 __all__ = [
     "DEFAULT_CORRECTED_PATH",
@@ -34,4 +34,7 @@ __all__ = [
     "DEFAULT_PROVIDER_REGISTRY",
     "INITIAL_SAMPLE_LIMITS",
     "ProviderConfig",
+    "REQUIRED_CAPABILITIES",
+    "provider_registry_rows",
+    "validate_provider_registry",
 ]
