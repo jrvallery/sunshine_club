@@ -15,6 +15,7 @@ from sunshine_extraction.providers.observability import ObservabilityProvider
 from sunshine_extraction.providers.retrieval import SemanticRetrievalProvider
 from sunshine_extraction.providers.vectorstores import VectorStoreProvider
 from sunshine_extraction.services.content import SampleFile
+from sunshine_extraction.services.cache import SQLiteModelCallCache
 from sunshine_extraction.services.extraction import ExtractionResult, OcrExecutor
 from sunshine_extraction.services.imports import RunResultsImporter
 from sunshine_extraction.services.tagging import LLMTagInspector
@@ -93,3 +94,4 @@ class DocumentPipelineDeps(TypedDict, total=False):
     semantic_index_path: str | None
     run_results_importer: RunResultsImporter
     observability_provider: ObservabilityProvider
+    model_call_cache: SQLiteModelCallCache | None

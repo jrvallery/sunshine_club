@@ -37,6 +37,7 @@ from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, 
 from sunshine_extraction.domain.documents import IMAGE_EXTENSIONS, SPREADSHEET_EXTENSIONS, TEXT_EXTENSIONS, SampleFile
 from sunshine_extraction.services.artifacts.writers import extraction_result_row, sample_input_row, write_pipeline_result
 from sunshine_extraction.services.artifact_manifest import build_artifact_manifest
+from sunshine_extraction.services.cache import SQLiteModelCallCache
 from sunshine_extraction.services.provider_policy import assert_local_provider
 from sunshine_extraction.services.confidence import calibrate_confidence, confidence_calibration_row
 from sunshine_extraction.services.extraction import ocr_executor_from_env
@@ -102,6 +103,28 @@ class _FakeLLMTagInspector:
             "output_tokens": 5,
             "total_tokens": 15,
         }
+
+
+class _CountingEmbeddingProvider(PlaceholderEmbeddingProvider):
+    provider_name = "counting"
+
+    def __init__(self) -> None:
+        super().__init__(dimensions=4)
+        self.model = "counting-embedding"
+        self.calls = 0
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        self.calls += 1
+        return super().embed(texts)
+
+
+class _CountingLLMTagInspector(_FakeLLMTagInspector):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def inspect(self, **kwargs):
+        self.calls += 1
+        return super().inspect(**kwargs)
 
 
 def _sample(path: Path, *, relative_path: str = "Sunshine shared folders/file.pdf") -> SampleFile:
@@ -325,6 +348,30 @@ def test_current_chunk_embedding_provider_wraps_existing_behavior() -> None:
     assert attempt.semantic_quality is False
 
 
+def test_chunk_embedding_provider_uses_sqlite_model_cache(tmp_path: Path) -> None:
+    chunks = [
+        {
+            "source_path": "/source/minutes.txt",
+            "relative_path": "Minutes/minutes.txt",
+            "chunk_id": "chunk-1",
+            "text": "Meeting minutes text",
+        }
+    ]
+    embedding_provider = _CountingEmbeddingProvider()
+    cache = SQLiteModelCallCache(tmp_path / "model-cache.sqlite")
+    provider = CurrentChunkEmbeddingProvider(embedding_provider, cache=cache)
+
+    first_rows, first_attempt = provider.embed_chunks(chunks, failure_mode="review")
+    second_rows, second_attempt = provider.embed_chunks(chunks, failure_mode="review")
+
+    assert embedding_provider.calls == 1
+    assert first_rows[0]["embedding_status"] == "placeholder"
+    assert second_rows[0]["cache_status"] == "hit"
+    assert first_attempt.metadata["cache_misses"] == 1
+    assert second_attempt.metadata["cache_hits"] == 1
+    assert second_attempt.metadata["cache_misses"] == 0
+
+
 def test_embedding_provider_modules_expose_local_only_boundaries(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SUNSHINE_EMBEDDING_PROVIDER", "cortex")
     monkeypatch.setenv("CORTEX_API_KEY", "local-test-key")
@@ -469,6 +516,49 @@ def test_current_llm_tag_inspection_provider_wraps_existing_behavior(tmp_path: P
     assert attempt.status == "inspected"
     assert attempt.input_tokens == 10
     assert attempt.total_tokens == 15
+
+
+def test_llm_tag_inspection_provider_uses_sqlite_model_cache(tmp_path: Path) -> None:
+    source = tmp_path / "tea.txt"
+    source.write_text("Annual tea notes", encoding="utf-8")
+    sample = _sample(source)
+    taxonomy = type("Taxonomy", (), {"primary_tags": ["annual_spring_tea"], "secondary_tags": [], "primary_definitions": {}})()
+    inspector = _CountingLLMTagInspector()
+    provider = CurrentLLMTagInspectionProvider(inspector, cache=SQLiteModelCallCache(tmp_path / "model-cache.sqlite"))
+    extraction = ExtractionResult(
+        sample=sample,
+        plan={"strategy": "text_extraction"},
+        extraction_status="extracted",
+        text="Annual tea notes",
+        metadata={},
+        page_count=1,
+        warnings=[],
+    )
+
+    first_inspection, first_attempt = provider.inspect_tags(
+        sample=sample,
+        corrected={"final_class": "document"},
+        plan={"strategy": "text_extraction"},
+        extraction=extraction,
+        taxonomy=taxonomy,
+        deterministic_candidates=[],
+        semantic_examples=[],
+    )
+    second_inspection, second_attempt = provider.inspect_tags(
+        sample=sample,
+        corrected={"final_class": "document"},
+        plan={"strategy": "text_extraction"},
+        extraction=extraction,
+        taxonomy=taxonomy,
+        deterministic_candidates=[],
+        semantic_examples=[],
+    )
+
+    assert inspector.calls == 1
+    assert first_inspection["primary_tag"] == "annual_spring_tea"
+    assert first_attempt.metadata.get("cache_hit") is None
+    assert second_inspection["cache_status"] == "hit"
+    assert second_attempt.metadata["cache_hit"] is True
 
 
 def test_llm_provider_modules_expose_local_only_boundaries(monkeypatch: pytest.MonkeyPatch) -> None:

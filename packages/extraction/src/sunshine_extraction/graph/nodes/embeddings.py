@@ -32,7 +32,7 @@ def _embed_chunks_node(state: DocumentPipelineState, deps: DocumentPipelineDeps)
         node="embed_chunks",
         purpose="chunk_embedding",
         status=usage_status,
-        call_count=len(chunks),
+        call_count=int(embedding_attempt.metadata.get("cache_misses", len(chunks)) or 0),
         started=started,
         error=error_message,
     )

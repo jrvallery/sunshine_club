@@ -19,6 +19,7 @@ from sunshine_extraction.providers.llm import CurrentLLMTagInspectionProvider, L
 from sunshine_extraction.providers.observability import ObservabilityProvider, observability_provider_from_env
 from sunshine_extraction.providers.retrieval import CurrentSemanticRetrievalProvider, QdrantSemanticRetrievalProvider, SemanticRetrievalProvider
 from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider, VectorStoreProvider
+from sunshine_extraction.services.cache import SQLiteModelCallCache, model_call_cache_from_env
 from sunshine_extraction.services.extraction import OcrExecutor, ocr_executor_from_env
 from sunshine_extraction.services.imports import RunResultsImporter, run_results_importer_from_env
 from sunshine_extraction.services.tagging import LLMTagInspector, llm_tag_inspector_from_env
@@ -40,6 +41,7 @@ def _resolve_deps(
     llm_tag_inspector: LLMTagInspector | None = None,
     ocr_executor: OcrExecutor | None = None,
     run_results_importer: RunResultsImporter | None = None,
+    model_call_cache: SQLiteModelCallCache | None = None,
     semantic_index_path: str | Path | None | object = SEMANTIC_INDEX_FROM_ENV,
 ) -> DocumentPipelineDeps:
     if embedding_provider is None:
@@ -48,19 +50,21 @@ def _resolve_deps(
         except EmbeddingConfigurationError:
             embedding_provider = PlaceholderEmbeddingProvider()
     active_llm_tag_inspector = llm_tag_inspector or llm_tag_inspector_from_env()
+    active_model_call_cache = model_call_cache if model_call_cache is not None else model_call_cache_from_env()
     return {
         "extraction_provider": extraction_provider or extraction_provider_from_env(),
         "chunking_provider": chunking_provider or CurrentChunkingProvider(),
-        "chunk_embedding_provider": chunk_embedding_provider or CurrentChunkEmbeddingProvider(embedding_provider),
+        "chunk_embedding_provider": chunk_embedding_provider or CurrentChunkEmbeddingProvider(embedding_provider, cache=active_model_call_cache),
         "vector_store": vector_store or _vector_store_from_env(),
         "semantic_retrieval_provider": semantic_retrieval_provider or _semantic_retrieval_provider_from_env(embedding_provider),
-        "llm_tag_inspection_provider": llm_tag_inspection_provider or CurrentLLMTagInspectionProvider(active_llm_tag_inspector),
+        "llm_tag_inspection_provider": llm_tag_inspection_provider or CurrentLLMTagInspectionProvider(active_llm_tag_inspector, cache=active_model_call_cache),
         "embedding_provider": embedding_provider,
         "embedding_failure_mode": _embedding_failure_mode(embedding_failure_mode),
         "llm_tag_inspector": active_llm_tag_inspector,
         "ocr_executor": ocr_executor or ocr_executor_from_env(),
         "run_results_importer": run_results_importer or run_results_importer_from_env(),
         "observability_provider": observability_provider or observability_provider_from_env(),
+        "model_call_cache": active_model_call_cache,
         "semantic_index_path": _resolve_semantic_index_path(semantic_index_path),
     }
 

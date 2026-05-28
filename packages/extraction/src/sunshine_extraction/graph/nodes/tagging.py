@@ -36,7 +36,7 @@ def _inspect_tags_with_llm(state: DocumentPipelineState, deps: DocumentPipelineD
         semantic_examples=state.get("semantic_examples", []),
     )
     warnings = _unique_strings([*state.get("warnings", []), *_llm_inspection_warnings(inspection)])
-    usage_row = _llm_tag_model_usage_row(state, inspection, started=started)
+    usage_row = None if inspection.get("cache_status") == "hit" else _llm_tag_model_usage_row(state, inspection, started=started)
     return {
         "llm_tag_inspection": inspection,
         "llm_tag_inspection_result": attempt.as_row(),
