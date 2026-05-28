@@ -89,7 +89,7 @@ class PostgresPipelineStore:
                 "source": "postgres",
                 "total_results": _scalar_count(connection, "select count(*) from pipeline_results"),
                 "total_review_items": _scalar_count(connection, "select count(*) from review_items_v2"),
-                "total_golden_labels": 0,
+                "total_golden_labels": _scalar_count(connection, "select count(*) from golden_labels_v2"),
                 "review_by_status": {**by_status, "resolved": sum(count for status, count in by_status.items() if status != "open")},
                 "results_by_route_status": _postgres_count_rows(
                     connection,
@@ -222,6 +222,66 @@ class PostgresPipelineStore:
         finally:
             connection.close()
 
+    def list_golden_labels(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        connection = self._connect_factory(self.database_url)
+        try:
+            rows = connection.execute(
+                """
+                select
+                    gl.id,
+                    gl.review_item_id,
+                    gl.run_id,
+                    r.run_key,
+                    r.preset_key,
+                    gl.source_path,
+                    gl.relative_path,
+                    gl.sample_path,
+                    gl.segment_id,
+                    gl.extracted_text_snippet,
+                    gl.content_class,
+                    gl.correct_primary_tag,
+                    gl.correct_secondary_tags,
+                    gl.ocr_quality_label,
+                    gl.expected_review_required,
+                    gl.sensitive_record,
+                    gl.correct_destination_path,
+                    gl.correct_placement_year,
+                    gl.correct_privacy,
+                    gl.reviewer,
+                    gl.notes,
+                    gl.proposed_tag,
+                    gl.proposed_secondary_tags,
+                    gl.proposed_confidence,
+                    gl.reviewed_at,
+                    gl.created_at,
+                    gl.updated_at
+                from golden_labels_v2 gl
+                left join pipeline_runs r on r.id = gl.run_id
+                order by gl.updated_at desc
+                limit %s
+                """,
+                (max(1, min(int(limit), 10000)),),
+            ).fetchall()
+            return [_json_safe_row(_row_to_dict(row)) for row in rows]
+        finally:
+            connection.close()
+
+    def golden_label_summary(self) -> dict[str, Any]:
+        connection = self._connect_factory(self.database_url)
+        try:
+            return {
+                "db_path": str(self.database_url),
+                "source": "postgres",
+                "total_golden_labels": _scalar_count(connection, "select count(*) from golden_labels_v2"),
+                "golden_by_primary_tag": _postgres_count_rows(
+                    connection,
+                    "select correct_primary_tag as key, count(*) as count from golden_labels_v2 group by correct_primary_tag",
+                ),
+                "golden_by_secondary_tag": _postgres_jsonb_array_count_rows(connection, "golden_labels_v2", "correct_secondary_tags"),
+            }
+        finally:
+            connection.close()
+
     def get_review_item(self, item_id: str) -> dict[str, Any]:
         connection = self._connect_factory(self.database_url)
         try:
@@ -278,16 +338,45 @@ class PostgresPipelineStore:
         correct_class: str | None = None,
         correct_tag: str | None = None,
         correct_secondary_tags: list[str] | None = None,
+        ocr_quality_label: str | None = None,
+        expected_review_required: bool | None = None,
+        sensitive_record: bool | None = None,
+        correct_destination_path: str | None = None,
+        correct_placement_year: str | None = None,
+        correct_privacy: str | None = None,
+        reviewer: str | None = None,
         notes: str | None = None,
+        save_as_golden: bool = True,
     ) -> dict[str, Any]:
         status = _review_status_from_decision(decision)
         connection = self._connect_factory(self.database_url)
         try:
             existing = connection.execute(
                 """
-                select id, proposed_class, proposed_tag, proposed_secondary_tags, notes
-                from review_items_v2
-                where id = %s
+                select
+                    ri.id,
+                    ri.run_id,
+                    ri.source_path,
+                    ri.relative_path,
+                    ri.segment_id,
+                    ri.proposed_class,
+                    ri.proposed_tag,
+                    ri.proposed_secondary_tags,
+                    ri.notes,
+                    pr.sample_path,
+                    pr.result,
+                    pr.tag_confidence,
+                    pr.quality
+                from review_items_v2 ri
+                left join lateral (
+                    select pr.sample_path, pr.result, pr.tag_confidence, pr.quality
+                    from pipeline_results pr
+                    where pr.run_id = ri.run_id
+                      and (pr.source_path = ri.source_path or pr.relative_path = ri.relative_path)
+                    order by pr.created_at asc
+                    limit 1
+                ) pr on true
+                where ri.id = %s
                 """,
                 (item_id,),
             ).fetchone()
@@ -321,6 +410,23 @@ class PostgresPipelineStore:
                     item_id,
                 ),
             )
+            if save_as_golden and decision in {"accept", "change", "accepted", "changed"} and resolved_tag:
+                self._upsert_golden_label(
+                    connection,
+                    review_item=existing_row,
+                    decision=decision,
+                    correct_class=resolved_class,
+                    correct_tag=resolved_tag,
+                    correct_secondary_tags=resolved_secondary or [],
+                    ocr_quality_label=ocr_quality_label,
+                    expected_review_required=expected_review_required,
+                    sensitive_record=sensitive_record,
+                    correct_destination_path=correct_destination_path,
+                    correct_placement_year=correct_placement_year,
+                    correct_privacy=correct_privacy,
+                    reviewer=reviewer,
+                    notes=notes,
+                )
             connection.commit()
             row = connection.execute(
                 """
@@ -354,6 +460,85 @@ class PostgresPipelineStore:
             return _json_safe_row(_row_to_dict(row))
         finally:
             connection.close()
+
+    def _upsert_golden_label(
+        self,
+        connection: PostgresConnection,
+        *,
+        review_item: dict[str, Any],
+        decision: str,
+        correct_class: str | None,
+        correct_tag: str,
+        correct_secondary_tags: list[str],
+        ocr_quality_label: str | None,
+        expected_review_required: bool | None,
+        sensitive_record: bool | None,
+        correct_destination_path: str | None,
+        correct_placement_year: str | None,
+        correct_privacy: str | None,
+        reviewer: str | None,
+        notes: str | None,
+    ) -> None:
+        result = review_item.get("result") if isinstance(review_item.get("result"), dict) else {}
+        resolved_quality = ocr_quality_label if ocr_quality_label is not None else (result.get("quality") or review_item.get("quality"))
+        resolved_expected = expected_review_required if expected_review_required is not None else True
+        text_snippet = result.get("extraction_text_snippet") or result.get("text_snippet") or result.get("text")
+        connection.execute(
+            """
+            insert into golden_labels_v2 (
+                review_item_id, run_id, source_path, relative_path, sample_path, segment_id,
+                extracted_text_snippet, content_class, correct_primary_tag, correct_secondary_tags,
+                ocr_quality_label, expected_review_required, sensitive_record, correct_destination_path,
+                correct_placement_year, correct_privacy, reviewer, notes, proposed_tag,
+                proposed_secondary_tags, proposed_confidence, reviewed_at, updated_at
+            ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, now(), now())
+            on conflict (source_path, segment_id) do update set
+                review_item_id = excluded.review_item_id,
+                run_id = excluded.run_id,
+                relative_path = excluded.relative_path,
+                sample_path = excluded.sample_path,
+                extracted_text_snippet = excluded.extracted_text_snippet,
+                content_class = excluded.content_class,
+                correct_primary_tag = excluded.correct_primary_tag,
+                correct_secondary_tags = excluded.correct_secondary_tags,
+                ocr_quality_label = excluded.ocr_quality_label,
+                expected_review_required = excluded.expected_review_required,
+                sensitive_record = excluded.sensitive_record,
+                correct_destination_path = excluded.correct_destination_path,
+                correct_placement_year = excluded.correct_placement_year,
+                correct_privacy = excluded.correct_privacy,
+                reviewer = excluded.reviewer,
+                notes = excluded.notes,
+                proposed_tag = excluded.proposed_tag,
+                proposed_secondary_tags = excluded.proposed_secondary_tags,
+                proposed_confidence = excluded.proposed_confidence,
+                reviewed_at = now(),
+                updated_at = now()
+            """,
+            (
+                review_item.get("id"),
+                review_item.get("run_id"),
+                review_item.get("source_path"),
+                review_item.get("relative_path"),
+                review_item.get("sample_path"),
+                review_item.get("segment_id") or "",
+                str(text_snippet)[:4000] if text_snippet else None,
+                correct_class or review_item.get("proposed_class"),
+                correct_tag,
+                json.dumps(correct_secondary_tags or []),
+                resolved_quality,
+                bool(resolved_expected),
+                bool(sensitive_record),
+                correct_destination_path,
+                correct_placement_year,
+                correct_privacy,
+                reviewer,
+                notes,
+                review_item.get("proposed_tag"),
+                json.dumps(review_item.get("proposed_secondary_tags") or []),
+                review_item.get("tag_confidence"),
+            ),
+        )
 
     def _list_pipeline_runs(self, connection: PostgresConnection, *, limit: int) -> list[dict[str, Any]]:
         rows = connection.execute(
@@ -896,6 +1081,26 @@ def _postgres_count_rows(connection: PostgresConnection, query: str) -> dict[str
             key = row.get("key")
             count = row.get("count")
         elif isinstance(row, tuple):
+            key, count = row
+        else:
+            row_dict = _row_to_dict(row)
+            key = row_dict.get("key")
+            count = row_dict.get("count")
+        counts[str(key or "unknown")] = _int_value(count)
+    return dict(sorted(counts.items()))
+
+
+def _postgres_jsonb_array_count_rows(connection: PostgresConnection, table: str, column: str) -> dict[str, int]:
+    rows = connection.execute(
+        f"""
+        select value as key, count(*) as count
+        from {table}, jsonb_array_elements_text({column}) as value
+        group by value
+        """
+    ).fetchall()
+    counts: dict[str, int] = {}
+    for row in rows:
+        if isinstance(row, tuple):
             key, count = row
         else:
             row_dict = _row_to_dict(row)

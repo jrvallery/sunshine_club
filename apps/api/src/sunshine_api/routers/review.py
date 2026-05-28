@@ -16,7 +16,9 @@ from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from sunshine_api.dependencies import review_store
 from sunshine_api.services.imports import (
     get_postgres_review_item,
+    list_postgres_golden_labels,
     list_postgres_review_items,
+    postgres_golden_label_summary,
     postgres_review_summary,
     record_postgres_review_decision,
 )
@@ -138,7 +140,14 @@ def review_export(status: str = "all", limit: int = 1000) -> StreamingResponse:
 
 
 @router.get("/admin/review/golden-labels")
-def golden_labels(limit: int = 100) -> list[dict[str, Any]]:
+def golden_labels(limit: int = 100, source: str = "sqlite") -> list[dict[str, Any]]:
+    if source == "postgres":
+        try:
+            return [_postgres_golden_label_row(row) for row in list_postgres_golden_labels(limit=limit)]
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+    if source != "sqlite":
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
     return review_store().list_golden_labels(limit=limit)
 
 
@@ -217,7 +226,14 @@ def golden_labels_export(format: str = "csv", limit: int = 10000) -> StreamingRe
 
 
 @router.get("/admin/review/golden-labels/summary")
-def golden_label_summary() -> dict[str, Any]:
+def golden_label_summary(source: str = "sqlite") -> dict[str, Any]:
+    if source == "postgres":
+        try:
+            return postgres_golden_label_summary()
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+    if source != "sqlite":
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
     return review_store().golden_label_summary()
 
 
@@ -427,7 +443,15 @@ def record_review_decision(item_id: str, request: ReviewDecisionRequest, source:
                 correct_class=request.correct_class,
                 correct_tag=request.correct_tag,
                 correct_secondary_tags=request.correct_secondary_tags,
+                ocr_quality_label=request.ocr_quality_label,
+                expected_review_required=request.expected_review_required,
+                sensitive_record=request.sensitive_record,
+                correct_destination_path=request.correct_destination_path,
+                correct_placement_year=request.correct_placement_year,
+                correct_privacy=request.correct_privacy,
+                reviewer=request.reviewer,
                 notes=request.notes,
+                save_as_golden=request.save_as_golden,
             )
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
@@ -644,6 +668,41 @@ def _postgres_review_text(row: dict[str, Any]) -> str:
         if value:
             return str(value)
     return ""
+
+
+def _postgres_golden_label_row(row: dict[str, Any]) -> dict[str, Any]:
+    secondary = row.get("correct_secondary_tags") if isinstance(row.get("correct_secondary_tags"), list) else []
+    proposed_secondary = row.get("proposed_secondary_tags") if isinstance(row.get("proposed_secondary_tags"), list) else []
+    return {
+        "id": row.get("id"),
+        "source": "postgres",
+        "review_item_id": row.get("review_item_id"),
+        "run_id": row.get("run_id"),
+        "run_key": row.get("run_key"),
+        "run_preset_key": row.get("preset_key"),
+        "source_path": row.get("source_path"),
+        "relative_path": row.get("relative_path"),
+        "sample_path": row.get("sample_path"),
+        "segment_id": row.get("segment_id"),
+        "extracted_text_snippet": row.get("extracted_text_snippet"),
+        "content_class": row.get("content_class"),
+        "correct_primary_tag": row.get("correct_primary_tag"),
+        "correct_secondary_tags": secondary,
+        "ocr_quality_label": row.get("ocr_quality_label"),
+        "expected_review_required": row.get("expected_review_required"),
+        "sensitive_record": row.get("sensitive_record"),
+        "correct_destination_path": row.get("correct_destination_path"),
+        "correct_placement_year": row.get("correct_placement_year"),
+        "correct_privacy": row.get("correct_privacy"),
+        "reviewer": row.get("reviewer"),
+        "notes": row.get("notes"),
+        "proposed_tag": row.get("proposed_tag"),
+        "proposed_secondary_tags": proposed_secondary,
+        "proposed_confidence": row.get("proposed_confidence"),
+        "reviewed_at": row.get("reviewed_at"),
+        "created_at": row.get("created_at"),
+        "updated_at": row.get("updated_at"),
+    }
 
 
 def _postgres_review_facets(rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:

@@ -125,6 +125,25 @@ def list_postgres_review_items(
     return store.list_review_items(run_key=run_key, limit=limit)
 
 
+def list_postgres_golden_labels(
+    *,
+    limit: int = 100,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> list[dict[str, Any]]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.list_golden_labels(limit=limit)
+
+
+def postgres_golden_label_summary(
+    *,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> dict[str, Any]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.golden_label_summary()
+
+
 def get_postgres_review_item(
     item_id: str,
     *,
@@ -142,7 +161,15 @@ def record_postgres_review_decision(
     correct_class: str | None = None,
     correct_tag: str | None = None,
     correct_secondary_tags: list[str] | None = None,
+    ocr_quality_label: str | None = None,
+    expected_review_required: bool | None = None,
+    sensitive_record: bool | None = None,
+    correct_destination_path: str | None = None,
+    correct_placement_year: str | None = None,
+    correct_privacy: str | None = None,
+    reviewer: str | None = None,
     notes: str | None = None,
+    save_as_golden: bool = True,
     database_url: str | None = None,
     connect_factory: ConnectFactory | None = None,
 ) -> dict[str, Any]:
@@ -153,7 +180,15 @@ def record_postgres_review_decision(
         correct_class=correct_class,
         correct_tag=correct_tag,
         correct_secondary_tags=correct_secondary_tags,
+        ocr_quality_label=ocr_quality_label,
+        expected_review_required=expected_review_required,
+        sensitive_record=sensitive_record,
+        correct_destination_path=correct_destination_path,
+        correct_placement_year=correct_placement_year,
+        correct_privacy=correct_privacy,
+        reviewer=reviewer,
         notes=notes,
+        save_as_golden=save_as_golden,
     )
 
 
@@ -164,8 +199,10 @@ __all__ = [
     "get_postgres_pipeline_run",
     "get_postgres_review_item",
     "get_postgres_run_report",
+    "list_postgres_golden_labels",
     "list_postgres_pipeline_runs",
     "list_postgres_review_items",
+    "postgres_golden_label_summary",
     "postgres_runtime_summary",
     "postgres_review_summary",
     "record_postgres_review_decision",

@@ -529,14 +529,22 @@ def test_postgres_pipeline_store_records_review_decision() -> None:
         def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
             self.executed.append((query, params))
             normalized = " ".join(query.lower().split())
-            if "select id, proposed_class" in normalized:
+            if "select ri.id, ri.run_id, ri.source_path" in normalized:
                 return _Cursor(
                     {
                         "id": "review-id",
+                        "run_id": "run-id",
+                        "source_path": "/source/a.pdf",
+                        "relative_path": "Sunshine/a.pdf",
+                        "segment_id": None,
                         "proposed_class": "document",
                         "proposed_tag": "meeting_records",
                         "proposed_secondary_tags": ["meeting_minutes"],
                         "notes": "existing",
+                        "sample_path": "/sample/a.pdf",
+                        "result": {"quality": "ok", "extraction_text_snippet": "Meeting minutes text"},
+                        "tag_confidence": 0.75,
+                        "quality": "ok",
                     }
                 )
             if "from review_items_v2 ri" in normalized:
@@ -587,6 +595,19 @@ def test_postgres_pipeline_store_records_review_decision() -> None:
     assert connection.committed is True
     update_params = next(params for query, params in connection.executed if "update review_items_v2" in query)
     assert update_params[:5] == ("changed", "document", "history_archive_general", '["history_archive"]', "existing\ncorrected after review")
+    golden_params = next(params for query, params in connection.executed if "insert into golden_labels_v2" in query)
+    assert golden_params[:10] == (
+        "review-id",
+        "run-id",
+        "/source/a.pdf",
+        "Sunshine/a.pdf",
+        "/sample/a.pdf",
+        "",
+        "Meeting minutes text",
+        "document",
+        "history_archive_general",
+        '["history_archive"]',
+    )
     assert connection.closed is True
 
 
@@ -676,6 +697,62 @@ def test_postgres_pipeline_store_reports_review_summary() -> None:
     assert summary["review_by_status"]["open"] == 1
     assert summary["review_by_status"]["resolved"] == 2
     assert summary["results_by_primary_tag"]["scrapbooks"] == 2
+    assert connection.closed is True
+
+
+def test_postgres_pipeline_store_lists_golden_labels_and_summary() -> None:
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.closed = False
+            self.executed: list[tuple[str, tuple[Any, ...]]] = []
+
+        def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
+            self.executed.append((query, params))
+            normalized = " ".join(query.lower().split())
+            if "select gl.id" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "golden-id",
+                            "review_item_id": "review-id",
+                            "run_id": "run-id",
+                            "run_key": "run-1",
+                            "preset_key": "qa",
+                            "source_path": "/source/a.pdf",
+                            "relative_path": "Sunshine/a.pdf",
+                            "sample_path": "/sample/a.pdf",
+                            "segment_id": "segment-1",
+                            "content_class": "document",
+                            "correct_primary_tag": "history_archive_general",
+                            "correct_secondary_tags": ["history_archive"],
+                            "proposed_tag": "meeting_records",
+                            "proposed_secondary_tags": ["meeting_minutes"],
+                        }
+                    ]
+                )
+            if "count(*)" in normalized and "group by" not in normalized:
+                return _Cursor({"count": 1})
+            if "correct_primary_tag" in normalized:
+                return _Cursor(rows=[{"key": "history_archive_general", "count": 1}])
+            if "jsonb_array_elements_text" in normalized:
+                return _Cursor(rows=[{"key": "history_archive", "count": 1}])
+            return _Cursor()
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+    store = PostgresPipelineStore("postgresql://local/test", connect_factory=lambda _url: connection)
+
+    labels = store.list_golden_labels(limit=5)
+    summary = store.golden_label_summary()
+
+    assert labels[0]["id"] == "golden-id"
+    assert labels[0]["correct_primary_tag"] == "history_archive_general"
+    assert summary["source"] == "postgres"
+    assert summary["total_golden_labels"] == 1
+    assert summary["golden_by_primary_tag"] == {"history_archive_general": 1}
+    assert summary["golden_by_secondary_tag"] == {"history_archive": 1}
     assert connection.closed is True
 
 

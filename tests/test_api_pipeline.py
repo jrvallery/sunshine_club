@@ -372,6 +372,43 @@ def test_review_summary_can_read_postgres_v2_source(monkeypatch) -> None:
     assert payload["review_by_status"]["resolved"] == 2
 
 
+def test_golden_labels_can_read_postgres_v2_source(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "sunshine_api.routers.review.list_postgres_golden_labels",
+        lambda **kwargs: [
+            {
+                "id": "golden-1",
+                "review_item_id": "review-1",
+                "run_id": "run-db-id",
+                "run_key": "qa_samples_full-1",
+                "preset_key": "qa_samples_full",
+                "source_path": "/mnt/sunshine/history.pdf",
+                "relative_path": "History/history.pdf",
+                "segment_id": "seg-1",
+                "content_class": "document",
+                "correct_primary_tag": "history_archive_general",
+                "correct_secondary_tags": ["club_history"],
+                "proposed_tag": "scrapbooks",
+                "proposed_secondary_tags": ["history_archive"],
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "sunshine_api.routers.review.postgres_golden_label_summary",
+        lambda: {"source": "postgres", "total_golden_labels": 1, "golden_by_primary_tag": {"history_archive_general": 1}},
+    )
+
+    labels = TestClient(app).get("/admin/review/golden-labels", params={"source": "postgres"})
+    summary = TestClient(app).get("/admin/review/golden-labels/summary", params={"source": "postgres"})
+
+    assert labels.status_code == 200
+    assert labels.json()[0]["source"] == "postgres"
+    assert labels.json()[0]["correct_primary_tag"] == "history_archive_general"
+    assert labels.json()[0]["segment_id"] == "seg-1"
+    assert summary.status_code == 200
+    assert summary.json()["total_golden_labels"] == 1
+
+
 def test_review_decision_can_write_postgres_v2_source(monkeypatch) -> None:
     captured = {}
 
@@ -428,7 +465,15 @@ def test_review_decision_can_write_postgres_v2_source(monkeypatch) -> None:
         "correct_class": "document",
         "correct_tag": "history_archive_general",
         "correct_secondary_tags": ["club_history", "scrapbook"],
+        "ocr_quality_label": None,
+        "expected_review_required": None,
+        "sensitive_record": None,
+        "correct_destination_path": None,
+        "correct_placement_year": None,
+        "correct_privacy": None,
+        "reviewer": None,
         "notes": "reviewed segment",
+        "save_as_golden": False,
     }
 
 
