@@ -29,7 +29,7 @@ def local_infrastructure_status() -> dict[str, Any]:
             "pipeline_runtime_importer": True,
             "v2_migrations": _migration_status(),
         },
-        "qdrant": qdrant.dependency_status(),
+        "qdrant": _qdrant_status(qdrant),
         "qdrant_retrieval": qdrant_retrieval.dependency_status(),
         "docling": docling.dependency_status(),
         "cortex": {
@@ -78,6 +78,14 @@ def _model_call_cache_status() -> dict[str, Any]:
         "exists": path.exists() if path else False,
         "namespaces": ["embedding", "llm_tag_inspection"],
     }
+
+
+def _qdrant_status(provider: QdrantVectorStoreProvider) -> dict[str, Any]:
+    status = provider.dependency_status()
+    status["compose_service"] = "qdrant"
+    status["compose_file"] = "compose.yaml"
+    status["required_for_production"] = True
+    return status
 
 
 def _migration_status() -> dict[str, Any]:

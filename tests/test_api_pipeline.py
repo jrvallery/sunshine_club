@@ -60,6 +60,8 @@ def test_local_infrastructure_status_is_local_only(monkeypatch) -> None:
     assert payload["postgres"]["v2_migrations"]["complete"] is True
     assert payload["qdrant"]["provider"] == "qdrant"
     assert payload["qdrant"]["local_only"] is True
+    assert payload["qdrant"]["compose_service"] == "qdrant"
+    assert payload["qdrant"]["required_for_production"] is True
     assert payload["qdrant_retrieval"]["provider"] == "qdrant"
     assert payload["docling"]["provider"] == "docling"
     assert payload["docling"]["local_only"] is True

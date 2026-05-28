@@ -774,8 +774,44 @@ def test_qdrant_vector_provider_is_optional_and_local_only() -> None:
 
     assert status["provider"] == "qdrant"
     assert status["local_only"] is True
+    assert "client_available" in status
+    assert "server_available" in status
+
+
+def test_qdrant_vector_provider_reports_collection_readiness(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeCollection:
+        points_count = 7
+        vectors_count = 7
+        config = types.SimpleNamespace(params=types.SimpleNamespace(vectors=types.SimpleNamespace(size=1024)))
+
+    class FakeClient:
+        def __init__(self, *, url: str, timeout: float) -> None:
+            self.url = url
+            self.timeout = timeout
+
+        def collection_exists(self, *, collection_name: str) -> bool:
+            assert collection_name == "sunshine-test"
+            return True
+
+        def get_collection(self, *, collection_name: str) -> FakeCollection:
+            assert collection_name == "sunshine-test"
+            return FakeCollection()
+
+    fake_module = types.SimpleNamespace(QdrantClient=FakeClient)
+    monkeypatch.setitem(sys.modules, "qdrant_client", fake_module)
+    monkeypatch.setenv("SUNSHINE_EMBEDDING_DIMENSIONS", "1024")
+
+    status = QdrantVectorStoreProvider(url="http://127.0.0.1:6333", collection="sunshine-test").dependency_status()
+
+    assert status["available"] is True
+    assert status["server_available"] is True
+    assert status["collection_exists"] is True
+    assert status["provisioned"] is True
+    assert status["expected_vector_size"] == 1024
+    assert status["collection"] == "sunshine-test"
+    assert status["collection_info"]["vector_size"] == 1024
+    assert status["collection_info"]["points_count"] == 7
     assert status["url"] == "http://127.0.0.1:6333"
-    assert status["collection"] == "test"
 
 
 def test_noop_vector_provider_records_unconfigured_indexing() -> None:

@@ -901,6 +901,7 @@ Current implementation:
 
 - `services/indexing/chunk_indexer.py` owns normalized indexing result shaping.
 - `providers/vectorstores/base.py` defines the vector-store provider contract, with `NoopVectorStoreProvider` for side-effect-free runs and `QdrantVectorStoreProvider` for configured local indexing.
+- `QdrantVectorStoreProvider.dependency_status()` reports client availability, local server reachability, collection existence/provisioning, expected vector size, and best-effort collection counts.
 - `providers/vectorstores/sqlite_golden.py` exposes the existing SQLite golden-label semantic-index path as an explicit provider boundary.
 - Postgres migration `0003_pipeline_chunks_embeddings.sql` creates run-owned chunk and embedding tables backed by pgvector for V2 artifact imports.
 - `graph/nodes/indexing.py` owns the `index_chunks` node, separated from embedding so vector-store writes are auditable as their own graph phase.
@@ -1548,9 +1549,9 @@ Important missing V2 dependencies:
 
 - Docling is declared as an optional Python extra and has a local provider boundary; the actual local dependency install/runtime benchmark still needs to be performed.
 - MinerU, RAGFlow DeepDoc, and Unstructured have local provider boundaries for benchmarking, but are not declared as installed dependencies yet.
-- Qdrant client is declared; the local Qdrant server/service/provisioning path still needs to be made first-class.
+- Qdrant client, Compose service, and readiness metadata exist; the dashboard still needs a provider health/provisioning surface for rebuilding or inspecting collections.
 - Postgres client and Compose service exist; V2 migrations now include run/results/model/provider/segment/chunk/embedding tables, but dashboard runtime still needs to move from SQLite to Postgres as the authoritative store.
-- Local embedding/vector indexing stack is not fully wired yet.
+- Local embedding/vector indexing stack is wired through providers and optional Qdrant indexing; production still needs a reviewed canonical collection and rebuild workflow.
 - Provider benchmark tooling exists for extraction providers and emits promotion recommendations; dashboard benchmark review and real Docling/MinerU/RAGFlow dependency benchmarking still need to be finished.
 
 ## Local-Only Infrastructure Decision
