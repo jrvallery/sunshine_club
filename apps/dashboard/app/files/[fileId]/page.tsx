@@ -14,9 +14,23 @@ import type { FileInspection, PipelineRun, ReviewItem } from "../../../lib/types
 
 export default function FileViewerPage() {
   return (
-    <Suspense fallback={<main className="pageShell"><div className="empty">Loading file...</div></main>}>
+    <Suspense fallback={<FileViewerLoading />}>
       <FileViewerPageContent />
     </Suspense>
+  );
+}
+
+function FileViewerLoading() {
+  return (
+    <main className="pageShell">
+      <header className="pageHeader">
+        <div>
+          <p className="eyebrow">File Viewer</p>
+          <h1>Loading File</h1>
+        </div>
+      </header>
+      <div className="empty">Loading file...</div>
+    </main>
   );
 }
 
@@ -65,12 +79,18 @@ function FileViewerPageContent() {
   });
 
   if (inspection.isLoading) {
-    return <main className="pageShell"><div className="empty">Loading file...</div></main>;
+    return <FileViewerLoading />;
   }
   if (inspection.isError || !inspection.data) {
     return (
       <main className="pageShell">
-        <Link className="secondaryButton" href={backHref}>Back to Files</Link>
+        <header className="pageHeader">
+          <div>
+            <p className="eyebrow">File Viewer</p>
+            <h1>File Not Found</h1>
+          </div>
+          <Link className="secondaryButton" href={backHref}>Back to Files</Link>
+        </header>
         <div className="empty">File inspection failed.</div>
       </main>
     );

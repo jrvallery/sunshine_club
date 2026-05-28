@@ -163,7 +163,7 @@ export default function PipelineEvalPage() {
           <h2>Eval History</h2>
           <span>{evalRuns.data?.length ?? 0} shown</span>
         </div>
-        <div className="tableWrap">
+        <div className="tableWrap" tabIndex={0} aria-label="Pipeline evaluations table">
           <table>
             <thead>
               <tr>
@@ -463,7 +463,7 @@ export default function PipelineEvalPage() {
 
 function EvalRows({ rows }: { rows: Array<Record<string, unknown>> }) {
   return (
-    <div className="tableWrap">
+    <div className="tableWrap" tabIndex={0} aria-label="Evaluation rows table">
       <table>
         <thead>
           <tr>

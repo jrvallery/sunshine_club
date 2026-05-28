@@ -142,7 +142,7 @@ export default function GoldenLabelsPage() {
           <TagPicker label="Primary tag" options={primaryTagOptions} value={primaryFilter} onChange={setPrimaryFilter} />
           <TagPicker label="Secondary tag" options={secondaryTagOptions} value={secondaryFilter} onChange={setSecondaryFilter} />
         </div>
-        <div className="tableWrap">
+        <div className="tableWrap" tabIndex={0} aria-label="Golden labels table">
           <table>
             <thead>
               <tr>

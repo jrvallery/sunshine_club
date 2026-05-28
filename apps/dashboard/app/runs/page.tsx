@@ -119,7 +119,7 @@ export default function RunsPage() {
           <h2>Run History</h2>
           <span>{runs.data?.length ?? 0} shown</span>
         </div>
-        <div className="tableWrap">
+        <div className="tableWrap" tabIndex={0} aria-label="Run history table">
           <table>
             <thead>
               <tr>

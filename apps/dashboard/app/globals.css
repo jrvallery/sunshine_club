@@ -170,6 +170,7 @@ h2 {
 h1 {
   font-size: 32px;
   line-height: 1.1;
+  overflow-wrap: anywhere;
 }
 
 h2 {
@@ -222,6 +223,7 @@ h2 {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
+  min-width: 0;
   padding: 16px;
 }
 
@@ -262,8 +264,16 @@ h2 {
   align-items: center;
   border-top: 1px solid var(--border-soft);
   display: flex;
+  gap: 10px;
   justify-content: space-between;
   min-height: 34px;
+}
+
+.breakdownRow span,
+.breakdownRow strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .breakdownRow.stacked {
@@ -288,6 +298,7 @@ h2 {
   border: 1px solid var(--border);
   border-radius: 8px;
   margin-top: 16px;
+  min-width: 0;
   padding: 14px;
 }
 
@@ -455,6 +466,12 @@ h2 {
   border-radius: 8px;
   max-width: 100%;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tableWrap:focus {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 2px;
 }
 
 .fileBrowserTable {
@@ -1294,8 +1311,10 @@ td:first-child {
   line-height: 1.45;
   max-height: 360px;
   overflow: auto;
+  overflow-wrap: anywhere;
   padding: 12px;
   white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .embeddedPreview,
@@ -1750,7 +1769,7 @@ td:first-child {
   cursor: default;
 }
 
-@media (max-width: 800px) {
+@media (max-width: 900px) {
   .pageShell {
     padding: 24px 18px;
   }
@@ -1804,6 +1823,8 @@ td:first-child {
   .bands,
   .compactMetrics,
   .reportGrid,
+  .runReportHeader,
+  .runMetaGrid,
   .settingsGrid,
   .presetGrid,
   .drawerGrid,
