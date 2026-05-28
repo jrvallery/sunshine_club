@@ -159,6 +159,7 @@ def provider_benchmark_latest(output_dir: str) -> dict[str, Any]:
     output_path = Path(output_dir)
     summary_path = output_path / "provider-benchmark-summary.json"
     results_path = output_path / "provider-benchmark-results.jsonl"
+    recommendations_path = output_path / "provider-benchmark-recommendations.jsonl"
     if not summary_path.exists():
         return {"ok": False, "exists": False, "output_dir": str(output_path)}
     try:
@@ -170,6 +171,7 @@ def provider_benchmark_latest(output_dir: str) -> dict[str, Any]:
         "exists": True,
         "output_dir": str(output_path),
         "summary": summary,
+        "recommendations": _read_eval_jsonl(recommendations_path, limit=100),
         "results": _read_eval_jsonl(results_path, limit=500),
     }
 

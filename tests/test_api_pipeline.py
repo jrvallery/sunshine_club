@@ -110,6 +110,8 @@ def test_provider_benchmark_api_runs_current_provider(tmp_path: Path) -> None:
     assert run.json()["summary"]["local_only"] is True
     assert latest.status_code == 200
     assert latest.json()["summary"]["result_count"] == 1
+    assert latest.json()["recommendations"][0]["provider"] == "current"
+    assert latest.json()["recommendations"][0]["local_only"] is True
     assert latest.json()["results"][0]["provider"] == "current"
 
 

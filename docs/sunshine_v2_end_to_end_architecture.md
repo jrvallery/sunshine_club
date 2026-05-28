@@ -1553,6 +1553,7 @@ Important missing V2 dependencies:
 - Postgres client and Compose service exist; V2 migrations now include run/results/model/provider/segment/chunk/embedding tables, but dashboard runtime still needs to move from SQLite to Postgres as the authoritative store.
 - Local embedding/vector indexing stack is wired through providers and optional Qdrant indexing; production still needs a reviewed canonical collection and rebuild workflow.
 - Provider benchmark tooling exists for extraction providers and emits promotion recommendations; dashboard benchmark review and real Docling/MinerU/RAGFlow dependency benchmarking still need to be finished.
+- The provider benchmark API returns summary, result rows, and promotion recommendations from benchmark artifacts so the dashboard can present provider-comparison decisions without re-deriving them client-side.
 
 ## Local-Only Infrastructure Decision
 
