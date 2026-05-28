@@ -59,13 +59,77 @@ def propose_document_segments(
     return [segment.as_row()]
 
 
-def attach_segment_ids_to_chunks(chunks: list[dict[str, Any]], segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def attach_segment_ids_to_chunks(
+    chunks: list[dict[str, Any]],
+    segments: list[dict[str, Any]],
+    *,
+    document_structure: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     if not chunks or not segments:
         return chunks
     if len(segments) != 1:
-        return chunks
+        segment_chunks = _segment_text_chunks(chunks, segments, document_structure or {})
+        return segment_chunks or chunks
     segment_id = segments[0]["segment_id"]
     return [{**chunk, "segment_id": segment_id, "parent_segment_id": segment_id} for chunk in chunks]
+
+
+def _segment_text_chunks(
+    chunks: list[dict[str, Any]],
+    segments: list[dict[str, Any]],
+    document_structure: dict[str, Any],
+) -> list[dict[str, Any]]:
+    source_pages = _segment_source_pages([], document_structure)
+    page_count = int(document_structure.get("page_count") or 0)
+    if page_count == 0 and source_pages:
+        page_count = max(_optional_int(page.get("page_number")) or 0 for page in source_pages)
+    pages = _normalized_pages(source_pages, page_count)
+    if not pages:
+        return []
+    page_text_by_number = {
+        int(page.get("page_number") or 0): str(page.get("text") or "").strip()
+        for page in pages
+        if str(page.get("page_number") or "").isdigit() and str(page.get("text") or "").strip()
+    }
+    if not page_text_by_number:
+        return []
+
+    base_chunk = chunks[0]
+    segment_chunks: list[dict[str, Any]] = []
+    for index, segment in enumerate(segments, start=1):
+        page_start = _optional_int(segment.get("page_start"))
+        page_end = _optional_int(segment.get("page_end")) or page_start
+        if page_start is None or page_end is None:
+            continue
+        text = "\n\n".join(page_text_by_number.get(page_number, "") for page_number in range(page_start, page_end + 1)).strip()
+        if not text:
+            continue
+        segment_id = str(segment.get("segment_id") or f"segment-{index}")
+        metadata = {
+            **(base_chunk.get("metadata") if isinstance(base_chunk.get("metadata"), dict) else {}),
+            "segment_id": segment_id,
+            "parent_segment_id": segment_id,
+            "segment_title": segment.get("segment_title"),
+            "segment_type": segment.get("segment_type"),
+            "page_start": page_start,
+            "page_end": page_end,
+            "segment_confidence": segment.get("segment_confidence"),
+            "requires_segment_review": bool(segment.get("requires_segment_review")),
+            "chunking_policy": "segment_page_text",
+        }
+        segment_chunks.append(
+            {
+                **base_chunk,
+                "chunk_id": f"{segment_id}:chunk-001",
+                "chunk_index": index,
+                "chunk_kind": "segment_text",
+                "text": text,
+                "metadata": metadata,
+                "segment_id": segment_id,
+                "parent_segment_id": segment_id,
+            }
+        )
+    return segment_chunks
 
 
 def _page_count(extraction: ExtractionResult, pages: list[dict[str, Any]], document_structure: dict[str, Any]) -> int:
@@ -79,6 +143,13 @@ def _page_count(extraction: ExtractionResult, pages: list[dict[str, Any]], docum
     if isinstance(ocr_document, dict) and ocr_document.get("page_count"):
         return int(ocr_document["page_count"])
     return 0
+
+
+def _optional_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _segment_type_and_evidence(

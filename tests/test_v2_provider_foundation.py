@@ -45,7 +45,7 @@ from sunshine_extraction.services.confidence import calibrate_confidence, confid
 from sunshine_extraction.services.extraction import ocr_executor_from_env
 from sunshine_extraction.services.quality import extraction_quality_gate, quality_gate_row, validate_extracted_text, validation_row, with_text_validation
 from sunshine_extraction.services.routing import resolve_route_decision
-from sunshine_extraction.services.segmentation import propose_document_segments
+from sunshine_extraction.services.segmentation import attach_segment_ids_to_chunks, propose_document_segments
 from sunshine_extraction.services.tagging.evidence import combine_tag_candidates
 from sunshine_extraction.services.tagging.llm_inspection import llm_tag_inspector_from_env
 from sunshine_extraction.services.tagging.rules import assign_tag_candidates
@@ -1151,6 +1151,41 @@ def test_segmentation_uses_provider_structure_pages_when_ocr_pages_are_absent(tm
     assert segments[0]["metadata"]["policy"] == "page_level_review_candidates"
     assert "page_signal:newspaper_or_article" in segments[0]["segment_boundary_evidence"]
     assert "page_signal:scrapbook_or_photo" in segments[0]["segment_boundary_evidence"]
+
+
+def test_segmented_packets_create_segment_text_chunks_from_page_structure(tmp_path: Path) -> None:
+    source = tmp_path / "green_scrapbook.pdf"
+    source.write_text("fake", encoding="utf-8")
+    sample = _sample(source, relative_path="archive/scrapbooks/green_scrapbook.pdf")
+    extraction = ExtractionResult(
+        sample=sample,
+        plan={"strategy": "docling_layout", "document_subtype": "scrapbook"},
+        extraction_status="extracted",
+        text="Parent document text",
+        metadata={},
+        page_count=2,
+        warnings=[],
+    )
+    segments = propose_document_segments(extraction, file_id="file-4")
+    parent_chunks = [chunk_row(extraction, 1, "text", "Parent document text", {"char_start": 0, "char_end": 20})]
+
+    chunks = attach_segment_ids_to_chunks(
+        parent_chunks,
+        segments,
+        document_structure={
+            "page_count": 2,
+            "pages": [
+                {"page_number": 1, "text": "First scrapbook page text"},
+                {"page_number": 2, "text": "Second scrapbook page text"},
+            ],
+        },
+    )
+
+    assert [chunk["chunk_kind"] for chunk in chunks] == ["segment_text", "segment_text"]
+    assert [chunk["text"] for chunk in chunks] == ["First scrapbook page text", "Second scrapbook page text"]
+    assert chunks[0]["segment_id"] == "file-4:pages-00001-00001:segment-001"
+    assert chunks[1]["metadata"]["page_start"] == 2
+    assert chunks[1]["metadata"]["chunking_policy"] == "segment_page_text"
 
 
 def test_segmentation_ids_are_stable_without_qa_sample_number(tmp_path: Path) -> None:
