@@ -23,7 +23,7 @@ from sunshine_extraction.graph.runtime import run_document_graph
 from sunshine_extraction.graph.utils import _progress, _write_jsonl
 from sunshine_extraction.providers.chunking import ChunkingProvider
 from sunshine_extraction.providers.extraction import ExtractionProvider
-from sunshine_extraction.services.artifacts import extraction_result_row, sample_input_row
+from sunshine_extraction.services.artifacts import extraction_result_row, parser_result_row, sample_input_row
 from sunshine_extraction.services.artifacts.review_queue import build_review_queue_rows
 from sunshine_extraction.services.artifact_manifest import write_artifact_manifest
 from sunshine_extraction.services.extraction import OcrExecutor
@@ -81,6 +81,7 @@ def run_document_batch(
         "sample-extraction-repairs.jsonl": [],
         "sample-quality-gates.jsonl": [],
         "sample-provider-attempts.jsonl": [],
+        "sample-parser-results.jsonl": [],
         "sample-ocr-pages.jsonl": [],
         "sample-ocr-documents.jsonl": [],
         "sample-structure.jsonl": [],
@@ -311,6 +312,16 @@ def _append_batch_rows(artifact_rows: dict[str, list[dict[str, Any]]], result: d
     if result.get("quality_gate_result"):
         artifact_rows["sample-quality-gates.jsonl"].append(result["quality_gate_result"])
     artifact_rows["sample-provider-attempts.jsonl"].extend(result.get("provider_attempts", []))
+    if extraction_result and extraction_quality:
+        artifact_rows["sample-parser-results.jsonl"].append(
+            parser_result_row(
+                extraction_result,
+                extraction_quality,
+                provider_selection=result.get("extraction_provider_selection"),
+                provider_attempts=result.get("provider_attempts", []),
+                document_structure=result.get("document_structure"),
+            )
+        )
     artifact_rows["sample-ocr-pages.jsonl"].extend(result.get("ocr_pages", []))
     if result.get("ocr_document"):
         artifact_rows["sample-ocr-documents.jsonl"].append(result["ocr_document"])

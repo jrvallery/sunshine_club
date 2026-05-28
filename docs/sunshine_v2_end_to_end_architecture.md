@@ -1297,6 +1297,7 @@ Current implementation:
 - Manifest rows include artifact path, kind, existence, size, modified time, JSONL row count, and SHA-256 for non-manifest artifacts.
 - `artifact-manifest.json` includes itself with `sha256: null` and `note: self_referential_manifest` because a file cannot truthfully hash itself while embedding that hash.
 - The manifest makes review-critical rows such as `sample-document-segments.jsonl`, `sample-route-decisions.jsonl`, `sample-quality-gates.jsonl`, and `sample-model-usage.jsonl` discoverable from one place.
+- Graph single-file and batch runs now write `sample-parser-results.jsonl` with normalized parser/provider rows: parser provider, extraction status, quality, text length/snippet, page structure coverage, layout signal count, provider selection, provider attempts, warnings, and local-only metadata. This gives parser dashboards and provider comparisons a stable graph artifact instead of relying only on provider-benchmark outputs.
 - Chunking now writes `sample-chunking-results.jsonl`, so future provider swaps can be audited separately from final chunk rows.
 - `services/artifacts/writers.py` owns normalized sample input, extraction result, and pipeline result row construction; `services/artifacts/manifest.py` exposes manifest generation through the V2 package path.
 - `PostgresPipelineStore` imports run-owned chunks and chunk embeddings from graph artifacts into the Postgres V2 runtime schema.

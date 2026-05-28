@@ -38,6 +38,55 @@ def extraction_result_row(extraction: ExtractionResult, quality: dict[str, Any])
     }
 
 
+def parser_result_row(
+    extraction: ExtractionResult,
+    quality: dict[str, Any],
+    *,
+    provider_selection: dict[str, Any] | None = None,
+    provider_attempts: list[dict[str, Any]] | None = None,
+    document_structure: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    attempts = provider_attempts or []
+    structure = document_structure or {}
+    pages = structure.get("pages") if isinstance(structure.get("pages"), list) else []
+    pages_with_text = sum(1 for page in pages if str(page.get("text") or "").strip())
+    page_count = extraction.page_count or structure.get("page_count") or (len(pages) if pages else None)
+    provider = _parser_provider(extraction, provider_selection or {}, attempts, structure)
+    warnings = _unique_list([*extraction.warnings, *[warning for attempt in attempts for warning in attempt.get("warnings", [])]])
+    return {
+        "source_path": extraction.sample.source_path,
+        "relative_path": extraction.sample.relative_path,
+        "sample_path": str(extraction.sample.sample_path),
+        "sample_group": extraction.sample.sample_group,
+        "sample_number": extraction.sample.sample_number,
+        "provider": provider,
+        "parser_provider": provider,
+        "strategy": extraction.plan.get("strategy"),
+        "document_subtype": extraction.plan.get("document_subtype"),
+        "status": extraction.extraction_status,
+        "quality": quality.get("quality"),
+        "can_chunk": quality.get("can_chunk"),
+        "requires_review": quality.get("requires_review"),
+        "review_reason": _parser_review_reason(quality, warnings),
+        "text_length": len(extraction.text or ""),
+        "text_snippet": _snippet(extraction.text or ""),
+        "page_count": page_count,
+        "page_structure_available": bool(pages),
+        "page_text_coverage_rate": _rate(pages_with_text, len(pages)) if pages else (1.0 if extraction.text.strip() else 0.0),
+        "pages_with_text": pages_with_text,
+        "layout_signal_count": len(structure.get("sections", []) or []) + len(structure.get("tables", []) or []) + len(structure.get("figures", []) or []),
+        "local_only": _provider_attempt_local_only(attempts),
+        "warnings": warnings,
+        "provider_selection": provider_selection or {},
+        "provider_attempts": attempts,
+        "metadata": {
+            "graph_artifact": True,
+            "extraction_metadata": extraction.metadata,
+            "structure_metadata": structure.get("metadata", {}),
+        },
+    }
+
+
 def write_pipeline_result(
     sample: SampleFile,
     corrected: dict[str, Any],
@@ -130,6 +179,62 @@ def _first_warning_value(warnings: list[str], prefix: str) -> str | None:
         if warning.startswith(prefix):
             return warning.removeprefix(prefix)
     return None
+
+
+def _parser_provider(
+    extraction: ExtractionResult,
+    provider_selection: dict[str, Any],
+    provider_attempts: list[dict[str, Any]],
+    document_structure: dict[str, Any],
+) -> str:
+    if provider_selection.get("selected_provider"):
+        return str(provider_selection["selected_provider"])
+    if extraction.metadata.get("provider"):
+        return str(extraction.metadata["provider"])
+    if document_structure.get("provider"):
+        return str(document_structure["provider"])
+    if provider_attempts:
+        return str(provider_attempts[-1].get("provider") or "unknown")
+    return "current"
+
+
+def _parser_review_reason(quality: dict[str, Any], warnings: list[str]) -> str | None:
+    if quality.get("requires_review"):
+        return str(quality.get("review_reason") or quality.get("quality") or "quality_requires_review")
+    if warnings:
+        return None
+    return None
+
+
+def _provider_attempt_local_only(provider_attempts: list[dict[str, Any]]) -> bool:
+    values = [attempt.get("metadata", {}).get("local_only") for attempt in provider_attempts if isinstance(attempt.get("metadata"), dict)]
+    if not values:
+        return True
+    return all(value is not False for value in values)
+
+
+def _snippet(text: str, limit: int = 320) -> str:
+    normalized = " ".join(text.split())
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[: limit - 3].rstrip() + "..."
+
+
+def _rate(numerator: int, denominator: int) -> float:
+    if denominator <= 0:
+        return 0.0
+    return round(numerator / denominator, 4)
+
+
+def _unique_list(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if not value or value in seen:
+            continue
+        result.append(value)
+        seen.add(value)
+    return result
 
 
 def _llm_warning_list(llm_inspection: dict[str, Any]) -> list[str]:

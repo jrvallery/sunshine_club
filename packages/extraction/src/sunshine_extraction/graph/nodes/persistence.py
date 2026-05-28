@@ -10,7 +10,7 @@ from sunshine_extraction.graph.node_utils import _unique_strings
 from sunshine_extraction.graph.state import DocumentPipelineDeps, DocumentPipelineState
 from sunshine_extraction.graph.utils import _json_safe, _write_jsonl
 from sunshine_extraction.services.artifact_manifest import write_artifact_manifest
-from sunshine_extraction.services.artifacts import extraction_result_row, sample_input_row, write_pipeline_result
+from sunshine_extraction.services.artifacts import extraction_result_row, parser_result_row, sample_input_row, write_pipeline_result
 from sunshine_extraction.services.artifacts.review_queue import build_review_queue_rows
 from sunshine_extraction.services.extraction import ExtractionResult
 from sunshine_extraction.services.placement import quarantine_placement_for_review_route
@@ -41,6 +41,17 @@ def _persist_outputs(state: DocumentPipelineState) -> dict[str, Any]:
     artifacts["sample-extraction-repairs.jsonl"] = [state["extraction_repair"]] if state.get("extraction_repair") else []
     artifacts["sample-quality-gates.jsonl"] = [state["quality_gate_result"]] if state.get("quality_gate_result") else []
     artifacts["sample-provider-attempts.jsonl"] = state.get("provider_attempts", [])
+    artifacts["sample-parser-results.jsonl"] = []
+    if state.get("extraction_result") and state.get("extraction_quality"):
+        artifacts["sample-parser-results.jsonl"] = [
+            parser_result_row(
+                state["extraction_result"],
+                state["extraction_quality"],
+                provider_selection=state.get("extraction_provider_selection"),
+                provider_attempts=state.get("provider_attempts", []),
+                document_structure=state.get("document_structure"),
+            )
+        ]
     artifacts["sample-ocr-pages.jsonl"] = state.get("ocr_pages", [])
     artifacts["sample-ocr-documents.jsonl"] = [state["ocr_document"]] if state.get("ocr_document") else []
     artifacts["sample-structure.jsonl"] = [state["document_structure"]] if state.get("document_structure") else []

@@ -193,6 +193,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     embedding_result_rows = [json.loads(line) for line in (output_dir / "sample-embedding-results.jsonl").read_text().splitlines()]
     retrieval_result_rows = [json.loads(line) for line in (output_dir / "sample-retrieval-results.jsonl").read_text().splitlines()]
     provider_attempt_rows = [json.loads(line) for line in (output_dir / "sample-provider-attempts.jsonl").read_text().splitlines()]
+    parser_rows = [json.loads(line) for line in (output_dir / "sample-parser-results.jsonl").read_text().splitlines()]
     source_identity_rows = [json.loads(line) for line in (output_dir / "sample-source-identity.jsonl").read_text().splitlines()]
     probe_rows = [json.loads(line) for line in (output_dir / "sample-file-probes.jsonl").read_text().splitlines()]
     provider_selection_rows = [json.loads(line) for line in (output_dir / "sample-provider-selections.jsonl").read_text().splitlines()]
@@ -253,6 +254,13 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert structure_rows[0]["text_length"] == len("Annual Sunshine Tea guest list and event notes.")
     assert structure_rows[0]["pages"][0]["quality"] == "text"
     assert provider_attempt_rows[0]["provider"] == "current"
+    assert parser_rows[0]["parser_provider"] == "current"
+    assert parser_rows[0]["status"] == "extracted"
+    assert parser_rows[0]["quality"] == "ok"
+    assert parser_rows[0]["text_length"] == len("Annual Sunshine Tea guest list and event notes.")
+    assert parser_rows[0]["page_structure_available"] is True
+    assert parser_rows[0]["page_text_coverage_rate"] == 1.0
+    assert parser_rows[0]["metadata"]["graph_artifact"] is True
     assert source_identity_rows[0]["size_bytes"] == source.stat().st_size
     assert len(source_identity_rows[0]["content_sha256"]) == 64
     assert result["file_id"] == source_identity_rows[0]["file_id"]
@@ -281,6 +289,7 @@ def test_langgraph_single_file_pipeline_writes_compatible_artifacts(tmp_path: Pa
     assert manifest_by_name["sample-chunking-results.jsonl"]["row_count"] == 1
     assert manifest_by_name["sample-embedding-results.jsonl"]["row_count"] == 1
     assert manifest_by_name["sample-retrieval-results.jsonl"]["row_count"] == 1
+    assert manifest_by_name["sample-parser-results.jsonl"]["row_count"] == 1
     assert manifest_by_name["sample-import-results.jsonl"]["row_count"] == 1
     assert manifest_by_name["graph-run-metadata.json"]["kind"] == "json"
     assert len(manifest_by_name["graph-run-metadata.json"]["sha256"]) == 64
