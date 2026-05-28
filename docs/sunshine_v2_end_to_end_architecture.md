@@ -968,6 +968,7 @@ Current implementation:
 
 - `providers/llm/base.py` defines the LLM tag inspection provider contract.
 - `CurrentLLMTagInspectionProvider` wraps the existing local/OpenAI-compatible inspector shape and preserves structured inspection output.
+- `services/tagging/llm_inspection.py` owns prompt construction, structured-output normalization, disabled-inspector behavior, Cortex-compatible inspector creation, and LLM inspection artifact rows.
 - Graph runs write `sample-llm-tag-inspection-results.jsonl` with provider, model, status, token counts, warnings, and normalized metadata.
 - Hosted OpenAI/Gemini-style providers remain disabled by environment policy for production paths; Cortex/OpenAI-compatible local endpoints remain the intended provider.
 

@@ -16,7 +16,7 @@ from sunshine_extraction.providers.llm import CurrentLLMTagInspectionProvider
 from sunshine_extraction.providers.retrieval import CurrentSemanticRetrievalProvider
 from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider
 from sunshine_extraction.domain.documents import IMAGE_EXTENSIONS, SPREADSHEET_EXTENSIONS, TEXT_EXTENSIONS, SampleFile
-from sunshine_extraction.sample_pipeline import llm_tag_inspector_from_env, ocr_executor_from_env
+from sunshine_extraction.sample_pipeline import ocr_executor_from_env
 from sunshine_extraction.services.artifacts.writers import extraction_result_row, sample_input_row, write_pipeline_result
 from sunshine_extraction.services.provider_policy import assert_local_provider
 from sunshine_extraction.services.confidence import calibrate_confidence, confidence_calibration_row
@@ -24,6 +24,7 @@ from sunshine_extraction.services.quality import extraction_quality_gate, qualit
 from sunshine_extraction.services.routing import resolve_route_decision
 from sunshine_extraction.services.segmentation import propose_document_segments
 from sunshine_extraction.services.tagging.evidence import combine_tag_candidates
+from sunshine_extraction.services.tagging.llm_inspection import llm_tag_inspector_from_env
 from sunshine_extraction.services.tagging.rules import assign_tag_candidates
 from sunshine_extraction.services.tagging.taxonomy import DEFAULT_TAXONOMY_PATH
 from sunshine_extraction.services.vectorization import embed_chunks, embed_chunks_with_fallback

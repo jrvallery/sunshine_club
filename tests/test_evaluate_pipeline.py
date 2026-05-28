@@ -18,7 +18,7 @@ from sunshine_extraction.evaluate_pipeline import (
     _update_totals,
     run_golden_pipeline_evaluation,
 )
-from sunshine_extraction.sample_pipeline import LLMTagInspector
+from sunshine_extraction.services.tagging import LLMTagInspector
 
 
 class _TeaLLMTagInspector(LLMTagInspector):
