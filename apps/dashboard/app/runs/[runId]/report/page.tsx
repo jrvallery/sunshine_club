@@ -1209,16 +1209,24 @@ function JsonTable({ title, rows }: { title: string; rows: Array<Record<string, 
   );
 }
 
-function BreakdownGrid({ values }: { values: Record<string, Record<string, number>> }) {
+function BreakdownGrid({ values }: { values: Record<string, unknown> }) {
+  const breakdowns = Object.entries(values).filter((entry): entry is [string, Record<string, number>] => isCountMap(entry[1]));
   return (
     <section className="panel">
       <div className="reportGrid">
-        {Object.entries(values).map(([title, counts]) => (
+        {breakdowns.map(([title, counts]) => (
           <Breakdown title={title} values={counts} key={title} />
         ))}
       </div>
     </section>
   );
+}
+
+function isCountMap(value: unknown): value is Record<string, number> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  return Object.values(value).every((count) => typeof count === "number");
 }
 
 function Breakdown({ title, values }: { title: string; values: Record<string, number> }) {
