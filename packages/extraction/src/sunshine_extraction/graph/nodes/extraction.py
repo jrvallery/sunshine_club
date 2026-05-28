@@ -86,6 +86,7 @@ def _propose_document_segments_node(state: DocumentPipelineState) -> dict[str, A
         file_id=state.get("file_id"),
         content_class=state.get("content_class"),
         ocr_pages=state.get("ocr_pages", []),
+        document_structure=state.get("document_structure"),
     )
     warnings = list(state.get("warnings", []))
     if any(segment.get("requires_segment_review") for segment in segments):

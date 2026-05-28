@@ -2,7 +2,8 @@
 
 ## Status
 
-Design proposal. Do not implement until reviewed.
+Accepted direction. Implementation is incremental on the feature branch; this
+document remains the target-state contract until the V2 rebuild is complete.
 
 Branch:
 
@@ -669,6 +670,7 @@ Implementation note:
 - Full automatic splitting should be gated behind provider benchmarks and review because bad splitting can be as damaging as bad classification.
 - The first implementation pass should create the data model, artifact shape, and conservative “one segment per PDF unless strong boundary evidence exists” behavior.
 - If Docling produces reliable page/section boundaries during the spike, the first pass can also emit candidate page groups for dashboard review.
+- Current implementation emits review-only candidate page segments for multi-page scrapbook/newspaper inputs, separator-based groups when blank pages are detected, and fixed page windows for very large files. These are proposals only; no physical source files are split.
 
 ### 13. `chunk_document`
 

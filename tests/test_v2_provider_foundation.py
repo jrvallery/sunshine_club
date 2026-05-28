@@ -143,9 +143,42 @@ def test_segmentation_marks_long_scrapbook_pdf_for_segment_review(tmp_path: Path
 
     segments = propose_document_segments(extraction, file_id="file-1")
 
-    assert len(segments) == 1
+    assert len(segments) == 12
     assert segments[0]["parent_file_id"] == "file-1"
-    assert segments[0]["segment_type"] == "scrapbook_page_group"
+    assert segments[0]["segment_type"] == "scrapbook_page"
     assert segments[0]["page_start"] == 1
-    assert segments[0]["page_end"] == 12
+    assert segments[0]["page_end"] == 1
     assert segments[0]["requires_segment_review"] is True
+    assert segments[0]["metadata"]["policy"] == "page_level_review_candidates"
+
+
+def test_segmentation_uses_blank_pages_as_review_boundaries(tmp_path: Path) -> None:
+    source = tmp_path / "scrapbook.pdf"
+    source.write_text("fake", encoding="utf-8")
+    sample = _sample(source, relative_path="Sunshine shared folders/Scrapbooks/Green scrapbook.pdf")
+    extraction = ExtractionResult(
+        sample=sample,
+        plan={"strategy": "ocr_page_level", "document_subtype": "scrapbook"},
+        extraction_status="extracted",
+        text="First clipping\nSecond clipping",
+        metadata={},
+        page_count=5,
+        warnings=[],
+    )
+
+    segments = propose_document_segments(
+        extraction,
+        file_id="file-1",
+        ocr_pages=[
+            {"page_number": 1, "text": "First clipping", "text_length": 14, "word_count": 2},
+            {"page_number": 2, "text": "", "text_length": 0, "word_count": 0, "warnings": ["ocr_page_text_empty"]},
+            {"page_number": 3, "text": "Second clipping", "text_length": 15, "word_count": 2},
+            {"page_number": 4, "text": "continued", "text_length": 9, "word_count": 1},
+            {"page_number": 5, "text": "", "text_length": 0, "word_count": 0},
+        ],
+    )
+
+    assert [(segment["page_start"], segment["page_end"]) for segment in segments] == [(1, 1), (3, 4)]
+    assert all(segment["requires_segment_review"] for segment in segments)
+    assert segments[1]["segment_type"] == "scrapbook_page_group"
+    assert segments[1]["metadata"]["policy"] == "separator_page_groups"
