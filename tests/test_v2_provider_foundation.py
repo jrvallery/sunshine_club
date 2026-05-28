@@ -25,6 +25,7 @@ from sunshine_extraction.services.segmentation import propose_document_segments
 from sunshine_extraction.services.tagging.evidence import combine_tag_candidates
 from sunshine_extraction.services.tagging.rules import assign_tag_candidates
 from sunshine_extraction.services.tagging.taxonomy import DEFAULT_TAXONOMY_PATH
+from sunshine_extraction.services.vectorization import embed_chunks, embed_chunks_with_fallback
 from sunshine_extraction.services.extraction import ExtractionResult
 from sunshine_extraction.services.structure import normalize_document_structure
 
@@ -163,6 +164,26 @@ def test_current_chunk_embedding_provider_wraps_existing_behavior() -> None:
     assert attempt.requested_count == 1
     assert attempt.embedded_count == 1
     assert attempt.semantic_quality is False
+
+
+def test_vectorization_service_writes_compatible_embedding_rows() -> None:
+    chunks = [
+        {
+            "source_path": "/source/minutes.txt",
+            "relative_path": "Minutes/minutes.txt",
+            "chunk_id": "chunk-1",
+            "text": "Meeting minutes text",
+        }
+    ]
+
+    rows = embed_chunks(chunks, PlaceholderEmbeddingProvider(dimensions=4))
+    fallback_rows, warnings = embed_chunks_with_fallback(chunks, PlaceholderEmbeddingProvider(dimensions=4))
+
+    assert rows[0]["chunk_id"] == "chunk-1"
+    assert rows[0]["embedding_status"] == "placeholder"
+    assert rows[0]["embedding_dimensions"] == 4
+    assert fallback_rows[0]["chunk_id"] == "chunk-1"
+    assert warnings == []
 
 
 def test_current_semantic_retrieval_provider_reports_missing_index() -> None:

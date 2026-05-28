@@ -802,6 +802,7 @@ Current implementation:
 
 - `providers/embeddings/base.py` defines a chunk embedding provider contract.
 - `CurrentChunkEmbeddingProvider` wraps the existing embedding providers and centralizes fallback vs fail-closed behavior for the graph node.
+- `services/vectorization.py` owns backward-compatible embedding row construction instead of re-exporting legacy sample-pipeline helpers.
 - Graph runs write `sample-embedding-results.jsonl` with provider, model, status, requested/embedded counts, dimensions, semantic-quality flag, warnings, and metadata.
 - Placeholder embeddings remain allowed for tests/dev; review/fail-closed mode marks placeholder embeddings as unavailable quality.
 
