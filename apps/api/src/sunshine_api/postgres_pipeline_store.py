@@ -1662,6 +1662,7 @@ class PostgresPipelineStore:
                 mu.purpose,
                 mu.provider,
                 mu.model,
+                mu.host,
                 mu.status,
                 mu.call_count,
                 mu.input_tokens,
@@ -2161,9 +2162,9 @@ class PostgresPipelineStore:
             connection.execute(
                 """
                 insert into model_usage (
-                    run_id, source_path, relative_path, node, purpose, provider, model, status,
+                    run_id, source_path, relative_path, node, purpose, provider, model, host, status,
                     call_count, input_tokens, output_tokens, total_tokens, runtime_ms, local_only, metadata
-                ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, true, %s::jsonb)
+                ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, true, %s::jsonb)
                 """,
                 (
                     run_id,
@@ -2173,6 +2174,7 @@ class PostgresPipelineStore:
                     row.get("purpose") or "unknown",
                     row.get("provider") or "unknown",
                     row.get("model") or "unknown",
+                    row.get("host") or metadata.get("host"),
                     row.get("status") or "unknown",
                     _call_count(row),
                     row.get("input_tokens"),
@@ -2830,7 +2832,7 @@ def _call_count(row: dict[str, Any]) -> int:
 
 def _model_usage_report_row(row: dict[str, Any]) -> dict[str, Any]:
     metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
-    return {**row, "host": metadata.get("host")}
+    return {**row, "host": row.get("host") or metadata.get("host")}
 
 
 def _seconds_to_runtime_ms(value: Any) -> int | None:

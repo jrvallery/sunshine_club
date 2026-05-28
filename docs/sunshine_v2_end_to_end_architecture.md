@@ -1292,7 +1292,7 @@ Current implementation:
 - Graph single-file runs and batch runs write `artifact-manifest.json`.
 - Graph single-file runs write `graph-run-metadata.json` with total runtime, latency status, latency policy, and raw-provider artifact retention policy.
 - The final runtime write refreshes `artifact-manifest.json` after `graph-run-metadata.json` and the final `graph-result.json` are written, so runtime metadata is included in the auditable artifact index.
-- `domain/model_usage.py` defines the normalized model-usage row contract and local/external/placeholder cost-basis classification used by graph audit rows.
+- `domain/model_usage.py` defines the normalized model-usage row contract, explicit provider host evidence, and local/external/placeholder cost-basis classification used by graph audit rows.
 - `domain/artifacts.py` defines artifact manifest and manifest-entry contracts used by manifest generation.
 - Manifest rows include artifact path, kind, existence, size, modified time, JSONL row count, and SHA-256 for non-manifest artifacts.
 - `artifact-manifest.json` includes itself with `sha256: null` and `note: self_referential_manifest` because a file cannot truthfully hash itself while embedding that hash.
@@ -1301,6 +1301,7 @@ Current implementation:
 - Chunking now writes `sample-chunking-results.jsonl`, so future provider swaps can be audited separately from final chunk rows.
 - `services/artifacts/writers.py` owns normalized sample input, extraction result, and pipeline result row construction; `services/artifacts/manifest.py` exposes manifest generation through the V2 package path.
 - `PostgresPipelineStore` imports run-owned chunks and chunk embeddings from graph artifacts into the Postgres V2 runtime schema.
+- `PostgresPipelineStore` imports model-usage host evidence into a first-class `model_usage.host` column while also preserving it in metadata for compatibility, so local model-call routing is queryable in run reports.
 - `PostgresPipelineStore` imports graph parser/OCR result rows into `pipeline_parser_results` and includes parser status, quality, provider, and review-required buckets in Postgres run reports. This makes normal graph runs auditable for parser quality in the dashboard without relying on provider-benchmark-only tables.
 - `PostgresPipelineStore` imports `graph-audit-events.jsonl` into `pipeline_run_events`, so node-level execution status, source path, duration, warnings, and errors are queryable from the V2 system DB instead of only from JSONL files.
 - `PostgresPipelineStore` imports review-required queue rows into `review_items_v2`, preserving run ownership, source path, proposed class/tag, proposed secondary tags, and review reason.

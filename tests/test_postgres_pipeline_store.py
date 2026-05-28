@@ -85,6 +85,9 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
     assert run_summary["providers"]["embedding_provider"] == "cortex"
     assert run_params[4:11] == ("cortex", "local-embedding", None, None, "current", "qdrant", "sunshine-test")
     assert any("[0.1,0.2,0.3]" in str(params) for _query, params in connection.executed)
+    model_usage_params = next(params for query, params in connection.executed if "insert into model_usage" in query)
+    assert model_usage_params[6:9] == ("local-embedding", "cortex.vallery.net", "ok")
+    assert json.loads(model_usage_params[-1])["host"] == "cortex.vallery.net"
     provider_attempt_params = next(params for query, params in connection.executed if "insert into provider_attempts" in query)
     assert provider_attempt_params[1:4] == ("/source/a.pdf", "Sunshine/a.pdf", "current")
     parser_params = next(params for query, params in connection.executed if "insert into pipeline_parser_results" in query)
@@ -805,6 +808,7 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
                             "purpose": "chunk_embedding",
                             "provider": "cortex",
                             "model": "local-embedding",
+                            "host": "cortex.vallery.net",
                             "status": "ok",
                             "call_count": 1,
                             "input_tokens": None,
@@ -812,7 +816,7 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
                             "total_tokens": None,
                             "runtime_ms": 12,
                             "local_only": True,
-                            "metadata": {},
+                            "metadata": {"host": "cortex.vallery.net"},
                             "created_at": None,
                         }
                     ]
@@ -932,6 +936,7 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     assert report["results"][0]["top_tag_candidate"] == "scrapbooks"
     assert report["review_items"][0]["segment_id"] == "scrapbook:segment-001"
     assert report["model_usage"][0]["provider"] == "cortex"
+    assert report["model_usage"][0]["host"] == "cortex.vallery.net"
     assert report["provider_attempts"][0]["provider"] == "docling"
     assert report["parser_results"][0]["provider"] == "docling"
     assert report["parser_results"][0]["page_text_coverage_rate"] == 0.92
@@ -1761,9 +1766,10 @@ def _postgres_import_artifacts(tmp_path: Path) -> Path:
                 "purpose": "chunk_embedding",
                 "provider": "cortex",
                 "model": "local-embedding",
+                "host": "cortex.vallery.net",
                 "status": "ok",
                 "runtime_ms": 12,
-                "metadata": {"call_count": 1},
+                "metadata": {"call_count": 1, "host": "cortex.vallery.net"},
             }
         ],
     )
