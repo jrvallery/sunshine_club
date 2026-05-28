@@ -19,9 +19,23 @@ import type { ReviewItem } from "../../../lib/types";
 
 export default function ReviewItemPage() {
   return (
-    <Suspense fallback={<main className="pageShell"><div className="empty">Loading review item...</div></main>}>
+    <Suspense fallback={<ReviewItemLoading />}>
       <ReviewItemPageContent />
     </Suspense>
+  );
+}
+
+function ReviewItemLoading() {
+  return (
+    <main className="pageShell">
+      <header className="pageHeader">
+        <div>
+          <p className="eyebrow">Review Item</p>
+          <h1>Loading Review Item</h1>
+        </div>
+      </header>
+      <div className="empty">Loading review item...</div>
+    </main>
   );
 }
 
@@ -82,12 +96,18 @@ function ReviewItemPageContent() {
   });
 
   if (itemQuery.isLoading) {
-    return <main className="pageShell"><div className="empty">Loading review item...</div></main>;
+    return <ReviewItemLoading />;
   }
   if (itemQuery.isError || !itemQuery.data) {
     return (
       <main className="pageShell">
-        <Link className="secondaryButton" href={backHref}>Back to Review</Link>
+        <header className="pageHeader">
+          <div>
+            <p className="eyebrow">Review Item</p>
+            <h1>Review Item Not Found</h1>
+          </div>
+          <Link className="secondaryButton" href={backHref}>Back to Review</Link>
+        </header>
         <div className="empty">Review item failed to load.</div>
       </main>
     );

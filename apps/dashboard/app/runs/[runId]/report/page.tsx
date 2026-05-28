@@ -73,12 +73,19 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
   const fileRows = useMemo(() => data?.files ?? [], [data?.files]);
 
   if (report.isLoading) {
-    return <main className="pageShell"><div className="empty">Loading run report...</div></main>;
+    return <RunReportLoading />;
   }
 
   if (!data || !run) {
     return (
       <main className="pageShell">
+        <header className="pageHeader">
+          <div>
+            <p className="eyebrow">Run Report</p>
+            <h1>Run Report Not Found</h1>
+          </div>
+          <Link className="secondaryButton" href="/runs">Back to Runs</Link>
+        </header>
         <div className="empty">Run report was not found.</div>
       </main>
     );
@@ -180,6 +187,20 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
   );
 }
 
+function RunReportLoading() {
+  return (
+    <main className="pageShell">
+      <header className="pageHeader">
+        <div>
+          <p className="eyebrow">Run Report</p>
+          <h1>Loading Run Report</h1>
+        </div>
+      </header>
+      <div className="empty">Loading run report...</div>
+    </main>
+  );
+}
+
 function OverviewTab({ report }: { report: RunReport }) {
   return (
     <section className="panel">
@@ -193,7 +214,7 @@ function OverviewTab({ report }: { report: RunReport }) {
         <Breakdown title="Content Class" values={report.distributions.final_class ?? {}} />
         <Breakdown title="Warnings" values={report.distributions.warnings ?? {}} />
       </div>
-      <pre className="jsonPreview">{JSON.stringify(report.overview.summary ?? {}, null, 2)}</pre>
+      <pre className="jsonPreview" tabIndex={0} aria-label="Run overview summary JSON">{JSON.stringify(report.overview.summary ?? {}, null, 2)}</pre>
     </section>
   );
 }
@@ -205,7 +226,7 @@ function FilesTab({ rows }: { rows: Array<Record<string, unknown>> }) {
         <h2>Files</h2>
         <span>{rows.length} shown</span>
       </div>
-      <div className="tableWrap">
+      <div className="tableWrap" tabIndex={0} aria-label="Run files table">
         <table>
           <thead>
             <tr>
@@ -304,7 +325,7 @@ function ReviewItemRows({ runId, rows }: { runId: number; rows: Array<Record<str
       </div>
       {!rows.length ? <div className="empty">No review items imported for this run.</div> : null}
       {rows.length ? (
-        <div className="tableWrap">
+        <div className="tableWrap" tabIndex={0} aria-label="Review items table">
           <table>
             <thead>
               <tr>
@@ -387,7 +408,7 @@ function TrainingCycleTab({ report }: { report: RunReport }) {
         <Metric label="Secondary recall" value={formatRatio(metrics.secondary_recall)} />
         <Metric label="Run changes" value={metricValue(metrics.run_to_run_changed_count)} />
       </div>
-      <pre className="jsonPreview">{JSON.stringify(metrics, null, 2)}</pre>
+      <pre className="jsonPreview" tabIndex={0} aria-label="Training cycle metrics JSON">{JSON.stringify(metrics, null, 2)}</pre>
     </section>
   );
 }
@@ -432,7 +453,7 @@ function ArtifactsTab({ report }: { report: RunReport }) {
       <div className="sectionHeader">
         <h2>Artifacts</h2>
       </div>
-      <div className="tableWrap">
+      <div className="tableWrap" tabIndex={0} aria-label="Run artifacts table">
         <table>
           <thead>
             <tr>
@@ -481,7 +502,7 @@ function JsonTable({ title, rows }: { title: string; rows: Array<Record<string, 
         <h2>{title}</h2>
         <span>{rows.length} shown</span>
       </div>
-      {rows.length ? <pre className="jsonPreview">{JSON.stringify(rows.slice(0, 100), null, 2)}</pre> : <div className="empty">No data for this section.</div>}
+      {rows.length ? <pre className="jsonPreview" tabIndex={0} aria-label={`${title} JSON rows`}>{JSON.stringify(rows.slice(0, 100), null, 2)}</pre> : <div className="empty">No data for this section.</div>}
     </div>
   );
 }
