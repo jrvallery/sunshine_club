@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 
 from sunshine_api.dependencies import review_store
 from sunshine_api.services.imports import (
+    add_postgres_file_result_to_review,
     file_path_for_postgres_file_result,
     get_postgres_file_result,
     postgres_file_facets,
@@ -281,9 +282,18 @@ def file_text(file_id: str, source: str = "sqlite") -> dict[str, Any]:
 
 
 @router.post("/admin/files/{file_id}/review")
-def add_file_to_review(file_id: int, request: FileReviewRequest) -> dict[str, Any]:
+def add_file_to_review(file_id: str, request: FileReviewRequest, source: str = "sqlite") -> dict[str, Any]:
+    if source == "postgres":
+        try:
+            return add_postgres_file_result_to_review(file_id, review_reason=request.review_reason)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+    if source != "sqlite":
+        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
     try:
-        return review_store().add_file_to_review(file_id, review_reason=request.review_reason)
+        return review_store().add_file_to_review(_sqlite_file_id(file_id), review_reason=request.review_reason)
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 

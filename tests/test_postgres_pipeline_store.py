@@ -810,6 +810,67 @@ def test_postgres_pipeline_store_reads_file_result_detail_and_text() -> None:
     assert connection.closed is True
 
 
+def test_postgres_pipeline_store_adds_file_result_to_review() -> None:
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.closed = False
+            self.committed = False
+            self.executed: list[tuple[str, tuple[Any, ...]]] = []
+
+        def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
+            self.executed.append((query, params))
+            normalized = " ".join(query.lower().split())
+            if normalized.startswith("select id from review_items_v2"):
+                return _Cursor(row=None)
+            if "insert into review_items_v2" in normalized:
+                return _Cursor(row={"id": "review-1"})
+            return _Cursor(
+                row={
+                    "id": "result-1",
+                    "run_id": "run-id",
+                    "run_key": "run-1",
+                    "preset_key": "qa",
+                    "embedding_provider": "cortex",
+                    "llm_provider": "cortex",
+                    "extraction_provider": "docling",
+                    "source_path": "/mnt/sunshine/history.pdf",
+                    "relative_path": "Sunshine/history.pdf",
+                    "sample_path": "/samples/history.pdf",
+                    "route_status": "route_candidate",
+                    "review_reason": None,
+                    "final_class": "document",
+                    "extraction_strategy": "text_extraction",
+                    "extraction_status": "extracted",
+                    "quality": "ok",
+                    "top_tag_candidate": "history_archive_general",
+                    "secondary_tags": ["club_history"],
+                    "tag_confidence": 0.91,
+                    "result": {"quality": "ok"},
+                    "review_status": None,
+                    "created_at": "2026-05-28T00:00:00",
+                    "updated_at": "2026-05-28T00:00:00",
+                }
+            )
+
+        def commit(self) -> None:
+            self.committed = True
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+    store = PostgresPipelineStore("postgresql://local/test", connect_factory=lambda _url: connection)
+
+    review = store.add_file_result_to_review("result-1", review_reason="manual_quality_check")
+
+    assert review["id"] == "review-1"
+    assert review["source"] == "postgres"
+    assert review["status"] == "open"
+    assert review["proposed_tag"] == "history_archive_general"
+    assert connection.committed is True
+    assert connection.closed is True
+
+
 def test_postgres_pipeline_store_reports_review_summary() -> None:
     class FakeConnection:
         def __init__(self) -> None:

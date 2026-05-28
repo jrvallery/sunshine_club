@@ -521,6 +521,79 @@ class PostgresPipelineStore:
             "raw": {"file": item, "latest_result": result},
         }
 
+    def add_file_result_to_review(self, result_id: str, *, review_reason: str = "manual_file_review") -> dict[str, Any]:
+        item = self.get_file_result(result_id)
+        connection = self._connect_factory(self.database_url)
+        try:
+            existing = connection.execute(
+                """
+                select id
+                from review_items_v2
+                where run_id = %s
+                  and source_path = %s
+                  and (segment_id is null or segment_id = '')
+                order by updated_at desc, created_at desc
+                limit 1
+                """,
+                (item.get("latest_run_id"), item.get("source_path")),
+            ).fetchone()
+            if existing is not None:
+                review_id = _row_to_dict(existing).get("id")
+                connection.execute(
+                    """
+                    update review_items_v2
+                    set status = 'open',
+                        review_reason = %s,
+                        proposed_class = %s,
+                        proposed_tag = %s,
+                        proposed_secondary_tags = %s::jsonb,
+                        updated_at = now()
+                    where id = %s
+                    """,
+                    (
+                        review_reason,
+                        item.get("content_class"),
+                        item.get("primary_tag"),
+                        json.dumps(item.get("secondary_tags") or [], sort_keys=True),
+                        review_id,
+                    ),
+                )
+            else:
+                inserted = connection.execute(
+                    """
+                    insert into review_items_v2 (
+                        run_id, source_path, relative_path, segment_id, status, review_reason,
+                        proposed_class, proposed_tag, proposed_secondary_tags
+                    ) values (%s, %s, %s, null, 'open', %s, %s, %s, %s::jsonb)
+                    returning id
+                    """,
+                    (
+                        item.get("latest_run_id"),
+                        item.get("source_path"),
+                        item.get("relative_path"),
+                        review_reason,
+                        item.get("content_class"),
+                        item.get("primary_tag"),
+                        json.dumps(item.get("secondary_tags") or [], sort_keys=True),
+                    ),
+                ).fetchone()
+                review_id = _row_to_dict(inserted).get("id")
+            connection.commit()
+        finally:
+            connection.close()
+        return {
+            "id": review_id,
+            "source": "postgres",
+            "file_result_id": result_id,
+            "source_path": item.get("source_path"),
+            "relative_path": item.get("relative_path"),
+            "status": "open",
+            "review_reason": review_reason,
+            "proposed_class": item.get("content_class"),
+            "proposed_tag": item.get("primary_tag"),
+            "proposed_secondary_tags": item.get("secondary_tags") or [],
+        }
+
     def list_golden_labels(self, *, limit: int = 100) -> list[dict[str, Any]]:
         connection = self._connect_factory(self.database_url)
         try:

@@ -239,6 +239,17 @@ def file_path_for_postgres_file_result(
     return store.file_path_for_file_result(result_id)
 
 
+def add_postgres_file_result_to_review(
+    result_id: str,
+    *,
+    review_reason: str = "manual_file_review",
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> dict[str, Any]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.add_file_result_to_review(result_id, review_reason=review_reason)
+
+
 def list_postgres_golden_labels(
     *,
     limit: int = 100,
@@ -382,6 +393,7 @@ def record_postgres_review_decision(
 
 
 __all__ = [
+    "add_postgres_file_result_to_review",
     "import_langgraph_output_to_postgres",
     "import_langgraph_output_to_postgres_if_configured",
     "delete_postgres_pipeline_run_if_configured",

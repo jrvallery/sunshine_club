@@ -515,6 +515,34 @@ def test_file_detail_text_and_preview_can_read_postgres_v2_source(tmp_path: Path
     assert captured == {"detail": "result-1", "text": "result-1", "inspection": "result-1", "path": "result-1"}
 
 
+def test_file_review_enqueue_can_use_postgres_v2_source(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_add(result_id: str, *, review_reason: str) -> dict[str, Any]:
+        captured["result_id"] = result_id
+        captured["review_reason"] = review_reason
+        return {
+            "id": "review-1",
+            "source": "postgres",
+            "file_result_id": result_id,
+            "status": "open",
+            "review_reason": review_reason,
+        }
+
+    monkeypatch.setattr("sunshine_api.routers.files.add_postgres_file_result_to_review", fake_add)
+
+    response = TestClient(app).post(
+        "/admin/files/result-1/review",
+        params={"source": "postgres"},
+        json={"review_reason": "manual_quality_check"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["source"] == "postgres"
+    assert response.json()["review_reason"] == "manual_quality_check"
+    assert captured == {"result_id": "result-1", "review_reason": "manual_quality_check"}
+
+
 def test_golden_labels_can_read_postgres_v2_source(monkeypatch) -> None:
     monkeypatch.setattr(
         "sunshine_api.routers.review.list_postgres_golden_labels",
