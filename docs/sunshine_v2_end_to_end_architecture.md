@@ -1274,6 +1274,7 @@ Current implementation:
 - Settings can accept or defer imported Postgres review items as an interim dashboard control while the main Review page migrates from SQLite to Postgres.
 - `GET /admin/system/postgres-runtime/runs/{run_key}` exposes imported Postgres run detail by run key, including the run summary.
 - `GET /admin/system/postgres-runtime/runs/{run_key}/report` exposes a Postgres-native run report read model with normalized per-file results, review items, model usage, provider attempts, document segments, and summary counts. This gives the dashboard a single local source for inspecting scrapbook/newspaper page-range split proposals without reading raw JSONL files.
+- Dashboard run reports now fetch the Postgres V2 report by run key when available, show Postgres runtime/segment-review summary counts, prefer normalized Postgres rows for file/review tables, and include a `Segments` tab for logical page-range proposals.
 
 ### 24. `import_run_results`
 
@@ -1312,6 +1313,8 @@ Current implementation:
 - `config/defaults.py` owns shared default paths/provider constants and `config/__init__.py` preserves the existing `sunshine_extraction.config` import API.
 - `config/models.py` and `config/provider_registry.py` define provider capabilities, local-only/hosted policy flags, package hints, and validation that blocks enabled hosted providers and checks required capability coverage.
 - The local-infrastructure API exposes provider-registry validation and provider rows so the dashboard can show local-only readiness from one endpoint.
+- Dashboard run import-on-success and manual `Import Results` now attempt both the legacy dashboard import and the Postgres V2 runtime import, skipping Postgres cleanly when no local database URL is configured.
+- Dashboard run deletion now also attempts to delete the matching Postgres V2 run by `run_key`; Postgres cascades remove run-owned results, chunks, embeddings, model usage, provider attempts, document segments, and V2 review items while source corpus files remain untouched.
 - `cli/langgraph_pipeline.py` and `cli/provider_benchmark.py` own target CLI entry points; top-level modules remain compatibility wrappers for existing `python -m` commands and imports.
 - `services/env.py` owns `.env` loading and Cortex environment alias normalization, so graph/eval/semantic-index entry points no longer import environment setup from the legacy sample runner.
 - `services/samples.py` owns QA sample discovery and corrected-plan/content lookup helpers used by batch orchestration.

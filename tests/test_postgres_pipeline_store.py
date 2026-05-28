@@ -277,6 +277,65 @@ def test_postgres_pipeline_store_gets_run_detail_by_key() -> None:
     assert connection.closed is True
 
 
+def test_postgres_pipeline_store_deletes_run_with_cascade_counts() -> None:
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.closed = False
+            self.committed = False
+            self.executed: list[tuple[str, tuple[Any, ...]]] = []
+
+        def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
+            self.executed.append((query, params))
+            normalized = " ".join(query.lower().split())
+            if "from pipeline_runs r where r.run_key" in normalized:
+                return _Cursor(
+                    {
+                        "id": "run-id",
+                        "run_key": "run-delete",
+                        "preset_key": "qa",
+                        "output_dir": "/tmp/run",
+                        "status": "succeeded",
+                        "created_at": None,
+                        "updated_at": None,
+                        "pipeline_results": 2,
+                        "pipeline_chunks": 3,
+                        "pipeline_chunk_embeddings": 3,
+                        "model_usage": 4,
+                        "provider_attempts": 5,
+                        "document_segments": 6,
+                        "review_items": 7,
+                    }
+                )
+            return _Cursor()
+
+        def commit(self) -> None:
+            self.committed = True
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+    store = PostgresPipelineStore("postgresql://local/test", connect_factory=lambda _url: connection)
+
+    result = store.delete_pipeline_run(run_key="run-delete")
+
+    assert result["deleted"] is True
+    assert result["deleted_counts"] == {
+        "pipeline_runs": 1,
+        "pipeline_results": 2,
+        "pipeline_chunks": 3,
+        "pipeline_chunk_embeddings": 3,
+        "model_usage": 4,
+        "provider_attempts": 5,
+        "document_segments": 6,
+        "review_items": 7,
+    }
+    assert any(query.strip().lower().startswith("delete from pipeline_runs") for query, _params in connection.executed)
+    assert connection.executed[-1][1] == ("run-id",)
+    assert connection.committed is True
+    assert connection.closed is True
+
+
 def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> None:
     class FakeConnection:
         def __init__(self) -> None:

@@ -95,6 +95,56 @@ class PostgresPipelineStore:
             connection.close()
         raise KeyError(f"Postgres pipeline run not found: {run_key}")
 
+    def delete_pipeline_run(self, *, run_key: str) -> dict[str, Any]:
+        """Delete one imported V2 run and all cascade-owned Postgres rows."""
+
+        connection = self._connect_factory(self.database_url)
+        try:
+            run = connection.execute(
+                """
+                select
+                    r.id,
+                    r.run_key,
+                    r.preset_key,
+                    r.output_dir,
+                    r.status,
+                    r.created_at,
+                    r.updated_at,
+                    (select count(*) from pipeline_results pr where pr.run_id = r.id) as pipeline_results,
+                    (select count(*) from pipeline_chunks pc where pc.run_id = r.id) as pipeline_chunks,
+                    (select count(*) from pipeline_chunk_embeddings pce where pce.run_id = r.id) as pipeline_chunk_embeddings,
+                    (select count(*) from model_usage mu where mu.run_id = r.id) as model_usage,
+                    (select count(*) from provider_attempts pa where pa.run_id = r.id) as provider_attempts,
+                    (select count(*) from document_segments ds where ds.run_id = r.id) as document_segments,
+                    (select count(*) from review_items_v2 ri where ri.run_id = r.id) as review_items
+                from pipeline_runs r
+                where r.run_key = %s
+                """,
+                (run_key,),
+            ).fetchone()
+            if run is None:
+                raise KeyError(f"Postgres pipeline run not found: {run_key}")
+            run_row = _json_safe_row(_row_to_dict(run))
+            connection.execute("delete from pipeline_runs where id = %s", (run_row["id"],))
+            connection.commit()
+            return {
+                "deleted": True,
+                "run_key": run_key,
+                "run": run_row,
+                "deleted_counts": {
+                    "pipeline_runs": 1,
+                    "pipeline_results": _int_value(run_row.get("pipeline_results")),
+                    "pipeline_chunks": _int_value(run_row.get("pipeline_chunks")),
+                    "pipeline_chunk_embeddings": _int_value(run_row.get("pipeline_chunk_embeddings")),
+                    "model_usage": _int_value(run_row.get("model_usage")),
+                    "provider_attempts": _int_value(run_row.get("provider_attempts")),
+                    "document_segments": _int_value(run_row.get("document_segments")),
+                    "review_items": _int_value(run_row.get("review_items")),
+                },
+            }
+        finally:
+            connection.close()
+
     def get_run_report(self, *, run_key: str, limit: int = 500) -> dict[str, Any]:
         """Return normalized run-report rows from Postgres.
 

@@ -79,6 +79,31 @@ def test_postgres_import_helper_skips_when_database_is_not_configured(tmp_path: 
     }
 
 
+def test_delete_run_includes_postgres_cleanup_status(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SUNSHINE_REVIEW_DB_PATH", str(tmp_path / "review.sqlite"))
+    output_dir = tmp_path / "dashboard-runs" / "delete-postgres"
+    output_dir.mkdir(parents=True)
+    client = TestClient(app)
+    run = client.post(
+        "/admin/runs",
+        json={"preset_key": "qa_samples_fast", "input_root": str(tmp_path / "input"), "output_dir": str(output_dir), "start": False},
+    )
+    run_key = run.json()["run_key"]
+    captured = {}
+
+    def fake_delete(*, run_key: str) -> dict:
+        captured["run_key"] = run_key
+        return {"delete_status": "deleted", "store": "postgres_runtime"}
+
+    monkeypatch.setattr("sunshine_api.routers.runs.delete_postgres_pipeline_run_if_configured", fake_delete)
+
+    deleted = client.delete(f"/admin/runs/{run.json()['id']}")
+
+    assert deleted.status_code == 200
+    assert deleted.json()["postgres_delete"] == {"delete_status": "deleted", "store": "postgres_runtime"}
+    assert captured == {"run_key": run_key}
+
+
 def test_postgres_review_items_endpoint_wraps_service(monkeypatch) -> None:
     captured = {}
 

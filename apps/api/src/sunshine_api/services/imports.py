@@ -44,6 +44,27 @@ def import_langgraph_output_to_postgres_if_configured(
     }
 
 
+def delete_postgres_pipeline_run_if_configured(*, run_key: str) -> dict[str, Any]:
+    database_url = os.environ.get("DATABASE_URL") or os.environ.get("SUNSHINE_DATABASE_URL")
+    if not database_url:
+        return {
+            "delete_status": "skipped",
+            "store": "postgres_runtime",
+            "run_key": run_key,
+            "reason": "postgres_database_url_not_configured",
+        }
+    store = PostgresPipelineStore(database_url)
+    try:
+        return {"delete_status": "deleted", "store": "postgres_runtime", "result": store.delete_pipeline_run(run_key=run_key)}
+    except KeyError as error:
+        return {
+            "delete_status": "not_found",
+            "store": "postgres_runtime",
+            "run_key": run_key,
+            "reason": str(error),
+        }
+
+
 def postgres_runtime_summary(
     *,
     database_url: str | None = None,
@@ -120,6 +141,7 @@ def record_postgres_review_decision(
 __all__ = [
     "import_langgraph_output_to_postgres",
     "import_langgraph_output_to_postgres_if_configured",
+    "delete_postgres_pipeline_run_if_configured",
     "get_postgres_pipeline_run",
     "get_postgres_run_report",
     "list_postgres_pipeline_runs",

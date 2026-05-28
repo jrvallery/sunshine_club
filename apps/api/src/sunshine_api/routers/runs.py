@@ -32,7 +32,7 @@ router = APIRouter()
 
 
 from sunshine_api.services.model_usage import _count_list_values, _count_values, _model_usage_report, _read_model_usage_artifact
-from sunshine_api.services.imports import import_langgraph_output_to_postgres_if_configured
+from sunshine_api.services.imports import delete_postgres_pipeline_run_if_configured, import_langgraph_output_to_postgres_if_configured
 from sunshine_api.services.run_commands import _batch_command, _batch_input_sample_count
 from sunshine_api.services.run_execution import _RUN_PROCESSES, _RUN_PROCESS_LOCK, _execute_run
 from sunshine_api.services.run_reports import (
@@ -496,7 +496,9 @@ def delete_run(run_id: int, delete_artifacts: bool = True, force: bool = False) 
             process.terminate()
         with _RUN_PROCESS_LOCK:
             _RUN_PROCESSES.pop(run_id, None)
-    return store.delete_pipeline_run(run_id, delete_artifacts=delete_artifacts)
+    postgres_delete = delete_postgres_pipeline_run_if_configured(run_key=str(run["run_key"]))
+    legacy_delete = store.delete_pipeline_run(run_id, delete_artifacts=delete_artifacts)
+    return {**legacy_delete, "postgres_delete": postgres_delete}
 
 
 @router.post("/admin/runs/{run_id}/import-results")
