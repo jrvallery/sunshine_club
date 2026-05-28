@@ -61,6 +61,7 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
         "pipeline_run_events": 1,
         "model_usage": 1,
         "provider_attempts": 1,
+        "pipeline_parser_results": 1,
         "document_segments": 1,
         "review_items": 1,
     }
@@ -74,6 +75,7 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
     assert "insert into pipeline_run_events" in executed_sql
     assert "insert into model_usage" in executed_sql
     assert "insert into provider_attempts" in executed_sql
+    assert "insert into pipeline_parser_results" in executed_sql
     assert "insert into document_segments" in executed_sql
     assert "insert into review_items_v2" in executed_sql
     run_params = next(params for query, params in connection.executed if "insert into pipeline_runs" in query)
@@ -85,6 +87,18 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
     assert any("[0.1,0.2,0.3]" in str(params) for _query, params in connection.executed)
     provider_attempt_params = next(params for query, params in connection.executed if "insert into provider_attempts" in query)
     assert provider_attempt_params[1:4] == ("/source/a.pdf", "Sunshine/a.pdf", "current")
+    parser_params = next(params for query, params in connection.executed if "insert into pipeline_parser_results" in query)
+    assert parser_params[1:9] == (
+        "/source/a.pdf",
+        "Sunshine/a.pdf",
+        "/sample/a.pdf",
+        "qa",
+        1,
+        "current",
+        "extracted",
+        "ok",
+    )
+    assert parser_params[13:18] == (37, 1, True, 1.0, 1)
     run_event_params = next(params for query, params in connection.executed if "insert into pipeline_run_events" in query)
     assert run_event_params[1:6] == ("/source/a.pdf", "Sunshine/a.pdf", "extract_content", "ok", "extracted text")
     assert json.loads(run_event_params[6])["duration_ms"] == 12.5
@@ -405,6 +419,7 @@ def test_postgres_pipeline_store_reports_runtime_summary() -> None:
                     "review_items_v2": 1,
                     "model_usage": 3,
                     "provider_attempts": 4,
+                    "pipeline_parser_results": 5,
                     "pipeline_run_events": 8,
                     "document_segments": 5,
                     "pipeline_chunks": 6,
@@ -461,6 +476,7 @@ def test_postgres_pipeline_store_reports_runtime_summary() -> None:
                             "review_required_count": 1,
                             "model_usage_count": 3,
                             "provider_attempt_count": 4,
+                            "parser_result_count": 5,
                             "document_segment_count": 5,
                         }
                     ]
@@ -478,6 +494,7 @@ def test_postgres_pipeline_store_reports_runtime_summary() -> None:
     assert summary["pipeline_runs"] == 2
     assert summary["pipeline_results"] == 7
     assert summary["pipeline_run_events"] == 8
+    assert summary["pipeline_parser_results"] == 5
     assert summary["pipeline_chunk_embeddings"] == 6
     assert summary["provider_benchmark_runs"] == 2
     assert summary["provider_benchmark_parser_results"] == 8
@@ -650,6 +667,7 @@ def test_postgres_pipeline_store_deletes_run_with_cascade_counts() -> None:
                         "pipeline_run_events": 8,
                         "model_usage": 4,
                         "provider_attempts": 5,
+                        "pipeline_parser_results": 9,
                         "document_segments": 6,
                         "review_items": 7,
                     }
@@ -676,6 +694,7 @@ def test_postgres_pipeline_store_deletes_run_with_cascade_counts() -> None:
         "pipeline_run_events": 8,
         "model_usage": 4,
         "provider_attempts": 5,
+        "pipeline_parser_results": 9,
         "document_segments": 6,
         "review_items": 7,
     }
@@ -718,6 +737,7 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
                             "review_required_count": 1,
                             "model_usage_count": 1,
                             "provider_attempt_count": 1,
+                            "parser_result_count": 1,
                             "document_segment_count": 1,
                         }
                     ]
@@ -817,6 +837,35 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
                         }
                     ]
                 )
+            if "from pipeline_parser_results ppr" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "parser-result-id",
+                            "run_id": "run-id",
+                            "run_key": "run-report",
+                            "source_path": "/source/scrapbook.pdf",
+                            "relative_path": "History/scrapbook.pdf",
+                            "sample_path": "/sample/scrapbook.pdf",
+                            "sample_group": "qa",
+                            "sample_number": 1,
+                            "provider": "docling",
+                            "status": "extracted",
+                            "quality": "ok",
+                            "requires_review": False,
+                            "strategy": "ocr_page_level",
+                            "document_subtype": "scrapbook",
+                            "review_reason": None,
+                            "text_length": 2450,
+                            "page_count": 4,
+                            "page_structure_available": True,
+                            "page_text_coverage_rate": 0.92,
+                            "layout_signal_count": 7,
+                            "result": {"text_snippet": "Scrapbook page text"},
+                            "created_at": None,
+                        }
+                    ]
+                )
             if "from document_segments ds" in normalized:
                 return _Cursor(
                     rows=[
@@ -873,6 +922,9 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     assert report["summary"]["open_review_item_count"] == 1
     assert report["summary"]["model_call_count"] == 1
     assert report["summary"]["local_model_call_count"] == 1
+    assert report["summary"]["parser_result_count"] == 1
+    assert report["summary"]["parser_status"] == {"extracted": 1}
+    assert report["summary"]["parser_quality"] == {"ok": 1}
     assert report["summary"]["run_event_count"] == 1
     assert report["summary"]["run_event_status"] == {"ok": 1}
     assert report["summary"]["segment_review_count"] == 1
@@ -881,6 +933,8 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     assert report["review_items"][0]["segment_id"] == "scrapbook:segment-001"
     assert report["model_usage"][0]["provider"] == "cortex"
     assert report["provider_attempts"][0]["provider"] == "docling"
+    assert report["parser_results"][0]["provider"] == "docling"
+    assert report["parser_results"][0]["page_text_coverage_rate"] == 0.92
     assert report["run_events"][0]["node"] == "propose_document_segments"
     assert report["document_segments"][0]["segment_type"] == "scrapbook_page_group"
     assert report["document_segments"][0]["requires_segment_review"] is True
@@ -1774,6 +1828,30 @@ def _postgres_import_artifacts(tmp_path: Path) -> Path:
                 "seconds": 0.25,
                 "warnings": [],
                 "metadata": {"local_only": True},
+            }
+        ],
+    )
+    _write_jsonl(
+        output_dir / "sample-parser-results.jsonl",
+        [
+            {
+                "source_path": "/source/a.pdf",
+                "relative_path": "Sunshine/a.pdf",
+                "sample_path": "/sample/a.pdf",
+                "sample_group": "qa",
+                "sample_number": 1,
+                "provider": "current",
+                "status": "extracted",
+                "quality": "ok",
+                "requires_review": False,
+                "strategy": "text_extraction",
+                "document_subtype": "meeting_minutes",
+                "review_reason": None,
+                "text_length": 37,
+                "page_count": 1,
+                "page_structure_available": True,
+                "page_text_coverage_rate": 1.0,
+                "layout_signal_count": 1,
             }
         ],
     )

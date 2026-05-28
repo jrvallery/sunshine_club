@@ -1301,6 +1301,7 @@ Current implementation:
 - Chunking now writes `sample-chunking-results.jsonl`, so future provider swaps can be audited separately from final chunk rows.
 - `services/artifacts/writers.py` owns normalized sample input, extraction result, and pipeline result row construction; `services/artifacts/manifest.py` exposes manifest generation through the V2 package path.
 - `PostgresPipelineStore` imports run-owned chunks and chunk embeddings from graph artifacts into the Postgres V2 runtime schema.
+- `PostgresPipelineStore` imports graph parser/OCR result rows into `pipeline_parser_results` and includes parser status, quality, provider, and review-required buckets in Postgres run reports. This makes normal graph runs auditable for parser quality in the dashboard without relying on provider-benchmark-only tables.
 - `PostgresPipelineStore` imports `graph-audit-events.jsonl` into `pipeline_run_events`, so node-level execution status, source path, duration, warnings, and errors are queryable from the V2 system DB instead of only from JSONL files.
 - `PostgresPipelineStore` imports review-required queue rows into `review_items_v2`, preserving run ownership, source path, proposed class/tag, proposed secondary tags, and review reason.
 - `PostgresPipelineStore` imports run-owned `artifact-manifest.json`, `graph-run-metadata.json`, provider summary, counts, and distributions into `pipeline_runs.summary`.
