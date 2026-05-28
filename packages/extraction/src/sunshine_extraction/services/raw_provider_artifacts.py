@@ -55,8 +55,12 @@ def write_raw_provider_artifact(
     artifact_path.write_bytes(artifact_bytes)
     return {
         "provider": provider,
+        "source_path": extraction.sample.source_path,
+        "source_relative_path": extraction.sample.relative_path,
+        "sample_path": str(extraction.sample.sample_path),
         "path": str(artifact_path),
         "relative_path": str(artifact_path.relative_to(Path(output_dir))),
+        "artifact_relative_path": str(artifact_path.relative_to(Path(output_dir))),
         "kind": "raw_provider_snapshot",
         "exists": True,
         "size_bytes": len(artifact_bytes),

@@ -712,7 +712,11 @@ def test_langgraph_writes_raw_provider_artifact_reference_for_non_current_extrac
 
     assert result["extraction_result"].metadata["raw_provider_artifact"]["sha256"] == raw_artifact["sha256"]
     assert raw_artifact["kind"] == "raw_provider_snapshot"
+    assert raw_artifact["source_path"] == str(source)
+    assert raw_artifact["source_relative_path"] == "docling-source.txt"
+    assert raw_artifact["sample_path"] == str(source)
     assert raw_artifact["relative_path"].startswith("raw-providers/docling-")
+    assert raw_artifact["artifact_relative_path"] == raw_artifact["relative_path"]
     assert Path(raw_artifact["path"]).exists()
     assert raw_payload["provider"] == "docling"
     assert raw_payload["raw_artifact"]["full_sha256"]
