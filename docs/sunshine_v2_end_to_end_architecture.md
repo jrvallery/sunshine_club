@@ -885,6 +885,7 @@ Current implementation:
 
 - `services/indexing/chunk_indexer.py` owns normalized indexing result shaping.
 - `providers/vectorstores/base.py` defines the vector-store provider contract, with `NoopVectorStoreProvider` for side-effect-free runs and `QdrantVectorStoreProvider` for configured local indexing.
+- `graph/nodes/indexing.py` owns the `index_chunks` node, separated from embedding so vector-store writes are auditable as their own graph phase.
 - Graph writes `sample-indexing.jsonl` with provider status, chunk counts, embedding counts, placeholder counts, and warnings.
 
 ### 16. `retrieve_labeled_examples`
@@ -923,6 +924,7 @@ Current implementation:
 
 - `providers/retrieval/base.py` defines the semantic retrieval provider contract.
 - `CurrentSemanticRetrievalProvider` wraps the existing local SQLite semantic index and uses the configured embedding provider for query embedding.
+- `graph/nodes/retrieval.py` owns the `retrieve_labeled_examples` node, separated from chunk embedding and vector indexing.
 - Graph runs write `sample-retrieval-results.jsonl` with provider, status, index path, query count, result count, warnings, and metadata.
 - Missing semantic indexes are explicit skipped retrieval attempts with `semantic_index_missing`, not silent absence.
 
