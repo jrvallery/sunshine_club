@@ -304,6 +304,7 @@ export type RunModelUsageCall = {
   purpose: string;
   provider: string;
   model: string;
+  host?: string | null;
   status: string;
   runtime_ms?: number | null;
   input_tokens?: number | null;
