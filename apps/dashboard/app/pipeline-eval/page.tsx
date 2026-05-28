@@ -340,6 +340,7 @@ export default function PipelineEvalPage() {
               <KeyValue label="Recommended" value={recommendedProvider(providerBenchmark.data.recommendations)} />
               <KeyValue label="Filter" value={benchmarkFilter(providerBenchmark.data.summary)} />
               <KeyValue label="Runtime threshold" value={benchmarkRuntimeThreshold(providerBenchmark.data.summary)} />
+              <KeyValue label="Segmentation" value={segmentationSummary(providerBenchmark.data.summary?.segmentation)} />
               <KeyValue label="Artifacts" value={benchmarkArtifactSummary(providerBenchmark.data.artifact_manifest)} />
               <KeyValue label="Postgres import" value={postgresImportSummary(providerBenchmark.data.postgres_import)} />
               {providerBenchmark.data.background_error ? <KeyValue label="Background error" value={backgroundErrorSummary(providerBenchmark.data.background_error)} /> : null}
@@ -399,6 +400,7 @@ export default function PipelineEvalPage() {
                   <KeyValue label="Recommendations" value={String(postgresBenchmarkDetail.data.summary.recommendation_count ?? 0)} />
                   <KeyValue label="Providers" value={objectSummary(postgresBenchmarkDetail.data.summary.providers)} />
                   <KeyValue label="Samples" value={objectSummary(postgresBenchmarkDetail.data.summary.sample_categories)} />
+                  <KeyValue label="Segmentation" value={segmentationSummary(postgresBenchmarkDetail.data.summary.segmentation)} />
                 </section>
                 <section>
                   <h4>Recommendations</h4>
@@ -809,6 +811,7 @@ function ProviderParserRows({ rows }: { rows: Array<Record<string, unknown>> }) 
             <th>Parser</th>
             <th>Status</th>
             <th>Quality</th>
+            <th>Segmentation</th>
             <th>Pages</th>
             <th>Seconds</th>
             <th>Snippet</th>
@@ -828,6 +831,7 @@ function ProviderParserRows({ rows }: { rows: Array<Record<string, unknown>> }) 
                 <StatusBadge value={String(row.status ?? "-")} tone={String(row.status ?? "").includes("fail") ? "danger" : "default"} />
               </td>
               <td>{String(row.quality ?? "-")}</td>
+              <td>{segmentationCell(row)}</td>
               <td>{String(row.page_count ?? "-")}</td>
               <td>{formatSeconds(row.seconds)}</td>
               <td className="snippetCell">{String(row.text_snippet ?? "-")}</td>
@@ -1034,9 +1038,10 @@ function postgresImportSummary(value: Record<string, unknown> | null | undefined
 
 function recommendationValue(row: Record<string, unknown>) {
   const provider = String(row.recommended_provider ?? row.provider ?? "-");
-  const decision = String(row.decision ?? row.recommendation ?? row.status ?? "-");
-  const reason = String(row.reason ?? row.notes ?? row.evidence ?? "");
-  return [provider, decision, reason].filter((part) => part && part !== "-").join(": ") || "-";
+  const decision = String(row.promotion_status ?? row.decision ?? row.recommendation ?? row.status ?? "-");
+  const reason = String(row.promotion_reason ?? row.reason ?? row.notes ?? row.evidence ?? "");
+  const segmentation = typeof row.segmentation_ready_for_review_rate === "number" ? `segmentation ${formatPercent(row.segmentation_ready_for_review_rate)}` : "";
+  return [provider, decision, segmentation, reason].filter((part) => part && part !== "-").join(": ") || "-";
 }
 
 function objectSummary(value: unknown) {
@@ -1045,6 +1050,25 @@ function objectSummary(value: unknown) {
   }
   const entries = Object.entries(value as Record<string, unknown>);
   return entries.length ? entries.map(([key, count]) => `${key} (${String(count)})`).join(", ") : "-";
+}
+
+function segmentationSummary(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return "-";
+  }
+  const row = value as Record<string, unknown>;
+  const required = Number(row.required_count ?? 0);
+  const ready = Number(row.ready_for_review_count ?? 0);
+  const rate = typeof row.ready_for_review_rate === "number" ? formatPercent(row.ready_for_review_rate) : "-";
+  const readiness = objectSummary(row.by_readiness);
+  return required ? `${ready}/${required} ready (${rate}); ${readiness}` : readiness;
+}
+
+function segmentationCell(row: Record<string, unknown>) {
+  const required = row.segmentation_required ? "required" : "not required";
+  const readiness = String(row.segmentation_readiness ?? "-");
+  const coverage = typeof row.page_text_coverage_rate === "number" ? formatPercent(row.page_text_coverage_rate) : "-";
+  return `${readiness}; ${required}; page text ${coverage}`;
 }
 
 function formatSeconds(value: unknown) {

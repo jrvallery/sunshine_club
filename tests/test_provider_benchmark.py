@@ -199,6 +199,127 @@ def test_provider_benchmark_recommendations_require_runtime_review_when_too_slow
     assert recommendation["max_average_seconds"] == 30.0
 
 
+def test_provider_benchmark_scores_segmentation_readiness_for_packet_samples(tmp_path: Path) -> None:
+    class PageAwareProvider:
+        provider_name = "page_aware"
+
+        def dependency_status(self) -> dict[str, object]:
+            return {"provider": self.provider_name, "available": True, "local_only": True}
+
+        def extract(self, sample, plan, *, ocr_executor=None, ocr_artifacts=None):
+            from sunshine_extraction.providers.extraction.base import ExtractionProviderAttempt
+            from sunshine_extraction.services.extraction import ExtractionResult
+
+            pages = [
+                {"page_number": 1, "text": "Scrapbook clipping one", "text_length": 22, "word_count": 3},
+                {"page_number": 2, "text": "Scrapbook clipping two", "text_length": 22, "word_count": 3},
+            ]
+            extraction = ExtractionResult(
+                sample=sample,
+                plan=plan,
+                extraction_status="extracted",
+                text="Scrapbook clipping one\n\nScrapbook clipping two",
+                metadata={
+                    "provider": self.provider_name,
+                    "local_only": True,
+                    "docling_structure": {
+                        "page_count": 2,
+                        "pages": pages,
+                        "picture_count": 2,
+                        "text_item_count": 2,
+                    },
+                },
+                page_count=2,
+                warnings=[],
+            )
+            attempt = ExtractionProviderAttempt(
+                provider=self.provider_name,
+                status="extracted",
+                strategy=plan.get("strategy"),
+                seconds=2.0,
+                warnings=[],
+                metadata={"local_only": True},
+            )
+            return extraction, attempt
+
+    source = tmp_path / "scrapbook.pdf"
+    source.write_bytes(b"%PDF scrapbook packet")
+    manifest = tmp_path / "provider-benchmark-samples.json"
+    manifest.write_text(
+        json.dumps({"samples": [{"path": source.name, "category": "scrapbook_packet", "label": "scrapbook packet"}]}),
+        encoding="utf-8",
+    )
+
+    result = benchmark_extraction_providers(
+        [],
+        provider_names=[],
+        sample_manifest=manifest,
+        _provider_instances=[PageAwareProvider()],
+    )
+
+    parser_row = result["parser_results"][0]
+    recommendation = result["recommendations"][0]
+    assert parser_row["segmentation_required"] is True
+    assert parser_row["segmentation_readiness"] == "ready_for_review"
+    assert parser_row["page_text_coverage_rate"] == 1.0
+    assert result["summary"]["segmentation"]["required_count"] == 1
+    assert result["summary"]["segmentation"]["ready_for_review_count"] == 1
+    assert result["summary"]["segmentation"]["by_provider"]["page_aware"]["ready_for_review_rate"] == 1.0
+    assert recommendation["segmentation_required_count"] == 1
+    assert recommendation["segmentation_ready_for_review_rate"] == 1.0
+    assert recommendation["promotion_status"] == "candidate"
+
+
+def test_provider_benchmark_blocks_promotion_when_packet_lacks_page_structure(tmp_path: Path) -> None:
+    class FlatPacketProvider:
+        provider_name = "flat_packet"
+
+        def dependency_status(self) -> dict[str, object]:
+            return {"provider": self.provider_name, "available": True, "local_only": True}
+
+        def extract(self, sample, plan, *, ocr_executor=None, ocr_artifacts=None):
+            from sunshine_extraction.providers.extraction.base import ExtractionProviderAttempt
+            from sunshine_extraction.services.extraction import ExtractionResult
+
+            extraction = ExtractionResult(
+                sample=sample,
+                plan=plan,
+                extraction_status="extracted",
+                text="Flat text for a multi-page newspaper packet with no page structure",
+                metadata={"provider": self.provider_name, "local_only": True},
+                page_count=3,
+                warnings=[],
+            )
+            attempt = ExtractionProviderAttempt(
+                provider=self.provider_name,
+                status="extracted",
+                strategy=plan.get("strategy"),
+                seconds=1.0,
+                warnings=[],
+                metadata={"local_only": True},
+            )
+            return extraction, attempt
+
+    source = tmp_path / "newspaper.pdf"
+    source.write_bytes(b"%PDF newspaper packet")
+    manifest = tmp_path / "provider-benchmark-samples.json"
+    manifest.write_text(
+        json.dumps({"samples": [{"path": source.name, "category": "newspaper_packet", "label": "newspaper packet"}]}),
+        encoding="utf-8",
+    )
+
+    result = benchmark_extraction_providers(
+        [],
+        provider_names=[],
+        sample_manifest=manifest,
+        _provider_instances=[FlatPacketProvider()],
+    )
+
+    assert result["parser_results"][0]["segmentation_readiness"] == "missing_page_structure"
+    assert result["recommendations"][0]["promotion_status"] == "needs_segmentation_review"
+    assert result["recommendations"][0]["promotion_reason"] == "segmentation-required samples did not all return page-level structure ready for boundary review"
+
+
 def test_provider_benchmark_records_provider_exceptions_and_continues(tmp_path: Path) -> None:
     class ExplodingProvider:
         provider_name = "exploding_local"

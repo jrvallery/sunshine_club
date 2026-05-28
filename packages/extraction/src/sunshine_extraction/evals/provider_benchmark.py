@@ -100,6 +100,12 @@ def _benchmark_one(sample: SampleFile, plan: dict[str, Any], provider: Extractio
             seconds=round(time.perf_counter() - started, 4),
         )
     quality = extraction_quality_gate(extraction)
+    segmentation = _segmentation_assessment(
+        sample_spec=sample_spec,
+        extraction_metadata=extraction.metadata,
+        extraction_page_count=extraction.page_count,
+        extraction_text=extraction.text or "",
+    )
     benchmark_row = {
         "source_path": sample.source_path,
         "relative_path": sample.relative_path,
@@ -116,6 +122,10 @@ def _benchmark_one(sample: SampleFile, plan: dict[str, Any], provider: Extractio
         "requires_review": quality.get("requires_review"),
         "text_length": len(extraction.text or ""),
         "page_count": extraction.page_count,
+        "segmentation_required": segmentation["segmentation_required"],
+        "segmentation_readiness": segmentation["segmentation_readiness"],
+        "page_text_coverage_rate": segmentation["page_text_coverage_rate"],
+        "layout_signal_count": segmentation["layout_signal_count"],
         "seconds": attempt.seconds,
         "warnings": [*attempt.warnings, *extraction.warnings],
         "dependency_status": status,
@@ -130,6 +140,7 @@ def _benchmark_one(sample: SampleFile, plan: dict[str, Any], provider: Extractio
         extraction_text=extraction.text or "",
         extraction_metadata=extraction.metadata,
         extraction_page_count=extraction.page_count,
+        segmentation=segmentation,
         attempt=attempt.as_row(),
         quality=quality,
         warnings=benchmark_row["warnings"],
@@ -177,6 +188,7 @@ def _failed_provider_rows(
         "requires_review": True,
         "reason": "provider_exception",
     }
+    segmentation = _segmentation_assessment(sample_spec=sample_spec, extraction_metadata={}, extraction_page_count=None, extraction_text="")
     benchmark_row = {
         "source_path": sample.source_path,
         "relative_path": sample.relative_path,
@@ -193,6 +205,10 @@ def _failed_provider_rows(
         "requires_review": True,
         "text_length": 0,
         "page_count": None,
+        "segmentation_required": segmentation["segmentation_required"],
+        "segmentation_readiness": segmentation["segmentation_readiness"],
+        "page_text_coverage_rate": segmentation["page_text_coverage_rate"],
+        "layout_signal_count": segmentation["layout_signal_count"],
         "seconds": seconds,
         "warnings": warnings,
         "dependency_status": provider_status,
@@ -207,6 +223,7 @@ def _failed_provider_rows(
         extraction_text="",
         extraction_metadata={"provider": provider_name, "error_type": error.__class__.__name__, "error": str(error)},
         extraction_page_count=None,
+        segmentation=_segmentation_assessment(sample_spec=sample_spec, extraction_metadata={}, extraction_page_count=None, extraction_text=""),
         attempt=attempt,
         quality=quality,
         warnings=warnings,
@@ -224,6 +241,7 @@ def _parser_result_row(
     extraction_text: str,
     extraction_metadata: dict[str, Any],
     extraction_page_count: int | None,
+    segmentation: dict[str, Any],
     attempt: dict[str, Any],
     quality: dict[str, Any],
     warnings: list[str],
@@ -249,6 +267,13 @@ def _parser_result_row(
         "text_length": len(extraction_text),
         "text_snippet": _snippet(extraction_text),
         "page_count": extraction_page_count,
+        "segmentation_required": segmentation["segmentation_required"],
+        "segmentation_readiness": segmentation["segmentation_readiness"],
+        "segmentation_reason": segmentation["segmentation_reason"],
+        "page_structure_available": segmentation["page_structure_available"],
+        "page_text_coverage_rate": segmentation["page_text_coverage_rate"],
+        "pages_with_text": segmentation["pages_with_text"],
+        "layout_signal_count": segmentation["layout_signal_count"],
         "seconds": attempt.get("seconds"),
         "local_only": bool(provider_status.get("local_only", True)),
         "provider_available": bool(provider_status.get("available", True)),
@@ -259,8 +284,64 @@ def _parser_result_row(
             "benchmark": True,
             "sample_metadata": sample_spec.get("metadata") or {},
             "extraction_metadata": extraction_metadata,
+            "segmentation": segmentation,
         },
     }
+
+
+def _segmentation_assessment(
+    *,
+    sample_spec: dict[str, Any],
+    extraction_metadata: dict[str, Any],
+    extraction_page_count: int | None,
+    extraction_text: str,
+) -> dict[str, Any]:
+    category = str(sample_spec.get("category") or "uncategorized")
+    sample_metadata = sample_spec.get("metadata") if isinstance(sample_spec.get("metadata"), dict) else {}
+    segmentation_required = category in {"scrapbook_packet", "newspaper_packet"} or bool(sample_metadata.get("expected_segments"))
+    provider_structure = _provider_structure(extraction_metadata)
+    pages = provider_structure.get("pages") if isinstance(provider_structure.get("pages"), list) else []
+    page_count = _safe_int(extraction_page_count) or _safe_int(provider_structure.get("page_count")) or len(pages) or None
+    pages_with_text = sum(1 for page in pages if str(page.get("text") or "").strip())
+    page_text_coverage_rate = _rate(pages_with_text, int(page_count or 0)) if page_count else (1.0 if extraction_text.strip() and not segmentation_required else 0.0)
+    layout_signal_count = sum(
+        _safe_int(provider_structure.get(field)) or 0
+        for field in ("table_count", "picture_count", "group_count", "text_item_count")
+    )
+    page_structure_available = bool(page_count and pages and len(pages) >= min(int(page_count), len(pages)) and page_text_coverage_rate > 0)
+    if not segmentation_required:
+        readiness = "not_required"
+        reason = "sample category does not require packet segmentation"
+    elif page_count is None or page_count < 2:
+        readiness = "needs_review"
+        reason = "segmentation sample has no multi-page structure"
+    elif page_text_coverage_rate >= 0.8 and page_structure_available:
+        readiness = "ready_for_review"
+        reason = "provider returned page-level text coverage for segmentation review"
+    elif page_structure_available:
+        readiness = "weak_page_text_coverage"
+        reason = "provider returned pages but too few pages have text"
+    else:
+        readiness = "missing_page_structure"
+        reason = "provider did not return usable page-level structure"
+    return {
+        "segmentation_required": segmentation_required,
+        "segmentation_readiness": readiness,
+        "segmentation_reason": reason,
+        "page_structure_available": page_structure_available,
+        "page_count": page_count,
+        "pages_with_text": pages_with_text,
+        "page_text_coverage_rate": page_text_coverage_rate,
+        "layout_signal_count": layout_signal_count,
+    }
+
+
+def _provider_structure(extraction_metadata: dict[str, Any]) -> dict[str, Any]:
+    for key in ("docling_structure", "provider_structure", "structure"):
+        value = extraction_metadata.get(key)
+        if isinstance(value, dict):
+            return value
+    return {}
 
 
 def _parser_review_reason(quality: dict[str, Any], warnings: list[str]) -> str | None:
@@ -375,6 +456,7 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "by_status": _count(rows, "status"),
         "by_quality": _count(rows, "quality"),
         "review_required_count": sum(1 for row in rows if row.get("requires_review")),
+        "segmentation": _segmentation_summary(rows),
         "comparison": _comparison(rows),
         "local_only": all(bool(row.get("local_only")) for row in rows),
     }
@@ -420,6 +502,38 @@ def _comparison(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _segmentation_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    required_rows = [row for row in rows if row.get("segmentation_required")]
+    ready_rows = [row for row in required_rows if row.get("segmentation_readiness") == "ready_for_review"]
+    return {
+        "required_count": len(required_rows),
+        "ready_for_review_count": len(ready_rows),
+        "ready_for_review_rate": _rate(len(ready_rows), len(required_rows)),
+        "by_readiness": _count(rows, "segmentation_readiness"),
+        "by_provider": {
+            provider: _segmentation_provider_summary(provider_rows)
+            for provider, provider_rows in _rows_by_provider(rows).items()
+        },
+    }
+
+
+def _segmentation_provider_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    required_rows = [row for row in rows if row.get("segmentation_required")]
+    ready_rows = [row for row in required_rows if row.get("segmentation_readiness") == "ready_for_review"]
+    average_page_coverage = (
+        round(sum(float(row.get("page_text_coverage_rate") or 0) for row in required_rows) / len(required_rows), 4)
+        if required_rows
+        else None
+    )
+    return {
+        "required_count": len(required_rows),
+        "ready_for_review_count": len(ready_rows),
+        "ready_for_review_rate": _rate(len(ready_rows), len(required_rows)),
+        "average_page_text_coverage_rate": average_page_coverage,
+        "readiness": _count(rows, "segmentation_readiness"),
+    }
+
+
 def _provider_recommendations(rows: list[dict[str, Any]], *, max_average_seconds: float | None = 30.0) -> list[dict[str, Any]]:
     recommendations = []
     for provider, provider_rows in _rows_by_provider(rows).items():
@@ -428,6 +542,8 @@ def _provider_recommendations(rows: list[dict[str, Any]], *, max_average_seconds
         ok_count = sum(1 for row in provider_rows if row.get("quality") == "ok")
         review_required_count = sum(1 for row in provider_rows if row.get("requires_review"))
         available_count = sum(1 for row in provider_rows if row.get("provider_available"))
+        segmentation_required_count = sum(1 for row in provider_rows if row.get("segmentation_required"))
+        segmentation_ready_count = sum(1 for row in provider_rows if row.get("segmentation_readiness") == "ready_for_review")
         local_only = all(bool(row.get("local_only")) for row in provider_rows)
         average_text_length = round(sum(int(row.get("text_length") or 0) for row in provider_rows) / result_count, 2) if result_count else 0
         average_seconds = round(sum(float(row.get("seconds") or 0) for row in provider_rows) / result_count, 4) if result_count else 0.0
@@ -441,6 +557,8 @@ def _provider_recommendations(rows: list[dict[str, Any]], *, max_average_seconds
             local_only=local_only,
             average_seconds=average_seconds,
             max_average_seconds=max_average_seconds,
+            segmentation_required_count=segmentation_required_count,
+            segmentation_ready_count=segmentation_ready_count,
         )
         recommendations.append(
             {
@@ -454,6 +572,8 @@ def _provider_recommendations(rows: list[dict[str, Any]], *, max_average_seconds
                 "average_seconds": average_seconds,
                 "max_seconds": max_seconds,
                 "max_average_seconds": max_average_seconds,
+                "segmentation_required_count": segmentation_required_count,
+                "segmentation_ready_for_review_rate": _rate(segmentation_ready_count, segmentation_required_count),
                 "local_only": local_only,
                 "promotion_status": promotion_status,
                 "promotion_reason": _promotion_reason(promotion_status),
@@ -472,6 +592,8 @@ def _promotion_status(
     local_only: bool,
     average_seconds: float,
     max_average_seconds: float | None,
+    segmentation_required_count: int,
+    segmentation_ready_count: int,
 ) -> str:
     if result_count == 0:
         return "insufficient_data"
@@ -482,6 +604,8 @@ def _promotion_status(
     if max_average_seconds is not None and average_seconds > max_average_seconds:
         return "needs_runtime_review"
     if extracted_count == result_count and ok_count == result_count and review_required_count == 0:
+        if segmentation_required_count and segmentation_ready_count < segmentation_required_count:
+            return "needs_segmentation_review"
         return "candidate"
     return "needs_review"
 
@@ -492,6 +616,7 @@ def _promotion_reason(status: str) -> str:
         "blocked_dependency_unavailable": "provider dependency is unavailable for at least one benchmarked file",
         "blocked_not_local_only": "provider is not local-only",
         "needs_review": "benchmark output needs review before provider promotion",
+        "needs_segmentation_review": "segmentation-required samples did not all return page-level structure ready for boundary review",
         "needs_runtime_review": "provider quality is acceptable but average runtime exceeds the benchmark promotion threshold",
         "insufficient_data": "no benchmark rows were available",
     }[status]
@@ -501,6 +626,15 @@ def _rate(count: int, total: int) -> float:
     if total <= 0:
         return 0.0
     return round(count / total, 4)
+
+
+def _safe_int(value: Any) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:

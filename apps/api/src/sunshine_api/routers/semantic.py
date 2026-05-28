@@ -293,6 +293,7 @@ def provider_benchmark_latest(output_dir: str) -> dict[str, Any]:
             "by_quality": _count_rows(results, "quality"),
             "review_required_count": sum(1 for row in results if row.get("requires_review")),
             "sample_categories": _count_rows(results, "sample_category"),
+            "segmentation": _provider_benchmark_segmentation_summary(results + parser_results),
         }
         return {
             "ok": True,
@@ -567,6 +568,17 @@ def _count_rows(rows: list[dict[str, Any]], field: str) -> dict[str, int]:
         key = str(row.get(field) or "unknown")
         counts[key] = counts.get(key, 0) + 1
     return dict(sorted(counts.items()))
+
+
+def _provider_benchmark_segmentation_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    required_rows = [row for row in rows if row.get("segmentation_required")]
+    ready_rows = [row for row in required_rows if row.get("segmentation_readiness") == "ready_for_review"]
+    return {
+        "required_count": len(required_rows),
+        "ready_for_review_count": len(ready_rows),
+        "ready_for_review_rate": round(len(ready_rows) / len(required_rows), 4) if required_rows else 0.0,
+        "by_readiness": _count_rows(rows, "segmentation_readiness"),
+    }
 
 
 def _read_optional_json(path: Path) -> dict[str, Any] | None:

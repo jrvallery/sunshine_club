@@ -2155,7 +2155,36 @@ def _provider_benchmark_detail_summary(
         "sample_categories": _count_values(result_rows + parser_result_rows, "sample_category"),
         "recommendations": _count_values(recommendation_rows, "recommendation"),
         "review_required_count": sum(1 for row in result_rows + parser_result_rows if row.get("requires_review") is True),
+        "segmentation": _provider_benchmark_segmentation_summary(result_rows + parser_result_rows),
     }
+
+
+def _provider_benchmark_segmentation_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    required_rows = [row for row in rows if _provider_benchmark_row_value(row, "segmentation_required") is True]
+    ready_rows = [row for row in required_rows if _provider_benchmark_row_value(row, "segmentation_readiness") == "ready_for_review"]
+    return {
+        "required_count": len(required_rows),
+        "ready_for_review_count": len(ready_rows),
+        "ready_for_review_rate": round(len(ready_rows) / len(required_rows), 4) if required_rows else 0.0,
+        "by_readiness": _count_provider_benchmark_values(rows, "segmentation_readiness"),
+    }
+
+
+def _count_provider_benchmark_values(rows: list[dict[str, Any]], field: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        key = str(_provider_benchmark_row_value(row, field) or "unknown")
+        counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _provider_benchmark_row_value(row: dict[str, Any], field: str) -> Any:
+    if field in row:
+        return row.get(field)
+    result = row.get("result")
+    if isinstance(result, dict):
+        return result.get(field)
+    return None
 
 
 def _provider_benchmark_recommendation_result(row: dict[str, Any] | None) -> dict[str, Any]:
