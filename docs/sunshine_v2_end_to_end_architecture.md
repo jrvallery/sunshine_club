@@ -1958,6 +1958,13 @@ API/dashboard:
 - Replace subprocess runner for production runs.
 - Keep subprocess/dev runner.
 
+Current implementation:
+
+- `apps/worker/src/sunshine_worker/activities.py` wraps the single-file LangGraph runtime as a Temporal activity.
+- `apps/worker/src/sunshine_worker/workflows.py` defines `SingleFilePipelineWorkflow` as the first durable workflow boundary.
+- `apps/worker/src/sunshine_worker/temporal_worker.py` registers the workflow and activity on the local `sunshine-pipeline` task queue.
+- Dashboard runs still use the subprocess/dev runner; production replacement remains a later slice.
+
 ## Milestone Acceptance Criteria
 
 V2 is successful when:
