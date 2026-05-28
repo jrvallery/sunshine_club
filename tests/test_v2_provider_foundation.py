@@ -36,6 +36,7 @@ from sunshine_extraction.providers.extraction.router import select_extraction_pr
 from sunshine_extraction.providers.llm import CortexLLMTagInspector, CurrentLLMTagInspectionProvider, HostedOpenAILLMTagInspector, llm_cache_key
 from sunshine_extraction.providers.observability import LangfuseObservabilityProvider, NoopObservabilityProvider
 from sunshine_extraction.providers.reranking import CortexRerankProvider
+from sunshine_extraction.providers.reranking.base import RerankProviderAttempt
 from sunshine_extraction.providers.retrieval import CurrentSemanticRetrievalProvider, GoldenExampleRetrievalProvider, QdrantSemanticRetrievalProvider
 from sunshine_extraction.providers.retrieval.base import SemanticRetrievalProviderAttempt
 from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider, SQLiteGoldenVectorStoreProvider
@@ -487,6 +488,18 @@ def test_semantic_retrieval_filter_can_be_configured_from_json(monkeypatch: pyte
     assert deps["semantic_retrieval_filter"] == parsed
 
 
+def test_rerank_provider_can_be_configured_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SUNSHINE_RERANK_PROVIDER", "cortex")
+    monkeypatch.setenv("CORTEX_API_KEY", "local")
+    monkeypatch.setenv("CORTEX_BASE_URL", "http://cortex.local")
+    monkeypatch.setenv("SUNSHINE_RERANK_MODEL", "rerank-local")
+
+    deps = _resolve_deps(embedding_provider=PlaceholderEmbeddingProvider(dimensions=4))
+
+    assert deps["rerank_provider"].provider_name == "cortex"
+    assert deps["rerank_provider"].dependency_status()["model"] == "rerank-local"
+
+
 def test_retrieve_labeled_examples_node_passes_metadata_filter_to_provider(tmp_path: Path) -> None:
     captured: dict[str, object] = {}
     source = tmp_path / "founders.txt"
@@ -551,6 +564,92 @@ def test_retrieve_labeled_examples_node_passes_metadata_filter_to_provider(tmp_p
     assert captured["metadata_filter"] == {"correct_primary_tag": "history_archive_general"}
     assert captured["limit"] == 5
     assert result["retrieval_result"]["metadata"]["metadata_filter"] == {"correct_primary_tag": "history_archive_general"}
+
+
+def test_retrieve_labeled_examples_node_reranks_examples_when_provider_is_configured(tmp_path: Path) -> None:
+    source = tmp_path / "founders.txt"
+    source.write_text("Founders history", encoding="utf-8")
+    sample = _sample(source, relative_path="History/founders.txt")
+    extraction = ExtractionResult(
+        sample=sample,
+        plan={"strategy": "text_extraction", "document_subtype": "historical_summary"},
+        extraction_status="extracted",
+        text="Founders of Sunshine Club organized in 1902.",
+        metadata={},
+        page_count=1,
+        warnings=[],
+    )
+
+    class FakeRetrievalProvider:
+        provider_name = "fake"
+
+        def retrieve(
+            self,
+            *,
+            index_path: str | None,
+            query_text: str,
+            limit: int,
+            metadata_filter: dict[str, object] | None = None,
+        ) -> tuple[list[dict[str, object]], SemanticRetrievalProviderAttempt]:
+            del query_text, limit, metadata_filter
+            return [
+                {"correct_primary_tag": "press_publications", "text": "newspaper clipping", "score": 0.5},
+                {"correct_primary_tag": "history_archive_general", "text": "founders history", "score": 0.4},
+            ], SemanticRetrievalProviderAttempt(
+                provider="fake",
+                status="retrieved",
+                index_path=index_path,
+                query_count=1,
+                result_count=2,
+                warnings=[],
+                metadata={"local_only": True},
+            )
+
+    class FakeRerankProvider:
+        provider_name = "cortex"
+
+        def rerank(self, *, query_text: str, documents: list[dict[str, object]], limit: int) -> tuple[list[dict[str, object]], RerankProviderAttempt]:
+            assert "Founders of Sunshine Club" in query_text
+            assert limit == 5
+            return [
+                {**documents[1], "rerank_score": 0.99},
+                {**documents[0], "rerank_score": 0.12},
+            ], RerankProviderAttempt(
+                provider="cortex",
+                model="rerank-local",
+                status="reranked",
+                query_count=1,
+                input_count=2,
+                output_count=2,
+                warnings=[],
+                metadata={"local_only": True, "base_url": "http://cortex.local"},
+            )
+
+    result = _retrieve_labeled_examples_node(
+        {
+            "source_path": str(source),
+            "relative_path": "History/founders.txt",
+            "filename": "founders.txt",
+            "content_class": {"final_class": "document"},
+            "extraction_plan": {"document_subtype": "historical_summary"},
+            "extraction_result": extraction,
+            "warnings": [],
+            "model_usage": [],
+        },
+        {
+            "semantic_index_path": "semantic.sqlite",
+            "semantic_retrieval_provider": FakeRetrievalProvider(),
+            "rerank_provider": FakeRerankProvider(),
+            "embedding_provider": PlaceholderEmbeddingProvider(dimensions=4),
+        },
+    )
+
+    assert result["semantic_examples"][0]["correct_primary_tag"] == "history_archive_general"
+    assert result["semantic_examples"][0]["rerank_score"] == 0.99
+    assert result["retrieval_result"]["metadata"]["rerank"]["status"] == "reranked"
+    assert result["model_usage"][-1]["purpose"] == "semantic_example_rerank"
+    assert result["model_usage"][-1]["provider"] == "cortex"
+    assert result["model_usage"][-1]["metadata"]["call_count"] == 1
 
 
 def test_retrieval_and_rerank_provider_boundaries_are_local_only() -> None:
@@ -1267,6 +1366,7 @@ def test_production_provider_policy_blocks_hosted_env_names() -> None:
         "SUNSHINE_EMBEDDING_PROVIDER": "cortex",
         "SUNSHINE_LLM_TAG_PROVIDER": "gemini",
         "SUNSHINE_OCR_FALLBACK_PROVIDER": "cortex",
+        "SUNSHINE_RERANK_PROVIDER": "openai",
     }
 
     with pytest.raises(ValueError, match="SUNSHINE_LLM_TAG_PROVIDER=gemini"):

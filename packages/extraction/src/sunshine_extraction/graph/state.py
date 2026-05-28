@@ -12,6 +12,7 @@ from sunshine_extraction.providers.embeddings import ChunkEmbeddingProvider
 from sunshine_extraction.providers.extraction import ExtractionProvider
 from sunshine_extraction.providers.llm import LLMTagInspectionProvider
 from sunshine_extraction.providers.observability import ObservabilityProvider
+from sunshine_extraction.providers.reranking import RerankProvider
 from sunshine_extraction.providers.retrieval import SemanticRetrievalProvider
 from sunshine_extraction.providers.vectorstores import VectorStoreProvider
 from sunshine_extraction.services.content import SampleFile
@@ -87,6 +88,7 @@ class DocumentPipelineDeps(TypedDict, total=False):
     chunk_embedding_provider: ChunkEmbeddingProvider
     vector_store: VectorStoreProvider
     semantic_retrieval_provider: SemanticRetrievalProvider
+    rerank_provider: RerankProvider | None
     semantic_retrieval_filter: dict[str, Any] | None
     llm_tag_inspection_provider: LLMTagInspectionProvider
     embedding_provider: EmbeddingProvider

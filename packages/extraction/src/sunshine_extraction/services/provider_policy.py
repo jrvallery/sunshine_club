@@ -16,6 +16,7 @@ PROVIDER_ENV_KEYS = {
     "SUNSHINE_TEXT_PARSER_PROVIDER": "text parser provider",
     "SUNSHINE_DEFAULT_PARSER_PROVIDER": "default parser provider",
     "SUNSHINE_RETRIEVAL_PROVIDER": "retrieval provider",
+    "SUNSHINE_RERANK_PROVIDER": "rerank provider",
     "SUNSHINE_VECTOR_STORE": "vector store provider",
 }
 

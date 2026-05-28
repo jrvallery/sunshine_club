@@ -19,6 +19,7 @@ from sunshine_extraction.providers.embeddings import ChunkEmbeddingProvider, Cur
 from sunshine_extraction.providers.extraction import ExtractionProvider, extraction_provider_from_env
 from sunshine_extraction.providers.llm import CurrentLLMTagInspectionProvider, LLMTagInspectionProvider
 from sunshine_extraction.providers.observability import ObservabilityProvider, observability_provider_from_env
+from sunshine_extraction.providers.reranking import CortexRerankProvider, RerankProvider
 from sunshine_extraction.providers.retrieval import CurrentSemanticRetrievalProvider, QdrantSemanticRetrievalProvider, SemanticRetrievalProvider
 from sunshine_extraction.providers.vectorstores import NoopVectorStoreProvider, QdrantVectorStoreProvider, VectorStoreProvider
 from sunshine_extraction.services.cache import SQLiteModelCallCache, model_call_cache_from_env
@@ -39,6 +40,7 @@ def _resolve_deps(
     chunk_embedding_provider: ChunkEmbeddingProvider | None = None,
     vector_store: VectorStoreProvider | None = None,
     semantic_retrieval_provider: SemanticRetrievalProvider | None = None,
+    rerank_provider: RerankProvider | None = None,
     llm_tag_inspection_provider: LLMTagInspectionProvider | None = None,
     observability_provider: ObservabilityProvider | None = None,
     embedding_failure_mode: str | None = None,
@@ -63,6 +65,7 @@ def _resolve_deps(
         "chunk_embedding_provider": chunk_embedding_provider or CurrentChunkEmbeddingProvider(embedding_provider, cache=active_model_call_cache),
         "vector_store": vector_store or _vector_store_from_env(),
         "semantic_retrieval_provider": semantic_retrieval_provider or _semantic_retrieval_provider_from_env(embedding_provider),
+        "rerank_provider": rerank_provider if rerank_provider is not None else _rerank_provider_from_env(),
         "llm_tag_inspection_provider": llm_tag_inspection_provider or CurrentLLMTagInspectionProvider(active_llm_tag_inspector, cache=active_model_call_cache),
         "embedding_provider": embedding_provider,
         "embedding_failure_mode": _embedding_failure_mode(embedding_failure_mode),
@@ -102,6 +105,23 @@ def _semantic_retrieval_provider_from_env(embedding_provider: EmbeddingProvider)
     if provider_name == "qdrant":
         return QdrantSemanticRetrievalProvider(embedding_provider=embedding_provider)
     return CurrentSemanticRetrievalProvider(embedding_provider)
+
+
+def _rerank_provider_from_env() -> RerankProvider | None:
+    provider_name = os.environ.get("SUNSHINE_RERANK_PROVIDER", "").strip().lower()
+    if not provider_name or provider_name in {"disabled", "none", "off"}:
+        return None
+    if provider_name != "cortex":
+        raise ValueError("SUNSHINE_RERANK_PROVIDER must be cortex or disabled")
+    from sunshine_extraction.cortex import DEFAULT_CORTEX_RERANK_MODEL
+    from sunshine_extraction.config import DEFAULT_CORTEX_BASE_URL
+
+    return CortexRerankProvider(
+        api_key=os.environ.get("CORTEX_API_KEY") or os.environ.get("CORTEX_OPENAI_API_KEY", ""),
+        base_url=os.environ.get("CORTEX_BASE_URL", DEFAULT_CORTEX_BASE_URL),
+        model=os.environ.get("SUNSHINE_RERANK_MODEL", DEFAULT_CORTEX_RERANK_MODEL),
+        timeout_seconds=float(os.environ.get("SUNSHINE_RERANK_TIMEOUT_SECONDS", "120")),
+    )
 
 
 def _semantic_index_path_from_env() -> str | None:
