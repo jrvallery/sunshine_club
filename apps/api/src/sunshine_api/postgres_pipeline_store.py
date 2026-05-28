@@ -2164,7 +2164,7 @@ class PostgresPipelineStore:
                 insert into model_usage (
                     run_id, source_path, relative_path, node, purpose, provider, model, host, status,
                     call_count, input_tokens, output_tokens, total_tokens, runtime_ms, local_only, metadata
-                ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, true, %s::jsonb)
+                ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
                 """,
                 (
                     run_id,
@@ -2181,6 +2181,7 @@ class PostgresPipelineStore:
                     row.get("output_tokens"),
                     row.get("total_tokens"),
                     row.get("runtime_ms"),
+                    _model_usage_local_only(row),
                     json.dumps(metadata, sort_keys=True),
                 ),
             )
@@ -2833,6 +2834,16 @@ def _call_count(row: dict[str, Any]) -> int:
 def _model_usage_report_row(row: dict[str, Any]) -> dict[str, Any]:
     metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
     return {**row, "host": row.get("host") or metadata.get("host")}
+
+
+def _model_usage_local_only(row: dict[str, Any]) -> bool:
+    if isinstance(row.get("local_only"), bool):
+        return bool(row["local_only"])
+    cost_basis = str(row.get("cost_basis") or "").strip().lower()
+    if cost_basis == "external":
+        return False
+    provider = str(row.get("provider") or "").strip().lower()
+    return provider not in {"openai", "gemini", "google", "anthropic"}
 
 
 def _seconds_to_runtime_ms(value: Any) -> int | None:

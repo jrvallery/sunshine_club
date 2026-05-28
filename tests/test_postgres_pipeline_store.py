@@ -5,7 +5,7 @@ from pathlib import Path
 import sqlite3
 from typing import Any
 
-from sunshine_api.postgres_pipeline_store import PostgresPipelineStore
+from sunshine_api.postgres_pipeline_store import PostgresPipelineStore, _model_usage_local_only
 from sunshine_api.services.imports import import_langgraph_output_to_postgres
 from sunshine_api.services.vector_index import rebuild_qdrant_from_postgres
 from sunshine_extraction.providers.vectorstores.base import VectorStoreUpsertResult
@@ -44,6 +44,12 @@ class _FakeConnection:
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+
+def test_model_usage_local_only_flag_preserves_external_legacy_rows() -> None:
+    assert _model_usage_local_only({"provider": "cortex", "cost_basis": "local"}) is True
+    assert _model_usage_local_only({"provider": "openai", "cost_basis": "external"}) is False
+    assert _model_usage_local_only({"provider": "cortex", "local_only": False}) is False
 
 
 def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
@@ -87,6 +93,7 @@ def test_postgres_pipeline_store_imports_v2_artifacts(tmp_path: Path) -> None:
     assert any("[0.1,0.2,0.3]" in str(params) for _query, params in connection.executed)
     model_usage_params = next(params for query, params in connection.executed if "insert into model_usage" in query)
     assert model_usage_params[6:9] == ("local-embedding", "cortex.vallery.net", "ok")
+    assert model_usage_params[-2] is True
     assert json.loads(model_usage_params[-1])["host"] == "cortex.vallery.net"
     provider_attempt_params = next(params for query, params in connection.executed if "insert into provider_attempts" in query)
     assert provider_attempt_params[1:4] == ("/source/a.pdf", "Sunshine/a.pdf", "current")
@@ -1769,6 +1776,7 @@ def _postgres_import_artifacts(tmp_path: Path) -> Path:
                 "host": "cortex.vallery.net",
                 "status": "ok",
                 "runtime_ms": 12,
+                "cost_basis": "local",
                 "metadata": {"call_count": 1, "host": "cortex.vallery.net"},
             }
         ],
