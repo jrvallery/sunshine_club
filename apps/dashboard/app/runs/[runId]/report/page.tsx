@@ -179,6 +179,7 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
           <KeyValue label="Run" value={<RunContextBadge runId={run.id} runKey={run.run_key} preset={run.preset_key} />} />
           <KeyValue label="Preset" value={run.preset_key} />
           <KeyValue label="Role" value={run.run_role ?? "test"} />
+          <KeyValue label="Backend" value={runExecutionBackend(run)} />
           <KeyValue label="Started" value={run.started_at ?? "-"} />
           <KeyValue label="Completed" value={run.completed_at ?? "-"} />
           <KeyValue label="Output" value={run.output_dir ?? "-"} />
@@ -286,6 +287,7 @@ function PostgresRunReportView({
           <KeyValue label="Run" value={<RunContextBadge runId={runKey} runKey={runKey} preset={String(report.run.preset_key ?? "-")} />} />
           <KeyValue label="Preset" value={String(report.run.preset_key ?? "-")} />
           <KeyValue label="Source" value="Postgres V2" />
+          <KeyValue label="Backend" value={postgresExecutionBackend(report)} />
           <KeyValue label="Started" value={String(report.run.started_at ?? "-")} />
           <KeyValue label="Completed" value={String(report.run.finished_at ?? "-")} />
           <KeyValue label="Output" value={String(report.run.output_dir ?? "-")} />
@@ -949,6 +951,21 @@ function formatProcessed(report: RunReport) {
   const processed = report.progress.processed_count ?? report.run.processed_count ?? report.overview.processed_count ?? 0;
   const total = report.progress.total_count;
   return total == null ? String(processed) : `${processed} / ${total}`;
+}
+
+function runExecutionBackend(run: PipelineRun) {
+  const metadata = run.run_metadata ?? {};
+  const backend = run.execution_backend ?? metadata.execution_backend;
+  return typeof backend === "string" && backend ? backend : "subprocess";
+}
+
+function postgresExecutionBackend(report: PostgresRunReport) {
+  const runBackend = report.run.execution_backend;
+  const summaryBackend = report.summary.execution_backend;
+  const runtime = report.summary.graph_runtime;
+  const runtimeBackend = runtime && typeof runtime === "object" && !Array.isArray(runtime) ? (runtime as Record<string, unknown>).execution_backend : null;
+  const backend = runBackend ?? summaryBackend ?? runtimeBackend;
+  return typeof backend === "string" && backend ? backend : "-";
 }
 
 function formatCost(value: number) {

@@ -383,6 +383,8 @@ export type PostgresRunReport = {
     parser_provider?: Record<string, number>;
     run_event_status: Record<string, number>;
     model_provider: Record<string, number>;
+    execution_backend?: string | null;
+    graph_runtime?: Record<string, unknown>;
   };
   results: Array<Record<string, unknown>>;
   review_items: Array<Record<string, unknown>>;
