@@ -5,7 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from sunshine_extraction.providers.extraction import CurrentExtractionProvider, DoclingExtractionProvider, ExtractionProvider
+from sunshine_extraction.providers.extraction import (
+    CurrentExtractionProvider,
+    DoclingExtractionProvider,
+    ExtractionProvider,
+    MinerUExtractionProvider,
+    RAGFlowDeepDocExtractionProvider,
+    UnstructuredExtractionProvider,
+)
 from sunshine_extraction.services.content import SampleFile
 from sunshine_extraction.services.extraction import OcrArtifacts, ocr_executor_from_env, extraction_quality_gate
 
@@ -68,6 +75,12 @@ def _providers(provider_names: list[str] | None) -> list[ExtractionProvider]:
             providers.append(CurrentExtractionProvider())
         elif normalized == "docling":
             providers.append(DoclingExtractionProvider())
+        elif normalized == "mineru":
+            providers.append(MinerUExtractionProvider())
+        elif normalized in {"ragflow_deepdoc", "deepdoc"}:
+            providers.append(RAGFlowDeepDocExtractionProvider())
+        elif normalized == "unstructured":
+            providers.append(UnstructuredExtractionProvider())
         else:
             raise ValueError(f"Unsupported extraction benchmark provider: {name}")
     return providers

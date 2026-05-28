@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from sunshine_extraction.evals.provider_benchmark import benchmark_extraction_providers
+from sunshine_extraction.services.evaluation import benchmark_extraction_providers as benchmark_extraction_providers_service
 
 
 def test_provider_benchmark_runs_current_provider_and_writes_artifacts(tmp_path: Path) -> None:
@@ -24,3 +25,23 @@ def test_provider_benchmark_runs_current_provider_and_writes_artifacts(tmp_path:
     summary = json.loads((output_dir / "provider-benchmark-summary.json").read_text(encoding="utf-8"))
     assert rows[0]["provider"] == "current"
     assert summary["result_count"] == 1
+
+
+def test_provider_benchmark_supports_optional_local_parser_boundaries(tmp_path: Path) -> None:
+    source = tmp_path / "scan.pdf"
+    source.write_bytes(b"fake pdf")
+
+    result = benchmark_extraction_providers_service(
+        [source],
+        provider_names=["mineru", "ragflow_deepdoc", "unstructured"],
+    )
+
+    assert result["summary"]["result_count"] == 3
+    assert result["summary"]["local_only"] is True
+    assert result["summary"]["by_provider"] == {
+        "mineru": 1,
+        "ragflow_deepdoc": 1,
+        "unstructured": 1,
+    }
+    assert result["summary"]["provider_availability"]["mineru"]["local_only"] is True
+    assert {row["status"] for row in result["results"]} == {"skipped"}

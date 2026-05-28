@@ -1541,7 +1541,7 @@ Important missing V2 dependencies:
 - Qdrant client/server is recommended but not installed/provisioned yet.
 - Postgres client exists, but the local Postgres database/service/migrations need to be made first-class.
 - Local embedding/vector indexing stack is not fully wired yet.
-- Provider benchmark tooling is not implemented yet.
+- Provider benchmark tooling exists for extraction providers; dashboard benchmark review and real Docling/MinerU/RAGFlow dependency benchmarking still need to be finished.
 
 ## Local-Only Infrastructure Decision
 
