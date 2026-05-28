@@ -62,6 +62,43 @@ def test_local_infrastructure_status_is_local_only(monkeypatch) -> None:
     assert payload["cortex"]["configured"] is True
 
 
+def test_run_request_rejects_hosted_openai_provider(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SUNSHINE_REVIEW_DB_PATH", str(tmp_path / "review.sqlite"))
+
+    response = TestClient(app).post(
+        "/admin/runs",
+        json={
+            "preset_key": "qa_samples_fast",
+            "input_root": str(tmp_path / "input"),
+            "output_dir": str(tmp_path / "output"),
+            "embedding_provider": "openai",
+            "start": False,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_provider_benchmark_api_runs_current_provider(tmp_path: Path) -> None:
+    source = tmp_path / "minutes.txt"
+    source.write_text("Meeting minutes and Sunshine Club notes.", encoding="utf-8")
+    output_dir = tmp_path / "provider-benchmark"
+    client = TestClient(app)
+
+    run = client.post(
+        "/admin/provider-benchmarks/run",
+        json={"paths": [str(source)], "providers": ["current"], "output_dir": str(output_dir)},
+    )
+    latest = client.get("/admin/provider-benchmarks/latest", params={"output_dir": str(output_dir)})
+
+    assert run.status_code == 200
+    assert run.json()["summary"]["by_provider"]["current"] == 1
+    assert run.json()["summary"]["local_only"] is True
+    assert latest.status_code == 200
+    assert latest.json()["summary"]["result_count"] == 1
+    assert latest.json()["results"][0]["provider"] == "current"
+
+
 def test_model_usage_report_infers_calls_from_legacy_artifacts(tmp_path: Path) -> None:
     output_dir = tmp_path / "legacy-run"
     output_dir.mkdir()
@@ -546,10 +583,10 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
         json={
             "output_dir": str(tmp_path / "single-file-run"),
             "start": False,
-            "embedding_provider": "openai",
+            "embedding_provider": "cortex",
             "enable_llm_tags": True,
             "llm_tag_provider": "cortex",
-            "ocr_fallback_provider": "openai",
+            "ocr_fallback_provider": "cortex",
         },
     )
     presets = client.get("/admin/runs/presets")
@@ -560,10 +597,10 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
             "run_role": "evaluation",
             "input_root": str(tmp_path / "input"),
             "output_dir": str(tmp_path / "run-output"),
-            "embedding_provider": "openai",
+            "embedding_provider": "cortex",
             "enable_llm_tags": True,
             "llm_tag_provider": "cortex",
-            "ocr_fallback_provider": "openai",
+            "ocr_fallback_provider": "cortex",
             "start": False,
         },
     )
@@ -630,7 +667,7 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     )
     current_run = client.post(
         "/admin/runs",
-        json={"preset_key": "qa_samples_fast", "input_root": str(tmp_path / "input"), "output_dir": str(current_output), "embedding_provider": "openai", "start": False},
+        json={"preset_key": "qa_samples_fast", "input_root": str(tmp_path / "input"), "output_dir": str(current_output), "embedding_provider": "cortex", "start": False},
     )
     imported_run_results = client.post(f"/admin/runs/{current_run.json()['id']}/import-results", json={})
     run_comparison = client.get(f"/admin/runs/{current_run.json()['id']}/compare-previous")
@@ -773,9 +810,9 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert file_review.json()["review_reason"] == "manual_file_review"
     assert file_run.status_code == 200
     assert file_run.json()["preset_key"] == "single_file_debug"
-    assert file_run.json()["embedding_provider"] == "openai"
+    assert file_run.json()["embedding_provider"] == "cortex"
     assert file_run.json()["llm_tag_provider"] == "cortex"
-    assert file_run.json()["ocr_fallback_provider"] == "openai"
+    assert file_run.json()["ocr_fallback_provider"] == "cortex"
     assert "--input-file" in file_run.json()["command"]
     assert "--embedding-provider" in file_run.json()["command"]
     assert presets.status_code == 200
@@ -783,9 +820,9 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert any(preset["preset_key"] == "single_file_debug" for preset in presets.json())
     assert run.status_code == 200
     assert run.json()["status"] == "queued"
-    assert run.json()["embedding_provider"] == "openai"
+    assert run.json()["embedding_provider"] == "cortex"
     assert run.json()["llm_tag_provider"] == "cortex"
-    assert run.json()["ocr_fallback_provider"] == "openai"
+    assert run.json()["ocr_fallback_provider"] == "cortex"
     assert "--embedding-provider" in run.json()["command"]
     assert failed_empty_run.status_code == 200
     assert failed_empty_run.json()["status"] == "failed"
@@ -796,8 +833,8 @@ def test_api_review_import_list_and_decision(tmp_path: Path, monkeypatch) -> Non
     assert cancelled_run.json()["status"] == "cancelled"
     assert previous_run.status_code == 200
     assert current_run.status_code == 200
-    assert current_run.json()["embedding_provider"] == "openai"
-    assert current_run.json()["run_metadata"]["embedding_provider"] == "openai"
+    assert current_run.json()["embedding_provider"] == "cortex"
+    assert current_run.json()["run_metadata"]["embedding_provider"] == "cortex"
     assert current_run.json()["run_metadata"]["taxonomy_version"].endswith(".json")
     assert imported_run_results.status_code == 200
     assert imported_run_results.json()["imported_model_usage"] == 2

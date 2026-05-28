@@ -1367,7 +1367,7 @@ class ReviewStore:
             {
                 "preset_key": "ocr_fallback_focus",
                 "label": "OCR fallback focus",
-                "description": "OCR-heavy QA sample with Cortex primary OCR and OpenAI escalation.",
+                "description": "OCR-heavy QA sample with local Cortex OCR fallback.",
                 "input_root": f"{base_manifest}/qa samples",
                 "output_dir": f"{base_manifest}/dashboard-runs/ocr_fallback_focus",
                 "enable_llm_tags": False,

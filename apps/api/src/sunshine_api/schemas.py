@@ -58,10 +58,10 @@ class FileReviewRequest(BaseModel):
 
 class FileRunRequest(BaseModel):
     output_dir: str | None = None
-    embedding_provider: Literal["cortex", "openai"] | None = None
+    embedding_provider: Literal["cortex", "placeholder"] | None = None
     enable_llm_tags: bool = False
-    llm_tag_provider: Literal["cortex", "openai"] | None = None
-    ocr_fallback_provider: Literal["cortex", "openai"] | None = None
+    llm_tag_provider: Literal["cortex"] | None = None
+    ocr_fallback_provider: Literal["cortex", "disabled"] | None = None
     semantic_index_path: str | None = None
     import_on_success: bool = False
     start: bool = True
@@ -98,10 +98,10 @@ class RunStartRequest(BaseModel):
     run_role: Literal["baseline", "test", "evaluation"] | None = None
     input_root: str | None = None
     output_dir: str | None = None
-    embedding_provider: Literal["cortex", "openai"] | None = None
+    embedding_provider: Literal["cortex", "placeholder"] | None = None
     enable_llm_tags: bool | None = None
-    llm_tag_provider: Literal["cortex", "openai"] | None = None
-    ocr_fallback_provider: Literal["cortex", "openai"] | None = None
+    llm_tag_provider: Literal["cortex"] | None = None
+    ocr_fallback_provider: Literal["cortex", "disabled"] | None = None
     semantic_index_path: str | None = None
     import_on_success: bool = False
     start: bool = True
@@ -123,8 +123,8 @@ class PipelineEvalRequest(BaseModel):
     output_dir: str | None = None
     limit: int | None = Field(default=None, ge=1)
     semantic_index_path: str | None = None
-    embedding_provider: Literal["placeholder", "cortex", "openai"] | None = None
-    ocr_fallback_provider: Literal["disabled", "cortex", "openai"] | None = None
+    embedding_provider: Literal["placeholder", "cortex"] | None = None
+    ocr_fallback_provider: Literal["disabled", "cortex"] | None = None
     disable_semantic_index: bool = False
     enable_llm_tags: bool = False
     enable_ocr: bool = False
@@ -132,3 +132,9 @@ class PipelineEvalRequest(BaseModel):
 
 class PipelineEvalImportRequest(BaseModel):
     output_dir: str
+
+
+class ProviderBenchmarkRequest(BaseModel):
+    paths: list[str] = Field(min_length=1)
+    providers: list[Literal["current", "docling"]] = Field(default_factory=lambda: ["current", "docling"])
+    output_dir: str | None = None

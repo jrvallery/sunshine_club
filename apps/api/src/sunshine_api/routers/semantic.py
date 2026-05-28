@@ -26,6 +26,7 @@ from sunshine_api.schemas import (
     RunStartRequest,
     PipelineEvalImportRequest,
     PipelineEvalRequest,
+    ProviderBenchmarkRequest,
     SemanticEvalRequest,
     SemanticIndexBuildRequest,
 )
@@ -35,6 +36,7 @@ router = APIRouter()
 
 from sunshine_api.services.semantic import _semantic_index_status
 from sunshine_extraction.evaluate_pipeline import DEFAULT_EVAL_OUTPUT_DIR, run_golden_pipeline_evaluation
+from sunshine_extraction.evals.provider_benchmark import benchmark_extraction_providers
 from sunshine_extraction.sample_pipeline import load_pipeline_env
 from sunshine_extraction.sample_pipeline import LLMTagInspector, llm_tag_inspector_from_env, ocr_executor_from_env
 from sunshine_extraction.semantic_eval import evaluate_review_db
@@ -140,6 +142,36 @@ def pipeline_eval_run_compare(eval_run_id: int, baseline_eval_run_id: int) -> di
     current_results = _eval_rows_by_source(Path(str(current.get("output_dir") or "")) / "eval-results.jsonl")
     baseline_results = _eval_rows_by_source(Path(str(baseline.get("output_dir") or "")) / "eval-results.jsonl")
     return _pipeline_eval_comparison(baseline, current, baseline_results, current_results)
+
+
+@router.post("/admin/provider-benchmarks/run")
+def provider_benchmark_run(request: ProviderBenchmarkRequest) -> dict[str, Any]:
+    result = benchmark_extraction_providers(
+        request.paths,
+        provider_names=list(request.providers),
+        output_dir=request.output_dir,
+    )
+    return {"ok": True, **result}
+
+
+@router.get("/admin/provider-benchmarks/latest")
+def provider_benchmark_latest(output_dir: str) -> dict[str, Any]:
+    output_path = Path(output_dir)
+    summary_path = output_path / "provider-benchmark-summary.json"
+    results_path = output_path / "provider-benchmark-results.jsonl"
+    if not summary_path.exists():
+        return {"ok": False, "exists": False, "output_dir": str(output_path)}
+    try:
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise HTTPException(status_code=500, detail=f"Invalid provider benchmark summary: {error}") from error
+    return {
+        "ok": True,
+        "exists": True,
+        "output_dir": str(output_path),
+        "summary": summary,
+        "results": _read_eval_jsonl(results_path, limit=500),
+    }
 
 
 def _pipeline_eval_comparison(
