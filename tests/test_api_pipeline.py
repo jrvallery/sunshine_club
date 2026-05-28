@@ -171,6 +171,33 @@ def test_postgres_run_report_endpoint_wraps_service(monkeypatch) -> None:
     assert captured == {"run_key": "run-1", "limit": 7}
 
 
+def test_postgres_run_artifacts_endpoint_wraps_service(monkeypatch) -> None:
+    captured = {}
+
+    def fake_list_artifacts(*, run_key: str, limit: int = 500) -> list[dict]:
+        captured["run_key"] = run_key
+        captured["limit"] = limit
+        return [
+            {
+                "name": "sample-raw-provider-artifacts.jsonl",
+                "kind": "jsonl",
+                "exists": True,
+                "row_count": 1,
+            }
+        ]
+
+    monkeypatch.setattr("sunshine_api.routers.health.list_postgres_run_artifacts", fake_list_artifacts)
+
+    response = TestClient(app).get("/admin/system/postgres-runtime/runs/run-1/artifacts?limit=9")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run_key"] == "run-1"
+    assert payload["count"] == 1
+    assert payload["artifacts"][0]["name"] == "sample-raw-provider-artifacts.jsonl"
+    assert captured == {"run_key": "run-1", "limit": 9}
+
+
 def test_semantic_search_endpoint_wraps_local_qdrant_service(monkeypatch) -> None:
     captured = {}
 

@@ -1317,6 +1317,53 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     assert connection.closed is True
 
 
+def test_postgres_pipeline_store_lists_run_artifacts() -> None:
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.closed = False
+            self.executed: list[tuple[str, tuple[Any, ...]]] = []
+
+        def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Cursor:
+            self.executed.append((query, params))
+            normalized = " ".join(query.lower().split())
+            if "from pipeline_runs r" in normalized:
+                return _Cursor(rows=[{"id": "run-id", "run_key": "run-report"}])
+            if "from pipeline_artifacts pa" in normalized:
+                return _Cursor(
+                    rows=[
+                        {
+                            "id": "artifact-id",
+                            "run_id": "run-id",
+                            "run_key": "run-report",
+                            "name": "sample-pipeline-results.jsonl",
+                            "path": "/tmp/run/sample-pipeline-results.jsonl",
+                            "kind": "jsonl",
+                            "exists": True,
+                            "size_bytes": 123,
+                            "row_count": 1,
+                            "sha256": "b" * 64,
+                            "note": None,
+                            "result": {"name": "sample-pipeline-results.jsonl"},
+                            "created_at": None,
+                        }
+                    ]
+                )
+            return _Cursor(rows=[])
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+    store = PostgresPipelineStore("postgresql://local/test", connect_factory=lambda _url: connection)
+
+    artifacts = store.list_run_artifacts(run_key="run-report", limit=10)
+
+    assert artifacts[0]["name"] == "sample-pipeline-results.jsonl"
+    assert artifacts[0]["exists"] is True
+    assert any(params == ("run-report", 10) for _query, params in connection.executed)
+    assert connection.closed is True
+
+
 def test_postgres_pipeline_store_records_review_decision() -> None:
     class FakeConnection:
         def __init__(self) -> None:

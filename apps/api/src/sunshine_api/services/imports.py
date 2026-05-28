@@ -221,6 +221,17 @@ def get_postgres_run_report(
     return store.get_run_report(run_key=run_key, limit=limit)
 
 
+def list_postgres_run_artifacts(
+    *,
+    run_key: str,
+    limit: int = 500,
+    database_url: str | None = None,
+    connect_factory: ConnectFactory | None = None,
+) -> list[dict[str, Any]]:
+    store = PostgresPipelineStore(database_url, connect_factory=connect_factory)
+    return store.list_run_artifacts(run_key=run_key, limit=limit)
+
+
 def list_postgres_run_events(
     *,
     run_key: str,
