@@ -998,6 +998,7 @@ Current implementation:
 - `CurrentSemanticRetrievalProvider` wraps the existing local SQLite semantic index and uses the configured embedding provider for query embedding.
 - `providers/retrieval/golden_examples.py` exposes the current SQLite golden-label retrieval provider under the V2 target name.
 - `providers/retrieval/qdrant.py` defines local Qdrant query-time retrieval over the same collection used for vector indexing.
+- `apps/api/services/semantic_search.py` exposes local-only, citation-first semantic search over the Qdrant retrieval provider, and `POST /admin/search/semantic` returns matches with source path, relative path, chunk ID, segment ID, page range, snippet, score, explanation, and provider attempt metadata.
 - Retrieval providers accept an optional metadata filter. Qdrant converts that filter into local payload filtering so future runs can scope examples by tag, run, source collection, segment type, review status, or other indexed payload fields without changing the graph node contract.
 - Runtime dependency resolution accepts retrieval filters through `SUNSHINE_RETRIEVAL_FILTER_JSON`, `run_document_graph(..., semantic_retrieval_filter=...)`, batch runs, and the CLI `--semantic-retrieval-filter-json` flag. This makes scoped retrieval available to experiments, dashboard-triggered batches, and future per-run policies without hard-coding provider behavior.
 - Qdrant retrieval normalizes each match into a citation-first row with source path, relative path, chunk ID, segment ID, page range, text snippet, score, and a human-readable retrieval explanation. This keeps tagging evidence traceable back to the parent document and proposed child segment.
@@ -1777,9 +1778,9 @@ Provider health/settings:
 
 Search/RAG UI:
 
-- verified-content search.
-- citation-first results.
-- filter by review status/tag/class/date/provider.
+- verified-content search via the dashboard `Search` page.
+- citation-first results with file path, chunk, page range, snippet, score, and retrieval explanation.
+- filter by run key, primary tag, content class, and arbitrary Qdrant metadata filters.
 - eventually grounded Q&A over accepted/reviewed content.
 
 Run report additions:

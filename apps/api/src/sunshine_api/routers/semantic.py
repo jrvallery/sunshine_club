@@ -39,12 +39,14 @@ from sunshine_api.schemas import (
     QdrantRebuildRequest,
     SemanticEvalRequest,
     SemanticIndexBuildRequest,
+    SemanticSearchRequest,
 )
 
 router = APIRouter()
 
 
 from sunshine_api.services.semantic import _semantic_index_status
+from sunshine_api.services.semantic_search import search_semantic_content
 from sunshine_api.services.vector_index import rebuild_qdrant_from_postgres
 from sunshine_extraction.evaluate_pipeline import DEFAULT_EVAL_OUTPUT_DIR, run_golden_pipeline_evaluation
 from sunshine_extraction.evals.provider_benchmark import benchmark_extraction_providers
@@ -73,6 +75,24 @@ def semantic_index_build(request: SemanticIndexBuildRequest) -> dict[str, Any]:
 def qdrant_rebuild(request: QdrantRebuildRequest) -> dict[str, Any]:
     try:
         return rebuild_qdrant_from_postgres(run_key=request.run_key, collection=request.collection, limit=request.limit)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.post("/admin/search/semantic")
+def semantic_search(request: SemanticSearchRequest) -> dict[str, Any]:
+    metadata_filter = dict(request.metadata_filter or {})
+    for key in ("run_key", "primary_tag", "content_class", "review_status"):
+        value = getattr(request, key)
+        if value:
+            metadata_filter[key] = value
+    try:
+        return search_semantic_content(
+            query=request.query,
+            limit=request.limit,
+            collection=request.collection,
+            metadata_filter=metadata_filter,
+        )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 

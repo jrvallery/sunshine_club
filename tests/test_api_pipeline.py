@@ -171,6 +171,64 @@ def test_postgres_run_report_endpoint_wraps_service(monkeypatch) -> None:
     assert captured == {"run_key": "run-1", "limit": 7}
 
 
+def test_semantic_search_endpoint_wraps_local_qdrant_service(monkeypatch) -> None:
+    captured = {}
+
+    def fake_search(*, query: str, limit: int = 10, collection: str | None = None, metadata_filter: dict | None = None) -> dict:
+        captured["query"] = query
+        captured["limit"] = limit
+        captured["collection"] = collection
+        captured["metadata_filter"] = metadata_filter
+        return {
+            "ok": True,
+            "query": query,
+            "local_only": True,
+            "provider": "qdrant",
+            "collection": collection,
+            "status": "retrieved",
+            "warnings": [],
+            "metadata_filter": metadata_filter or {},
+            "attempt": {"provider": "qdrant", "status": "retrieved"},
+            "matches": [
+                {
+                    "score": 0.91,
+                    "relative_path": "History/founders.pdf",
+                    "chunk_id": "chunk-1",
+                    "text_snippet": "Founders of Sunshine Club",
+                    "citation": {"page_start": 1, "page_end": 2},
+                }
+            ],
+        }
+
+    monkeypatch.setattr("sunshine_api.routers.semantic.search_semantic_content", fake_search)
+
+    response = TestClient(app).post(
+        "/admin/search/semantic",
+        json={
+            "query": "founders dental care",
+            "collection": "sunshine-test",
+            "limit": 3,
+            "run_key": "run-1",
+            "primary_tag": "history_archive_general",
+            "metadata_filter": {"chunk_kind": "segment_text"},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["matches"][0]["relative_path"] == "History/founders.pdf"
+    assert captured == {
+        "query": "founders dental care",
+        "limit": 3,
+        "collection": "sunshine-test",
+        "metadata_filter": {
+            "chunk_kind": "segment_text",
+            "run_key": "run-1",
+            "primary_tag": "history_archive_general",
+        },
+    }
+
+
 def test_postgres_segment_review_decision_endpoint_wraps_service(monkeypatch) -> None:
     captured = {}
 

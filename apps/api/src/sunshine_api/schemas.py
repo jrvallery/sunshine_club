@@ -133,6 +133,17 @@ class QdrantRebuildRequest(BaseModel):
     limit: int | None = Field(default=None, ge=1)
 
 
+class SemanticSearchRequest(BaseModel):
+    query: str = Field(min_length=1)
+    collection: str | None = None
+    limit: int = Field(default=10, ge=1, le=50)
+    metadata_filter: dict[str, Any] | None = None
+    run_key: str | None = None
+    primary_tag: str | None = None
+    content_class: str | None = None
+    review_status: str | None = None
+
+
 class SemanticEvalRequest(BaseModel):
     labels_db: str | None = None
     labels_source: Literal["sqlite", "postgres"] = "sqlite"

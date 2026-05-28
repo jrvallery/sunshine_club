@@ -536,6 +536,34 @@ export type SemanticIndexStatus = {
   error?: string;
 };
 
+export type SemanticSearchResponse = {
+  ok: boolean;
+  query: string;
+  local_only: boolean;
+  provider: string;
+  collection?: string | null;
+  status: string;
+  warnings: string[];
+  metadata_filter: Record<string, unknown>;
+  attempt: Record<string, unknown>;
+  matches: Array<{
+    score?: number | null;
+    source_path?: string | null;
+    relative_path?: string | null;
+    sample_path?: string | null;
+    chunk_id?: string | null;
+    chunk_index?: number | null;
+    chunk_kind?: string | null;
+    segment_id?: string | null;
+    page_start?: number | null;
+    page_end?: number | null;
+    text_snippet?: string | null;
+    retrieval_explanation?: string | null;
+    citation?: Record<string, unknown>;
+    raw?: Record<string, unknown>;
+  }>;
+};
+
 export type SemanticEvalReport = {
   labels_db: string;
   total_golden_labels: number;
