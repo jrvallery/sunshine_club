@@ -14,6 +14,7 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
+from sunshine_api.dependencies import review_store
 from sunshine_api.review_store import ReviewStore
 
 
@@ -25,9 +26,10 @@ _RUN_PROGRESS_PATTERN = re.compile(r"\[(?P<current>\d+)/(?P<total>\d+)\]")
 
 
 def _execute_run(run_id: int, command: list[str], output_dir: str, import_on_success: bool) -> None:
-    store = review_store()
-    store.mark_pipeline_run_started(run_id)
+    store: ReviewStore | None = None
     try:
+        store = review_store()
+        store.mark_pipeline_run_started(run_id)
         process = subprocess.Popen(
             command,
             cwd=Path.cwd(),
@@ -50,7 +52,8 @@ def _execute_run(run_id: int, command: list[str], output_dir: str, import_on_suc
         else:
             store.mark_pipeline_run_finished(run_id, status="failed", summary=summary, error=f"Command exited {process.returncode}")
     except Exception as error:  # noqa: BLE001 - background run errors must be captured for the UI.
-        store.mark_pipeline_run_finished(run_id, status="failed", error=f"{type(error).__name__}: {error}")
+        if store is not None:
+            store.mark_pipeline_run_finished(run_id, status="failed", error=f"{type(error).__name__}: {error}")
     finally:
         with _RUN_PROCESS_LOCK:
             _RUN_PROCESSES.pop(run_id, None)
@@ -121,4 +124,3 @@ def _progress_payload_from_message(message: str) -> dict[str, Any]:
     current = int(match.group("current"))
     total = int(match.group("total"))
     return {"current": current, "total": total, "progress_ratio": current / total if total else None}
-
