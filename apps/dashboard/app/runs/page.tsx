@@ -11,12 +11,84 @@ import { StatusBadge } from "../../components/ui/StatusBadge";
 import { deleteJson, fetchJson, postJson } from "../../lib/api";
 import type { PipelineRun, PipelineRunComparison, PipelineRunEvent, PipelineRunProgress, PipelineRunResults, RunPreset } from "../../lib/types";
 
+const FALLBACK_RUN_PRESETS: RunPreset[] = [
+  {
+    preset_key: "qa_samples_full",
+    label: "QA samples full",
+    description: "Full QA sample with LLM tags, OpenAI OCR fallback, and semantic examples.",
+    input_root: "/mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/qa samples",
+    output_dir: "/mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/dashboard-runs/qa_samples_full",
+    enable_llm_tags: true,
+    embedding_provider: "cortex",
+    llm_tag_provider: "auto",
+    ocr_fallback_provider: "openai"
+  },
+  {
+    preset_key: "qa_samples_fast",
+    label: "QA samples fast",
+    description: "Fast QA regression pass without LLM tag inspection.",
+    input_root: "/mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/qa samples",
+    output_dir: "/mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/dashboard-runs/qa_samples_fast",
+    enable_llm_tags: false,
+    embedding_provider: "cortex",
+    llm_tag_provider: "disabled",
+    ocr_fallback_provider: "disabled"
+  },
+  {
+    preset_key: "ocr_fallback_focus",
+    label: "OCR fallback focus",
+    description: "OCR-heavy QA sample with OpenAI OCR fallback for poor local OCR.",
+    input_root: "/mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/qa samples",
+    output_dir: "/mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/dashboard-runs/ocr_fallback_focus",
+    enable_llm_tags: false,
+    embedding_provider: "cortex",
+    llm_tag_provider: "disabled",
+    ocr_fallback_provider: "openai"
+  },
+  {
+    preset_key: "review_required_rerun",
+    label: "Review required rerun",
+    description: "Rerun currently open review files after pipeline changes.",
+    input_root: "/mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/review required files",
+    output_dir: "/mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/dashboard-runs/review_required_rerun",
+    enable_llm_tags: true,
+    embedding_provider: "cortex",
+    llm_tag_provider: "auto",
+    ocr_fallback_provider: "openai"
+  },
+  {
+    preset_key: "random_route_candidate_audit",
+    label: "Route candidate audit",
+    description: "Audit a random sample of auto-routed files after a run import.",
+    input_root: "/mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/qa samples",
+    output_dir: "/mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/dashboard-runs/random_route_candidate_audit",
+    enable_llm_tags: true,
+    embedding_provider: "cortex",
+    llm_tag_provider: "auto",
+    ocr_fallback_provider: "openai"
+  },
+  {
+    preset_key: "single_file_debug",
+    label: "Single file debug",
+    description: "Debug one file by overriding input root/output parameters or using the file browser Run File action.",
+    input_root: "/mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/qa samples",
+    output_dir: "/mnt/sunshine/_manifest/sunshine-club-inventory-2026-05-25/dashboard-runs/single_file_debug",
+    enable_llm_tags: false,
+    embedding_provider: "cortex",
+    llm_tag_provider: "disabled",
+    ocr_fallback_provider: "disabled"
+  }
+];
+
 export default function RunsPage() {
   const queryClient = useQueryClient();
-  const [source, setSource] = useState<"sqlite" | "postgres">("sqlite");
+  const source = "postgres";
   const [selectedRun, setSelectedRun] = useState<PipelineRun | null>(null);
   const [selectedPreset, setSelectedPreset] = useState<RunPreset | null>(null);
+  const [quickStartPresetKey, setQuickStartPresetKey] = useState("");
   const presets = useQuery({ queryKey: ["run-presets"], queryFn: () => fetchJson<RunPreset[]>("/api/admin/runs/presets") });
+  const availablePresets = presets.data?.length ? presets.data : FALLBACK_RUN_PRESETS;
+  const quickStartPreset = availablePresets.find((preset) => preset.preset_key === quickStartPresetKey) ?? availablePresets[0] ?? null;
   const runs = useQuery({
     queryKey: ["runs", source],
     queryFn: () => fetchJson<PipelineRun[]>(`/api/admin/runs?limit=100&source=${source}`),
@@ -24,55 +96,54 @@ export default function RunsPage() {
   });
   const selectedRunDetail = useQuery({
     queryKey: ["run-detail", selectedRun?.id, source],
-    enabled: Boolean(selectedRun) && source === "sqlite",
+    enabled: Boolean(selectedRun) && selectedRun?.source !== "postgres",
     queryFn: () => fetchJson<PipelineRun>(`/api/admin/runs/${selectedRun?.id}`),
     refetchInterval: (query) => (query.state.data?.status === "running" || query.state.data?.status === "queued" ? 1500 : false)
   });
   const activeRun = selectedRunDetail.data ?? selectedRun;
   const progress = useQuery({
     queryKey: ["run-progress", selectedRun?.id, source],
-    enabled: Boolean(selectedRun) && source === "sqlite",
+    enabled: Boolean(selectedRun) && selectedRun?.source !== "postgres",
     queryFn: () => fetchJson<PipelineRunProgress>(`/api/admin/runs/${selectedRun?.id}/progress`),
     refetchInterval: activeRun?.status === "running" || activeRun?.status === "queued" ? 1500 : false
   });
   const events = useQuery({
     queryKey: ["run-events", selectedRun?.id, source],
-    enabled: Boolean(selectedRun) && source === "sqlite",
+    enabled: Boolean(selectedRun) && selectedRun?.source !== "postgres",
     queryFn: () => fetchJson<PipelineRunEvent[]>(`/api/admin/runs/${selectedRun?.id}/events`),
     refetchInterval: activeRun?.status === "running" || activeRun?.status === "queued" ? 1500 : false
   });
   const results = useQuery({
     queryKey: ["run-results", selectedRun?.id, source],
-    enabled: Boolean(selectedRun) && source === "sqlite",
+    enabled: Boolean(selectedRun) && selectedRun?.source !== "postgres",
     queryFn: () => fetchJson<PipelineRunResults>(`/api/admin/runs/${selectedRun?.id}/results`)
   });
   const comparison = useQuery({
     queryKey: ["run-comparison", selectedRun?.id, source],
-    enabled: Boolean(selectedRun) && source === "sqlite",
+    enabled: Boolean(selectedRun) && selectedRun?.source !== "postgres",
     queryFn: () => fetchJson<PipelineRunComparison>(`/api/admin/runs/${selectedRun?.id}/compare-previous`)
   });
   const startRun = useMutation({
     mutationFn: (payload: Record<string, unknown>) =>
       postJson<PipelineRun>("/api/admin/runs", {
         start: true,
-        import_on_success: false,
+        import_on_success: true,
         ...payload
       }),
     onSuccess: async (run) => {
       setSelectedPreset(null);
       setSelectedRun(run);
-      setSource("sqlite");
       await queryClient.invalidateQueries({ queryKey: ["runs"] });
     }
   });
   const importResults = useMutation({
-    mutationFn: (runId: number) => postJson<Record<string, unknown>>(`/api/admin/runs/${runId}/import-results`, {}),
+    mutationFn: (run: PipelineRun) => postJson<Record<string, unknown>>(`${runActionBase(run)}/import-results`, {}),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["runs"] });
     }
   });
   const cancelRun = useMutation({
-    mutationFn: (runId: number) => postJson<PipelineRun>(`/api/admin/runs/${runId}/cancel`, {}),
+    mutationFn: (run: PipelineRun) => postJson<PipelineRun>(`${runActionBase(run)}/cancel`, {}),
     onSuccess: async (run) => {
       setSelectedRun(run);
       await queryClient.invalidateQueries({ queryKey: ["runs"] });
@@ -86,13 +157,13 @@ export default function RunsPage() {
     }
   });
   const deleteRun = useMutation({
-    mutationFn: (runId: number) => deleteJson<Record<string, unknown>>(`/api/admin/runs/${runId}`),
-    onSuccess: async (_payload, runId) => {
-      if (selectedRun?.id === runId) {
+    mutationFn: (run: PipelineRun) => deleteJson<Record<string, unknown>>(runActionBase(run)),
+    onSuccess: async (_payload, run) => {
+      if (selectedRun?.run_key === run.run_key) {
         setSelectedRun(null);
       }
       await queryClient.invalidateQueries({ queryKey: ["runs"] });
-      await queryClient.invalidateQueries({ queryKey: ["run-detail", runId] });
+      await queryClient.invalidateQueries({ queryKey: ["run-detail", run.id] });
     }
   });
 
@@ -105,7 +176,7 @@ export default function RunsPage() {
         </div>
       </header>
       <section className="presetGrid">
-        {(presets.data ?? []).map((preset) => (
+        {availablePresets.map((preset) => (
           <article className="presetCard" key={preset.preset_key}>
             <h2>{preset.label}</h2>
             <p>{preset.description}</p>
@@ -120,21 +191,24 @@ export default function RunsPage() {
         <div className="sectionHeader">
           <div>
             <h2>Run History</h2>
-            <p className="muted">{source === "postgres" ? "V2 Postgres runtime runs" : "Legacy SQLite dashboard runs"}</p>
+            <p className="muted">V2 Postgres runtime runs</p>
           </div>
           <div className="buttonRow">
             <SelectInput
-              label="Run source"
-              value={source}
-              onChange={(event) => {
-                const nextSource = event.target.value === "postgres" ? "postgres" : "sqlite";
-                setSource(nextSource);
-                setSelectedRun(null);
-              }}
+              label="New run"
+              value={quickStartPreset?.preset_key ?? ""}
+              onChange={(event) => setQuickStartPresetKey(event.target.value)}
             >
-              <option value="sqlite">SQLite dashboard</option>
-              <option value="postgres">Postgres V2</option>
+              {availablePresets.map((preset) => (
+                <option value={preset.preset_key} key={preset.preset_key}>
+                  {preset.label}
+                </option>
+              ))}
             </SelectInput>
+            <Button variant="primary" disabled={!quickStartPreset || startRun.isPending} onClick={() => quickStartPreset && setSelectedPreset(quickStartPreset)}>
+              Configure Run
+            </Button>
+            <span className="pill">Postgres</span>
             <span>{runs.data?.length ?? 0} shown</span>
           </div>
         </div>
@@ -180,25 +254,22 @@ export default function RunsPage() {
                   <td className="pathText">{run.output_dir}</td>
                   <td>
                     <div className="buttonRow">
-                      <button className="secondaryButton" disabled={source === "postgres" || run.status === "running"} onClick={() => importResults.mutate(Number(run.id))}>
+                      <button className="secondaryButton" disabled={run.status === "running" || run.status === "queued"} onClick={() => importResults.mutate(run)}>
                         Import
                       </button>
                       <button
                         className="secondaryButton"
-                        disabled={source === "postgres" || (run.status !== "queued" && run.status !== "running")}
-                        onClick={() => cancelRun.mutate(Number(run.id))}
+                        disabled={run.status !== "queued" && run.status !== "running"}
+                        onClick={() => cancelRun.mutate(run)}
                       >
                         Cancel
                       </button>
-                      <button className="secondaryButton" disabled={source === "postgres" || run.status !== "failed"} onClick={() => rerunFailed.mutate(Number(run.id))}>
-                        Rerun Failed
-                      </button>
                       <button
                         className="secondaryButton dangerText"
-                        disabled={source === "postgres" || run.status === "running" || deleteRun.isPending}
+                        disabled={run.status === "running" || run.status === "queued" || deleteRun.isPending}
                         onClick={() => {
                           if (window.confirm(`Delete run ${run.run_key}? This removes dashboard DB rows and generated run artifacts, but not source corpus files.`)) {
-                            deleteRun.mutate(Number(run.id));
+                            deleteRun.mutate(run);
                           }
                         }}
                       >
@@ -247,7 +318,7 @@ export default function RunsPage() {
               <KeyValue label="Updated" value={progress.data?.updated_at ?? activeRun.updated_at ?? "-"} />
               <KeyValue label="Output" value={activeRun.output_dir ?? "-"} />
               <KeyValue label="Error" value={progress.data?.error ?? activeRun.error ?? "-"} />
-              <a className="primaryButton" href={`/api/admin/runs/${activeRun.id}/results`} target="_blank">
+              <a className="primaryButton" href={`${runActionBase(activeRun)}/results`} target="_blank">
                 Open Results JSON
               </a>
             </section>
@@ -305,7 +376,7 @@ function RunStartDialog({
   const [ocrFallbackProvider, setOcrFallbackProvider] = useState(normalizeOcrProvider(preset.ocr_fallback_provider));
   const [semanticIndexPath, setSemanticIndexPath] = useState("");
   const [executionBackend, setExecutionBackend] = useState("subprocess");
-  const [importOnSuccess, setImportOnSuccess] = useState(false);
+  const [importOnSuccess, setImportOnSuccess] = useState(true);
 
   return (
     <aside className="drawer narrowDrawer">
@@ -328,7 +399,7 @@ function RunStartDialog({
         </SelectInput>
         <ProviderSelect label="Embedding path" value={embeddingProvider} onChange={setEmbeddingProvider} options={["cortex", "placeholder"]} />
         <ProviderSelect label="LLM tag path" value={llmTagProvider} onChange={setLlmTagProvider} options={["cortex"]} />
-        <ProviderSelect label="OCR fallback path" value={ocrFallbackProvider} onChange={setOcrFallbackProvider} options={["cortex", "disabled"]} />
+        <ProviderSelect label="OCR fallback path" value={ocrFallbackProvider} onChange={setOcrFallbackProvider} options={["openai", "cortex", "disabled"]} />
         <ProviderSelect label="Execution backend" value={executionBackend} onChange={setExecutionBackend} options={["subprocess", "temporal"]} />
         <TextInput
           label="Semantic index path"
@@ -337,7 +408,7 @@ function RunStartDialog({
           placeholder=".local/sunshine-semantic-index.sqlite"
         />
         <CheckboxField label="Enable LLM tags" checked={enableLlmTags} onChange={(event) => setEnableLlmTags(event.target.checked)} />
-        <CheckboxField label="Import results on success" checked={importOnSuccess} onChange={(event) => setImportOnSuccess(event.target.checked)} />
+        <CheckboxField label="Auto-import review items on success" checked={importOnSuccess} onChange={(event) => setImportOnSuccess(event.target.checked)} />
         <Button
           variant="primary"
           disabled={starting}
@@ -397,6 +468,9 @@ function ProviderSelect({
 }
 
 function providerLabel(value: string) {
+  if (value === "openai") {
+    return "OpenAI";
+  }
   if (value === "subprocess") {
     return "Subprocess";
   }
@@ -410,6 +484,13 @@ function providerLabel(value: string) {
     return "Disabled";
   }
   return "Cortex";
+}
+
+function runActionBase(run: PipelineRun) {
+  if (run.source === "postgres") {
+    return `/api/admin/runs/by-key/${encodeURIComponent(run.run_key)}`;
+  }
+  return `/api/admin/runs/${run.id}`;
 }
 
 function runExecutionBackend(run: PipelineRun) {
@@ -427,18 +508,22 @@ function normalizeLlmProvider(_value?: string | null) {
 }
 
 function normalizeOcrProvider(value?: string | null) {
+  if (value === "openai") {
+    return "openai";
+  }
   return value === "disabled" ? "disabled" : "cortex";
 }
 
 function RunProgressBar({ progress, run }: { progress?: PipelineRunProgress; run: PipelineRun }) {
-  const ratio = progress?.progress_ratio ?? (run.status === "succeeded" ? 1 : null);
+  const ratio = progress?.progress_ratio ?? (run.status === "succeeded" ? 1 : run.status === "failed" || run.status === "cancelled" ? 0 : null);
   const percent = ratio == null ? null : Math.round(Math.max(0, Math.min(ratio, 1)) * 100);
+  const label = run.status === "failed" || run.status === "cancelled" ? "Stopped" : percent == null ? "Working..." : `${percent}%`;
   return (
     <div className="runProgress">
       <div className="progressTrack">
         <div className={percent == null ? "progressFill indeterminate" : "progressFill"} style={percent == null ? undefined : { width: `${percent}%` }} />
       </div>
-      <span>{percent == null ? "Working..." : `${percent}%`}</span>
+      <span>{label}</span>
     </div>
   );
 }

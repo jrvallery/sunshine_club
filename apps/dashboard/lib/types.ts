@@ -49,6 +49,13 @@ export type ReviewItem = {
   priority?: string | null;
   assigned_reviewer?: string | null;
   notes?: string | null;
+  segment_id?: string | null;
+  segment_title?: string | null;
+  segment_type?: string | null;
+  page_start?: number | null;
+  page_end?: number | null;
+  segment_confidence?: number | null;
+  segment_boundary_evidence?: string[];
   model_usage_summary?: {
     scope: string;
     total_calls: number;
@@ -99,6 +106,21 @@ export type PipelineResult = {
   competing_tags?: Array<Record<string, unknown>>;
   confidence_inputs?: Record<string, unknown>;
   ocr_evidence?: OcrEvidence;
+  segment_id?: string | null;
+  segment_title?: string | null;
+  segment_type?: string | null;
+  page_start?: number | null;
+  page_end?: number | null;
+  segment_confidence?: number | null;
+  segment_boundary_evidence?: string[];
+  segment_review_status?: string | null;
+  segment_review_decision?: string | null;
+  segment_review?: {
+    decision?: string | null;
+    status?: string | null;
+    reviewer?: string | null;
+    notes?: string | null;
+  };
   warnings?: string[];
 };
 
@@ -219,6 +241,7 @@ export type PipelineRun = {
   id: number | string;
   source?: "sqlite" | "postgres";
   postgres_id?: string | null;
+  legacy_run_id?: number | null;
   run_key: string;
   preset_key: string;
   run_role?: string | null;
@@ -367,6 +390,13 @@ export type RunReport = {
     by_type: Record<string, number>;
     items: Array<Record<string, unknown>>;
   };
+  chunks?: {
+    count: number;
+    by_kind: Record<string, number>;
+    by_segment_type: Record<string, number>;
+    segment_chunk_count: number;
+    items: Array<Record<string, unknown>>;
+  };
   provider_attempts: {
     count: number;
     by_provider: Record<string, number>;
@@ -491,6 +521,10 @@ export type GoldenLabel = {
   run_key?: string | null;
   run_preset_key?: string | null;
   segment_id?: string | null;
+  segment_title?: string | null;
+  segment_type?: string | null;
+  page_start?: number | null;
+  page_end?: number | null;
   source_path: string;
   relative_path: string;
   sample_path?: string | null;

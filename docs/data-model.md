@@ -1,5 +1,7 @@
 # Sunshine Club Data Model
 
+Last updated: 2026-05-28. This is the Postgres V2 schema. For the SQLite operational store used by the dashboard (file_index, pipeline_runs, pipeline_run_events, review_items, golden_labels), see `dashboard.md`.
+
 ## Design Principle
 
 The schema must distinguish:
@@ -447,6 +449,42 @@ Suggested fields:
 - `created_at`
 - `updated_at`
 
+### `audit_events`
+
+Append-only product and workflow events.
+
+Suggested fields:
+
+- `id`
+- `event_type`
+- `document_id`
+- `workflow_id`
+- `node`
+- `actor`
+- `payload`
+- `created_at`
+
+### `runtime_guard_events`
+
+Loop, retry, budget, and kill-switch guard records.
+
+Suggested fields:
+
+- `id`
+- `guard_type`
+  - `max_steps`
+  - `repeated_tool_call`
+  - `token_budget`
+  - `cost_budget`
+  - `retry_budget`
+  - `dead_letter`
+  - `circuit_breaker`
+  - `kill_switch`
+- `workflow_id`
+- `document_id`
+- `triggered_at`
+- `payload`
+
 ## Search and Chat Visibility Rules
 
 Normal user-facing search and chat should exclude:
@@ -455,5 +493,6 @@ Normal user-facing search and chat should exclude:
 - duplicate-hold files
 - unresolved intake items
 - failed items
+- restricted, unresolved, donor-sensitive, beneficiary-sensitive, treasurer-only, legal/IRS-sensitive, member-private, and system-admin records unless the user and workflow are explicitly allowed
 
 Admin views may expose them with explicit filters.

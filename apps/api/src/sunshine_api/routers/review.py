@@ -36,6 +36,7 @@ from sunshine_api.schemas import (
     ReviewImportRequest,
     ReviewOcrQualityRequest,
     RunStartRequest,
+    SegmentReviewDecisionRequest,
     SemanticEvalRequest,
     SemanticIndexBuildRequest,
 )
@@ -183,6 +184,14 @@ def golden_labels_export(format: str = "csv", limit: int = 10000, source: str = 
         "relative_path",
         "source_path",
         "sample_path",
+        "run_id",
+        "run_key",
+        "run_preset_key",
+        "segment_id",
+        "segment_title",
+        "segment_type",
+        "page_start",
+        "page_end",
         "content_class",
         "correct_primary_tag",
         "correct_secondary_tags",
@@ -210,6 +219,14 @@ def golden_labels_export(format: str = "csv", limit: int = 10000, source: str = 
                 "relative_path": row.get("relative_path"),
                 "source_path": row.get("source_path"),
                 "sample_path": row.get("sample_path"),
+                "run_id": row.get("run_id"),
+                "run_key": row.get("run_key"),
+                "run_preset_key": row.get("run_preset_key"),
+                "segment_id": row.get("segment_id"),
+                "segment_title": row.get("segment_title"),
+                "segment_type": row.get("segment_type"),
+                "page_start": row.get("page_start"),
+                "page_end": row.get("page_end"),
                 "content_class": row.get("content_class"),
                 "correct_primary_tag": row.get("correct_primary_tag"),
                 "correct_secondary_tags": ";".join(row.get("correct_secondary_tags") or []),
@@ -565,6 +582,22 @@ def assign_review_item(item_id: int, request: ReviewAssignRequest) -> dict[str, 
         raise HTTPException(status_code=404, detail=str(error)) from error
 
 
+@router.post("/admin/review/items/{item_id}/segment-decision")
+def record_sqlite_segment_review_decision(item_id: int, request: SegmentReviewDecisionRequest) -> dict[str, Any]:
+    try:
+        return review_store().record_segment_review_decision(
+            item_id,
+            decision=request.decision,
+            segment_title=request.segment_title,
+            notes=request.notes,
+            reviewer=request.reviewer,
+        )
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
 @router.get("/admin/review/items/{item_id}/file")
 def review_item_file(item_id: str, source: str = "sqlite") -> FileResponse:
     if source == "postgres":
@@ -661,6 +694,9 @@ def _postgres_review_row(row: dict[str, Any]) -> dict[str, Any]:
     result = row.get("result") if isinstance(row.get("result"), dict) else {}
     warnings = result.get("warnings") if isinstance(result.get("warnings"), list) else []
     text_snippet = result.get("extraction_text_snippet") or result.get("text_snippet")
+    segment_boundary_evidence = result.get("segment_boundary_evidence") or result.get("boundary_evidence") or []
+    if not isinstance(segment_boundary_evidence, list):
+        segment_boundary_evidence = [str(segment_boundary_evidence)]
     return {
         "id": row.get("id"),
         "source": "postgres",
@@ -685,6 +721,12 @@ def _postgres_review_row(row: dict[str, Any]) -> dict[str, Any]:
         "correct_secondary_tags": corrected_secondary,
         "notes": row.get("notes"),
         "segment_id": row.get("segment_id"),
+        "segment_title": row.get("segment_title") or result.get("segment_title"),
+        "segment_type": row.get("segment_type") or result.get("segment_type"),
+        "page_start": row.get("page_start") or result.get("page_start"),
+        "page_end": row.get("page_end") or result.get("page_end"),
+        "segment_confidence": row.get("segment_confidence") or result.get("segment_confidence"),
+        "segment_boundary_evidence": segment_boundary_evidence,
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at"),
         "result": {
@@ -747,6 +789,10 @@ def _postgres_golden_label_row(row: dict[str, Any]) -> dict[str, Any]:
         "relative_path": row.get("relative_path"),
         "sample_path": row.get("sample_path"),
         "segment_id": row.get("segment_id"),
+        "segment_title": row.get("segment_title"),
+        "segment_type": row.get("segment_type"),
+        "page_start": row.get("page_start"),
+        "page_end": row.get("page_end"),
         "extracted_text_snippet": row.get("extracted_text_snippet"),
         "content_class": row.get("content_class"),
         "correct_primary_tag": row.get("correct_primary_tag"),

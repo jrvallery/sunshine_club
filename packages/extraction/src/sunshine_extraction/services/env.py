@@ -23,6 +23,10 @@ def load_pipeline_env(env_path: str | Path | None = ".env") -> None:
     if cortex_base and not os.environ.get("CORTEX_OPENAI_BASE_URL"):
         os.environ["CORTEX_OPENAI_BASE_URL"] = _cortex_openai_base_url(cortex_base)
 
+    openai_api = os.environ.get("OPENAI_API")
+    if openai_api and not os.environ.get("OPENAI_API_KEY"):
+        os.environ["OPENAI_API_KEY"] = openai_api
+
 
 def _cortex_openai_base_url(base_url: str) -> str:
     normalized = base_url.rstrip("/")

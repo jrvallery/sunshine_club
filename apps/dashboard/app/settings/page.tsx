@@ -243,7 +243,7 @@ export default function SettingsPage() {
         </div>
         {postgresRuntime.error ? <p className="dangerText">{String(postgresRuntime.error.message)}</p> : null}
         {postgresRuntime.data?.runs.length ? (
-          <div className="tableWrap reportTable">
+          <div className="tableWrap reportTable" tabIndex={0} aria-label="Postgres runtime runs table">
             <table>
               <thead>
                 <tr>
@@ -299,7 +299,7 @@ export default function SettingsPage() {
           </div>
         ) : null}
         {postgresReviewItems.data?.items.length ? (
-          <div className="tableWrap reportTable">
+          <div className="tableWrap reportTable" tabIndex={0} aria-label="Postgres review items table">
             <table>
               <thead>
                 <tr>
@@ -345,7 +345,7 @@ export default function SettingsPage() {
           </div>
         ) : null}
         {postgresRuntime.data?.recent_provider_benchmarks?.length ? (
-          <div className="tableWrap reportTable">
+          <div className="tableWrap reportTable" tabIndex={0} aria-label="Recent provider benchmark runs table">
             <table>
               <thead>
                 <tr>
@@ -408,7 +408,7 @@ export default function SettingsPage() {
           <h2>Provider Registry</h2>
           <span>{infrastructure.data?.provider_registry.validation.ok ? "valid" : "check configuration"}</span>
         </div>
-        <div className="tableWrap">
+        <div className="tableWrap" tabIndex={0} aria-label="Provider capabilities table">
           <table>
             <thead>
               <tr>

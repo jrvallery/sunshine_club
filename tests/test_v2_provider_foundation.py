@@ -1548,13 +1548,16 @@ def test_graph_dependency_resolution_fails_closed_for_hosted_production_provider
         _resolve_deps()
 
 
-def test_env_provider_selection_does_not_return_hosted_openai(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_env_provider_selection_uses_openai_as_ocr_fallback_only(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SUNSHINE_LLM_TAG_PROVIDER", "openai")
     monkeypatch.setenv("SUNSHINE_OCR_FALLBACK_PROVIDER", "openai")
     monkeypatch.setenv("OPENAI_API_KEY", "should-not-be-used")
 
     assert llm_tag_inspector_from_env().__class__.__name__ == "LLMTagInspector"
-    assert ocr_executor_from_env().__class__.__name__ == "LocalTesseractOcrExecutor"
+    executor = ocr_executor_from_env()
+    assert executor.__class__.__name__ == "EscalatingOcrExecutor"
+    assert executor.primary.__class__.__name__ == "LocalTesseractOcrExecutor"
+    assert executor.fallback.__class__.__name__ == "OpenAIVisionOcrExecutor"
 
 
 def test_segmentation_marks_long_scrapbook_pdf_for_segment_review(tmp_path: Path) -> None:

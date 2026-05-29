@@ -431,7 +431,9 @@ h2 {
   font: inherit;
   font-size: 14px;
   min-height: 38px;
+  min-width: 0;
   padding: 8px 10px;
+  width: 100%;
 }
 
 .filterBar input {
@@ -770,8 +772,9 @@ td:first-child {
   color: var(--text);
   display: grid;
   gap: 4px;
-  max-width: 520px;
+  max-width: min(520px, 100%);
   min-width: 0;
+  width: 100%;
 }
 
 .fileCell span,
@@ -784,9 +787,48 @@ td:first-child {
 
 .pathCell strong,
 .pathCell span {
+  display: block;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.pathCellLink {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.pathCellLink:hover strong {
+  color: var(--link);
+  text-decoration: underline;
+}
+
+.tableWrap th,
+.tableWrap td {
+  max-width: 360px;
+}
+
+.tableWrap td {
+  overflow-wrap: anywhere;
+}
+
+.reviewWorkspace .tableWrap table,
+.queue .tableWrap table {
+  min-width: 1320px;
+}
+
+.reviewWorkspace .tableWrap th:first-child,
+.reviewWorkspace .tableWrap td:first-child,
+.queue .tableWrap th:first-child,
+.queue .tableWrap td:first-child {
+  min-width: 260px;
+  width: 260px;
+}
+
+.reviewWorkspace .tableWrap .cellStack,
+.queue .tableWrap .cellStack {
+  max-width: 220px;
 }
 
 .cellStack {
@@ -896,7 +938,13 @@ td:first-child {
 .fileViewerPage {
   display: grid;
   gap: 16px;
+  max-width: 100%;
+  overflow-x: hidden;
   padding: 28px;
+}
+
+.fileViewerPage > * {
+  min-width: 0;
 }
 
 .fileViewerHeader {
@@ -906,6 +954,15 @@ td:first-child {
   gap: 16px;
   justify-content: space-between;
   padding-bottom: 16px;
+}
+
+.fileViewerHeader > div {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.fileViewerHeader .muted {
+  overflow-wrap: anywhere;
 }
 
 .fileViewerHeader h1 {
@@ -1271,12 +1328,14 @@ td:first-child {
   gap: 14px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-top: 16px;
+  min-width: 0;
 }
 
 .drawerGrid section,
 .drawerGrid details {
   border: 1px solid var(--border-soft);
   border-radius: 8px;
+  min-width: 0;
   padding: 13px;
 }
 
@@ -1298,6 +1357,8 @@ td:first-child {
 
 .wideSection {
   grid-column: 1 / -1;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .textPreview {
@@ -1450,11 +1511,17 @@ td:first-child {
 .formGrid {
   display: grid;
   gap: 9px;
+  min-width: 0;
+}
+
+.compactForm {
+  width: min(560px, 100%);
 }
 
 .formGrid label {
   display: grid;
   gap: 5px;
+  min-width: 0;
 }
 
 .formGrid label span {
@@ -1479,6 +1546,7 @@ td:first-child {
   border-radius: 8px;
   display: grid;
   gap: 7px;
+  min-width: 0;
   padding: 10px;
 }
 
@@ -1882,6 +1950,21 @@ td:first-child {
   .actionPanel {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .actionPanel > * {
+    max-width: 100%;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .compactForm,
+  .checkboxGroup {
+    width: 100%;
+  }
+
+  .evidenceGrid {
+    grid-template-columns: 1fr;
   }
 
   .appFrame {

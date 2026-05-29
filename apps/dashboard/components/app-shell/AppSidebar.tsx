@@ -7,9 +7,9 @@ const navItems = [
   { href: "/review", label: "Review" },
   { href: "/files", label: "Files" },
   { href: "/runs", label: "Runs" },
-  { href: "/reports", label: "Search" },
+  { href: "/search", label: "Search" },
   { href: "/golden-labels", label: "Golden Labels" },
-  { href: "/pipeline-eval", label: "Pipeline Eval" },
+  { href: "/pipeline-eval", label: "Evaluations" },
   { href: "/settings", label: "Settings" }
 ];
 

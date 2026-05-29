@@ -70,7 +70,7 @@ export function EmbeddedPreview({ previewUrl, filename, mimeType, extension, aut
           src={previewUrl}
           alt={filename}
           onLoad={() => setLoading(false)}
-          style={{ transform: `scale(${zoom}) rotate(${rotation}deg)` }}
+          style={{ display: loading ? "none" : "block", transform: `scale(${zoom}) rotate(${rotation}deg)` }}
         />
       </div>
     );

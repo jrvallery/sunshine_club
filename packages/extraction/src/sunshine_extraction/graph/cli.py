@@ -38,7 +38,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--embedding-provider", choices=["cortex", "placeholder", "disabled"])
     parser.add_argument("--enable-llm-tags", action="store_true")
     parser.add_argument("--llm-tag-provider", choices=["auto", "cortex", "disabled"])
-    parser.add_argument("--ocr-fallback-provider", choices=["cortex", "disabled"])
+    parser.add_argument("--ocr-fallback-provider", choices=["openai", "cortex", "disabled"])
     parser.add_argument("--semantic-index-path")
     parser.add_argument("--semantic-retrieval-filter-json")
     parser.add_argument("--rerank-provider", choices=["cortex", "disabled"])

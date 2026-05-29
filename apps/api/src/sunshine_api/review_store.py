@@ -51,17 +51,26 @@ class ReviewStore:
             for row in _read_jsonl(output_path / "sample-extraction-results.jsonl")
             if row.get("source_path")
         }
-        review_by_source = {
-            row.get("source_path"): row
-            for row in _read_jsonl(output_path / "sample-review-queue.jsonl")
-            if row.get("source_path")
-        }
+        review_rows = [row for row in _read_jsonl(output_path / "sample-review-queue.jsonl") if row.get("source_path")]
+        review_by_source: dict[str, list[dict[str, Any]]] = {}
+        for row in review_rows:
+            review_by_source.setdefault(str(row.get("source_path")), []).append(row)
         imported_results = 0
         imported_review_items = 0
         imported_sample_items = 0
         sampled_sources = _sample_routed_sources(results, per_bucket=sample_routed_per_bucket, seed=sample_seed)
         with self._connect() as connection:
             run_snapshot = _run_snapshot(connection, run_id)
+            if run_id is not None:
+                connection.execute(
+                    """
+                    delete from review_items
+                    where run_id = ?
+                      and route_status = 'review_segment_boundary'
+                      and source_path not like '%#segment=%'
+                    """,
+                    (run_id,),
+                )
             for result in results:
                 source_path = str(result.get("source_path") or result.get("sample_path") or "")
                 if not source_path:
@@ -72,7 +81,8 @@ class ReviewStore:
                 extraction_text_snippet = _extraction_text_snippet(extraction_by_source.get(source_path))
                 if "ocr_evidence" not in result:
                     result = {**result, "ocr_evidence": _ocr_evidence_from_result(result, extraction_text_snippet)}
-                review_row = review_by_source.get(source_path)
+                source_review_rows = review_by_source.get(source_path, [])
+                review_row = source_review_rows[0] if source_review_rows else None
                 review_reason = str(
                     (review_row or {}).get("review_reason")
                     or result.get("review_reason")
@@ -127,7 +137,7 @@ class ReviewStore:
                 imported_results += 1
                 self._upsert_file_index_from_result(connection, result, output_path, extraction_text_snippet, run_id=run_id)
                 is_routed_sample = source_path in sampled_sources
-                if route_status != "route_candidate" or is_routed_sample:
+                if (route_status != "route_candidate" or is_routed_sample) and not source_review_rows:
                     item_review_reason = review_reason
                     item_route_status = route_status
                     if is_routed_sample and route_status == "route_candidate":
@@ -185,9 +195,90 @@ class ReviewStore:
                     imported_review_items += 1
                     if is_routed_sample and route_status == "route_candidate":
                         imported_sample_items += 1
+            for review_row in review_rows:
+                source_path = str(review_row.get("source_path") or "")
+                if not source_path:
+                    continue
+                result = next(
+                    (
+                        candidate
+                        for candidate in results
+                        if str(candidate.get("source_path") or candidate.get("sample_path") or "") == source_path
+                    ),
+                    {},
+                )
+                extraction_text_snippet = _extraction_text_snippet(extraction_by_source.get(source_path))
+                review_result = {
+                    **result,
+                    "route_status": review_row.get("route_status") or result.get("route_status"),
+                    "review_reason": review_row.get("review_reason") or result.get("review_reason"),
+                    "segment_id": review_row.get("segment_id"),
+                    "segment_title": review_row.get("segment_title"),
+                    "segment_type": review_row.get("segment_type"),
+                    "page_start": review_row.get("page_start"),
+                    "page_end": review_row.get("page_end"),
+                    "segment_confidence": review_row.get("segment_confidence"),
+                    "segment_boundary_evidence": review_row.get("segment_boundary_evidence", []),
+                    "_review_original_source_path": source_path,
+                }
+                if "ocr_evidence" not in review_result:
+                    review_result = {**review_result, "ocr_evidence": _ocr_evidence_from_result(review_result, extraction_text_snippet)}
+                storage_source_path = _review_item_storage_source_path(review_row)
+                connection.execute(
+                    """
+                    insert into review_items (
+                        source_path, relative_path, route_status, review_reason, status,
+                        proposed_class, proposed_tag, secondary_tags_json, extraction_text_snippet, confidence, warnings_json, result_json, ocr_quality_label
+                        , run_id, run_key, run_preset_key, embedding_provider, llm_tag_provider, ocr_fallback_provider, enable_llm_tags
+                    ) values (?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    on conflict(source_path) do update set
+                        relative_path=excluded.relative_path,
+                        route_status=excluded.route_status,
+                        review_reason=excluded.review_reason,
+                        proposed_class=excluded.proposed_class,
+                        proposed_tag=excluded.proposed_tag,
+                        secondary_tags_json=excluded.secondary_tags_json,
+                        extraction_text_snippet=excluded.extraction_text_snippet,
+                        confidence=excluded.confidence,
+                        warnings_json=excluded.warnings_json,
+                        result_json=excluded.result_json,
+                        ocr_quality_label=coalesce(review_items.ocr_quality_label, excluded.ocr_quality_label),
+                        run_id=excluded.run_id,
+                        run_key=excluded.run_key,
+                        run_preset_key=excluded.run_preset_key,
+                        embedding_provider=excluded.embedding_provider,
+                        llm_tag_provider=excluded.llm_tag_provider,
+                        ocr_fallback_provider=excluded.ocr_fallback_provider,
+                        enable_llm_tags=excluded.enable_llm_tags,
+                        updated_at=datetime('now')
+                    """,
+                    (
+                        storage_source_path,
+                        str(review_row.get("relative_path") or result.get("relative_path") or source_path),
+                        str(review_row.get("route_status") or result.get("route_status") or "review_required"),
+                        str(review_row.get("review_reason") or result.get("review_reason") or "review_required"),
+                        review_row.get("final_class") or result.get("final_class"),
+                        review_row.get("top_tag_candidate") or result.get("top_tag_candidate"),
+                        json.dumps(review_row.get("secondary_tags") or result.get("secondary_tags", []), sort_keys=True),
+                        extraction_text_snippet,
+                        review_row.get("tag_confidence") or result.get("tag_confidence"),
+                        json.dumps(review_row.get("warnings") or result.get("warnings", []), sort_keys=True),
+                        json.dumps(review_result, sort_keys=True),
+                        review_row.get("quality") or result.get("quality"),
+                        run_snapshot.get("run_id"),
+                        run_snapshot.get("run_key"),
+                        run_snapshot.get("run_preset_key"),
+                        run_snapshot.get("embedding_provider"),
+                        run_snapshot.get("llm_tag_provider"),
+                        run_snapshot.get("ocr_fallback_provider"),
+                        run_snapshot.get("enable_llm_tags"),
+                    ),
+                )
+                imported_review_items += 1
             imported_model_usage = self.import_model_usage_artifact(connection, run_id, output_path)
             imported_provider_attempts = self.import_provider_attempts_artifact(connection, run_id, output_path)
             imported_document_segments = self.import_document_segments_artifact(connection, run_id, output_path)
+            imported_chunks = self.import_chunks_artifact(connection, run_id, output_path)
         return {
             "output_dir": str(output_path),
             "imported_results": imported_results,
@@ -196,6 +287,7 @@ class ReviewStore:
             "imported_model_usage": imported_model_usage,
             "imported_provider_attempts": imported_provider_attempts,
             "imported_document_segments": imported_document_segments,
+            "imported_chunks": imported_chunks,
             "db_path": str(self.db_path),
         }
 
@@ -323,9 +415,13 @@ class ReviewStore:
             predicates.append("status = ?")
             params.append(status)
         if q:
-            predicates.append("(relative_path like ? or source_path like ? or extraction_text_snippet like ?)")
+            predicates.append(
+                "(relative_path like ? or source_path like ? or extraction_text_snippet like ? "
+                "or json_extract(result_json, '$.segment_title') like ? "
+                "or json_extract(result_json, '$.segment_id') like ?)"
+            )
             like = f"%{q}%"
-            params.extend([like, like, like])
+            params.extend([like, like, like, like, like])
         if route_status:
             predicates.append("route_status = ?")
             params.append(route_status)
@@ -695,7 +791,9 @@ class ReviewStore:
             ).fetchone()
             golden_row = connection.execute(
                 """
-                select id, review_item_id, source_path, relative_path, sample_path, extracted_text_snippet,
+                select id, review_item_id, source_path, relative_path, sample_path,
+                       run_id, run_key, run_preset_key, segment_id, segment_title, segment_type, page_start, page_end,
+                       extracted_text_snippet,
                        content_class, correct_primary_tag, correct_secondary_tags_json, ocr_quality_label,
                        expected_review_required, sensitive_record, correct_destination_path, correct_placement_year,
                        correct_privacy, reviewer, notes, proposed_tag,
@@ -882,7 +980,8 @@ class ReviewStore:
             existing = connection.execute(
                 """
                 select id, source_path, relative_path, route_status, proposed_class, proposed_tag,
-                       secondary_tags_json, extraction_text_snippet, confidence, ocr_quality_label, result_json
+                       secondary_tags_json, extraction_text_snippet, confidence, ocr_quality_label, result_json,
+                       run_id, run_key, run_preset_key
                 from review_items where id = ?
                 """,
                 (item_id,),
@@ -934,16 +1033,26 @@ class ReviewStore:
                 connection.execute(
                     """
                     insert into golden_labels (
-                        review_item_id, source_path, relative_path, sample_path, extracted_text_snippet,
+                        review_item_id, source_path, relative_path, sample_path,
+                        run_id, run_key, run_preset_key, segment_id, segment_title, segment_type, page_start, page_end,
+                        extracted_text_snippet,
                         content_class, correct_primary_tag, correct_secondary_tags_json, ocr_quality_label,
                         expected_review_required, sensitive_record, correct_destination_path, correct_placement_year,
                         correct_privacy, reviewer, notes, proposed_tag,
                         proposed_secondary_tags_json, proposed_confidence, reviewed_at, created_at, updated_at
-                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), datetime('now'))
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), datetime('now'))
                     on conflict(source_path) do update set
                         review_item_id=excluded.review_item_id,
                         relative_path=excluded.relative_path,
                         sample_path=excluded.sample_path,
+                        run_id=excluded.run_id,
+                        run_key=excluded.run_key,
+                        run_preset_key=excluded.run_preset_key,
+                        segment_id=excluded.segment_id,
+                        segment_title=excluded.segment_title,
+                        segment_type=excluded.segment_type,
+                        page_start=excluded.page_start,
+                        page_end=excluded.page_end,
                         extracted_text_snippet=excluded.extracted_text_snippet,
                         content_class=excluded.content_class,
                         correct_primary_tag=excluded.correct_primary_tag,
@@ -966,7 +1075,15 @@ class ReviewStore:
                         item_id,
                         existing["source_path"],
                         existing["relative_path"],
-                        _sample_path_from_result(connection, existing["source_path"]),
+                        _sample_path_from_result(connection, _source_path_without_segment_suffix(existing["source_path"])),
+                        existing["run_id"],
+                        existing["run_key"],
+                        existing["run_preset_key"],
+                        result.get("segment_id"),
+                        result.get("segment_title"),
+                        result.get("segment_type"),
+                        _optional_int(result.get("page_start")),
+                        _optional_int(result.get("page_end")),
                         existing["extraction_text_snippet"],
                         resolved_content_class,
                         resolved_tag,
@@ -1079,6 +1196,171 @@ class ReviewStore:
             )
         return self.get_review_item(item_id)
 
+    def record_segment_review_decision(
+        self,
+        item_id: int,
+        *,
+        decision: str,
+        segment_title: str | None = None,
+        notes: str | None = None,
+        reviewer: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_decision = decision.strip().lower()
+        if normalized_decision not in {"accept", "reject", "split", "merge", "defer", "change", "rename"}:
+            raise ValueError("segment decision must be accept, reject, split, merge, defer, change, or rename")
+        review_status = _segment_review_status(normalized_decision)
+        with self._connect() as connection:
+            existing = connection.execute(
+                """
+                select id, run_id, run_key, run_preset_key, source_path, relative_path, result_json, notes,
+                       proposed_class, proposed_tag, secondary_tags_json, extraction_text_snippet, confidence, ocr_quality_label
+                from review_items
+                where id = ?
+                """,
+                (item_id,),
+            ).fetchone()
+            if existing is None:
+                raise KeyError(f"review item {item_id} not found")
+            result = _json_object(existing["result_json"])
+            segment_id = str(result.get("segment_id") or "").strip()
+            if not segment_id:
+                raise ValueError(f"review item {item_id} is not attached to a document segment")
+            resolved_title = (segment_title or result.get("segment_title") or "").strip() or None
+            segment_review = {
+                "decision": normalized_decision,
+                "status": review_status,
+                "reviewer": reviewer,
+                "notes": notes,
+            }
+            result["segment_review"] = segment_review
+            result["segment_review_status"] = review_status
+            result["segment_review_decision"] = normalized_decision
+            if resolved_title:
+                result["segment_title"] = resolved_title
+
+            merged_notes = _append_review_note(existing["notes"], notes)
+            connection.execute(
+                """
+                update review_items
+                set result_json = ?,
+                    decision = ?,
+                    review_stage = ?,
+                    notes = ?,
+                    status = ?,
+                    updated_at = datetime('now')
+                where id = ?
+                """,
+                (
+                    json.dumps(result, sort_keys=True),
+                    normalized_decision,
+                    f"segment_{review_status}",
+                    merged_notes,
+                    "resolved" if review_status in {"accepted", "rejected", "deferred", "changed"} else "open",
+                    item_id,
+                ),
+            )
+            if existing["run_id"] is not None:
+                connection.execute(
+                    """
+                    update pipeline_run_document_segments
+                    set review_status = ?,
+                        review_decision = ?,
+                        reviewer = ?,
+                        review_notes = ?,
+                        segment_title = coalesce(?, segment_title),
+                        requires_segment_review = case when ? in ('accepted', 'rejected') then 0 else requires_segment_review end,
+                        accepted_at = case when ? = 'accepted' then coalesce(accepted_at, datetime('now')) else accepted_at end,
+                        updated_at = datetime('now')
+                    where run_id = ?
+                      and segment_id = ?
+                    """,
+                    (
+                        review_status,
+                        normalized_decision,
+                        reviewer,
+                        notes,
+                        resolved_title,
+                        review_status,
+                        review_status,
+                        existing["run_id"],
+                        segment_id,
+                    ),
+                )
+            if review_status in {"accepted", "changed"}:
+                resolved_tag = str(existing["proposed_tag"] or result.get("top_tag_candidate") or "").strip()
+                if resolved_tag:
+                    resolved_secondary = _json_list(existing["secondary_tags_json"]) or _clean_tags(result.get("secondary_tags") or [])
+                    connection.execute(
+                        """
+                        insert into golden_labels (
+                            review_item_id, source_path, relative_path, sample_path,
+                            run_id, run_key, run_preset_key, segment_id, segment_title, segment_type, page_start, page_end,
+                            extracted_text_snippet,
+                            content_class, correct_primary_tag, correct_secondary_tags_json, ocr_quality_label,
+                            expected_review_required, sensitive_record, correct_destination_path, correct_placement_year,
+                            correct_privacy, reviewer, notes, proposed_tag,
+                            proposed_secondary_tags_json, proposed_confidence, reviewed_at, created_at, updated_at
+                        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), datetime('now'))
+                        on conflict(source_path) do update set
+                            review_item_id=excluded.review_item_id,
+                            relative_path=excluded.relative_path,
+                            sample_path=excluded.sample_path,
+                            run_id=excluded.run_id,
+                            run_key=excluded.run_key,
+                            run_preset_key=excluded.run_preset_key,
+                            segment_id=excluded.segment_id,
+                            segment_title=excluded.segment_title,
+                            segment_type=excluded.segment_type,
+                            page_start=excluded.page_start,
+                            page_end=excluded.page_end,
+                            extracted_text_snippet=excluded.extracted_text_snippet,
+                            content_class=excluded.content_class,
+                            correct_primary_tag=excluded.correct_primary_tag,
+                            correct_secondary_tags_json=excluded.correct_secondary_tags_json,
+                            ocr_quality_label=excluded.ocr_quality_label,
+                            expected_review_required=excluded.expected_review_required,
+                            correct_destination_path=excluded.correct_destination_path,
+                            correct_placement_year=excluded.correct_placement_year,
+                            correct_privacy=excluded.correct_privacy,
+                            reviewer=excluded.reviewer,
+                            notes=excluded.notes,
+                            proposed_tag=excluded.proposed_tag,
+                            proposed_secondary_tags_json=excluded.proposed_secondary_tags_json,
+                            proposed_confidence=excluded.proposed_confidence,
+                            reviewed_at=datetime('now'),
+                            updated_at=datetime('now')
+                        """,
+                        (
+                            item_id,
+                            existing["source_path"],
+                            existing["relative_path"],
+                            _sample_path_from_result(connection, _source_path_without_segment_suffix(existing["source_path"])),
+                            existing["run_id"],
+                            existing["run_key"],
+                            existing["run_preset_key"],
+                            segment_id,
+                            resolved_title,
+                            result.get("segment_type"),
+                            _optional_int(result.get("page_start")),
+                            _optional_int(result.get("page_end")),
+                            existing["extraction_text_snippet"],
+                            existing["proposed_class"] or result.get("final_class"),
+                            resolved_tag,
+                            json.dumps(resolved_secondary, sort_keys=True),
+                            existing["ocr_quality_label"] or result.get("quality"),
+                            1,
+                            result.get("destination_path"),
+                            result.get("placement_year") or ((result.get("placement") or {}).get("placement_year") if isinstance(result.get("placement"), dict) else None),
+                            result.get("default_privacy"),
+                            reviewer,
+                            notes,
+                            existing["proposed_tag"],
+                            existing["secondary_tags_json"],
+                            existing["confidence"],
+                        ),
+                    )
+        return self.get_review_item(item_id)
+
     def file_path_for_review_item(self, item_id: int) -> Path:
         item = self.get_review_item(item_id)
         result = item["result"]
@@ -1095,7 +1377,9 @@ class ReviewStore:
         with self._connect() as connection:
             rows = connection.execute(
                 """
-                select id, review_item_id, source_path, relative_path, sample_path, extracted_text_snippet,
+                select id, review_item_id, source_path, relative_path, sample_path,
+                       run_id, run_key, run_preset_key, segment_id, segment_title, segment_type, page_start, page_end,
+                       extracted_text_snippet,
                        content_class, correct_primary_tag, correct_secondary_tags_json, ocr_quality_label,
                        expected_review_required, sensitive_record, correct_destination_path, correct_placement_year,
                        correct_privacy, reviewer, notes, proposed_tag,
@@ -1131,9 +1415,9 @@ class ReviewStore:
 
     def file_path_for_golden_label(self, label_id: int) -> Path:
         label = self.get_golden_label(label_id)
-        candidates = [label.get("sample_path"), label.get("source_path")]
+        candidates = [label.get("sample_path"), _source_path_without_segment_suffix(label.get("source_path"))]
         with self._connect() as connection:
-            result_sample_path = _sample_path_from_result(connection, str(label.get("source_path") or ""))
+            result_sample_path = _sample_path_from_result(connection, _source_path_without_segment_suffix(label.get("source_path")))
             if result_sample_path:
                 candidates.insert(0, result_sample_path)
         for candidate in candidates:
@@ -1345,13 +1629,13 @@ class ReviewStore:
             {
                 "preset_key": "qa_samples_full",
                 "label": "QA samples full",
-                "description": "Full QA sample with LLM tags, OCR fallback, and semantic examples.",
+                "description": "Full QA sample with LLM tags, OpenAI OCR fallback, and semantic examples.",
                 "input_root": f"{base_manifest}/qa samples",
                 "output_dir": f"{base_manifest}/dashboard-runs/qa_samples_full",
                 "enable_llm_tags": True,
                 "embedding_provider": "cortex",
                 "llm_tag_provider": "auto",
-                "ocr_fallback_provider": "cortex",
+                "ocr_fallback_provider": "openai",
             },
             {
                 "preset_key": "qa_samples_fast",
@@ -1367,13 +1651,13 @@ class ReviewStore:
             {
                 "preset_key": "ocr_fallback_focus",
                 "label": "OCR fallback focus",
-                "description": "OCR-heavy QA sample with local Cortex OCR fallback.",
+                "description": "OCR-heavy QA sample with OpenAI OCR fallback for poor local OCR.",
                 "input_root": f"{base_manifest}/qa samples",
                 "output_dir": f"{base_manifest}/dashboard-runs/ocr_fallback_focus",
                 "enable_llm_tags": False,
                 "embedding_provider": "cortex",
                 "llm_tag_provider": "disabled",
-                "ocr_fallback_provider": "cortex",
+                "ocr_fallback_provider": "openai",
             },
             {
                 "preset_key": "review_required_rerun",
@@ -1384,7 +1668,7 @@ class ReviewStore:
                 "enable_llm_tags": True,
                 "embedding_provider": "cortex",
                 "llm_tag_provider": "auto",
-                "ocr_fallback_provider": "cortex",
+                "ocr_fallback_provider": "openai",
             },
             {
                 "preset_key": "random_route_candidate_audit",
@@ -1395,7 +1679,7 @@ class ReviewStore:
                 "enable_llm_tags": True,
                 "embedding_provider": "cortex",
                 "llm_tag_provider": "auto",
-                "ocr_fallback_provider": "cortex",
+                "ocr_fallback_provider": "openai",
             },
             {
                 "preset_key": "single_file_debug",
@@ -1610,6 +1894,7 @@ class ReviewStore:
             counts["model_usage"] = _delete_count(connection, "delete from pipeline_run_model_usage where run_id = ?", (run_id,))
             counts["provider_attempts"] = _delete_count(connection, "delete from pipeline_run_provider_attempts where run_id = ?", (run_id,))
             counts["document_segments"] = _delete_count(connection, "delete from pipeline_run_document_segments where run_id = ?", (run_id,))
+            counts["chunks"] = _delete_count(connection, "delete from pipeline_run_chunks where run_id = ?", (run_id,))
             counts["events"] = _delete_count(connection, "delete from pipeline_run_events where run_id = ?", (run_id,))
 
             sibling_count = 0
@@ -1779,8 +2064,9 @@ class ReviewStore:
                 insert into pipeline_run_document_segments (
                     run_id, source_path, relative_path, segment_id, parent_file_id,
                     page_start, page_end, segment_index, segment_type, segment_title,
-                    segment_confidence, requires_segment_review, boundary_evidence_json, metadata_json
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    segment_confidence, requires_segment_review, boundary_evidence_json, metadata_json,
+                    review_status, updated_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                 """,
                 (
                     run_id,
@@ -1797,6 +2083,7 @@ class ReviewStore:
                     1 if row.get("requires_segment_review") else 0,
                     json.dumps(row.get("segment_boundary_evidence") or row.get("boundary_evidence") or [], sort_keys=True),
                     json.dumps(row.get("metadata") or {}, sort_keys=True),
+                    "pending" if row.get("requires_segment_review") else "not_required",
                 ),
             )
             imported += 1
@@ -1808,7 +2095,8 @@ class ReviewStore:
                 """
                 select id, run_id, source_path, relative_path, segment_id, parent_file_id,
                        page_start, page_end, segment_index, segment_type, segment_title,
-                       segment_confidence, requires_segment_review, boundary_evidence_json, metadata_json, created_at
+                       segment_confidence, requires_segment_review, boundary_evidence_json, metadata_json,
+                       review_status, review_decision, reviewer, review_notes, accepted_at, created_at, updated_at
                 from pipeline_run_document_segments
                 where run_id = ?
                 order by id asc
@@ -1817,6 +2105,63 @@ class ReviewStore:
                 (run_id, limit),
             ).fetchall()
         return [_document_segment_from_row(row) for row in rows]
+
+    def import_chunks_artifact(self, connection: sqlite3.Connection, run_id: int | None, output_path: Path) -> int:
+        rows = _read_jsonl(output_path / "sample-chunks.jsonl")
+        if run_id is not None:
+            connection.execute("delete from pipeline_run_chunks where run_id = ?", (run_id,))
+        imported = 0
+        for row in rows:
+            metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+            segment_id = row.get("segment_id") or metadata.get("segment_id")
+            parent_segment_id = row.get("parent_segment_id") or metadata.get("parent_segment_id")
+            page_start = row.get("page_start") or metadata.get("page_start")
+            page_end = row.get("page_end") or metadata.get("page_end")
+            connection.execute(
+                """
+                insert into pipeline_run_chunks (
+                    run_id, source_path, relative_path, sample_path, chunk_id, chunk_index,
+                    chunk_kind, text_snippet, text_length, segment_id, parent_segment_id,
+                    page_start, page_end, segment_title, segment_type, metadata_json
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    row.get("source_path"),
+                    row.get("relative_path"),
+                    row.get("sample_path"),
+                    str(row.get("chunk_id") or ""),
+                    _optional_int(row.get("chunk_index")) or 0,
+                    str(row.get("chunk_kind") or "text"),
+                    _compact_text(str(row.get("text") or ""), max_chars=700),
+                    len(str(row.get("text") or "")),
+                    segment_id,
+                    parent_segment_id,
+                    _optional_int(page_start),
+                    _optional_int(page_end),
+                    row.get("segment_title") or metadata.get("segment_title"),
+                    row.get("segment_type") or metadata.get("segment_type"),
+                    json.dumps(metadata, sort_keys=True),
+                ),
+            )
+            imported += 1
+        return imported
+
+    def list_run_chunks(self, run_id: int, *, limit: int = 500) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                select id, run_id, source_path, relative_path, sample_path, chunk_id, chunk_index,
+                       chunk_kind, text_snippet, text_length, segment_id, parent_segment_id,
+                       page_start, page_end, segment_title, segment_type, metadata_json, created_at
+                from pipeline_run_chunks
+                where run_id = ?
+                order by source_path asc, segment_id asc, chunk_index asc, id asc
+                limit ?
+                """,
+                (run_id, max(1, min(int(limit), 1000))),
+            ).fetchall()
+        return [_chunk_from_row(row) for row in rows]
 
     def _upsert_file_index_from_result(
         self,
@@ -1946,6 +2291,14 @@ class ReviewStore:
                     source_path text not null unique,
                     relative_path text not null,
                     sample_path text,
+                    run_id integer,
+                    run_key text,
+                    run_preset_key text,
+                    segment_id text,
+                    segment_title text,
+                    segment_type text,
+                    page_start integer,
+                    page_end integer,
                     extracted_text_snippet text,
                     content_class text,
                     correct_primary_tag text not null,
@@ -2079,6 +2432,32 @@ class ReviewStore:
                     requires_segment_review integer not null default 0,
                     boundary_evidence_json text not null default '[]',
                     metadata_json text not null default '{}',
+                    review_status text,
+                    review_decision text,
+                    reviewer text,
+                    review_notes text,
+                    accepted_at text,
+                    created_at text not null default (datetime('now'))
+                );
+
+                create table if not exists pipeline_run_chunks (
+                    id integer primary key autoincrement,
+                    run_id integer,
+                    source_path text,
+                    relative_path text,
+                    sample_path text,
+                    chunk_id text not null,
+                    chunk_index integer not null default 0,
+                    chunk_kind text not null default 'text',
+                    text_snippet text,
+                    text_length integer not null default 0,
+                    segment_id text,
+                    parent_segment_id text,
+                    page_start integer,
+                    page_end integer,
+                    segment_title text,
+                    segment_type text,
+                    metadata_json text not null default '{}',
                     created_at text not null default (datetime('now'))
                 );
 
@@ -2122,6 +2501,10 @@ class ReviewStore:
                     on pipeline_run_provider_attempts(run_id);
                 create index if not exists idx_document_segments_run_id
                     on pipeline_run_document_segments(run_id);
+                create index if not exists idx_run_chunks_run_id
+                    on pipeline_run_chunks(run_id);
+                create index if not exists idx_run_chunks_segment_id
+                    on pipeline_run_chunks(segment_id);
                 create index if not exists idx_pipeline_eval_runs_updated_at
                     on pipeline_eval_runs(updated_at);
                 """
@@ -2145,6 +2528,18 @@ class ReviewStore:
             _ensure_column(connection, "review_items", "llm_tag_provider", "llm_tag_provider text")
             _ensure_column(connection, "review_items", "ocr_fallback_provider", "ocr_fallback_provider text")
             _ensure_column(connection, "review_items", "enable_llm_tags", "enable_llm_tags integer")
+            _ensure_column(connection, "pipeline_run_document_segments", "review_status", "review_status text")
+            _ensure_column(connection, "pipeline_run_document_segments", "review_decision", "review_decision text")
+            _ensure_column(connection, "pipeline_run_document_segments", "reviewer", "reviewer text")
+            _ensure_column(connection, "pipeline_run_document_segments", "review_notes", "review_notes text")
+            _ensure_column(connection, "pipeline_run_document_segments", "accepted_at", "accepted_at text")
+            _ensure_column(connection, "pipeline_run_document_segments", "updated_at", "updated_at text")
+            _ensure_column(connection, "pipeline_run_chunks", "segment_id", "segment_id text")
+            _ensure_column(connection, "pipeline_run_chunks", "parent_segment_id", "parent_segment_id text")
+            _ensure_column(connection, "pipeline_run_chunks", "page_start", "page_start integer")
+            _ensure_column(connection, "pipeline_run_chunks", "page_end", "page_end integer")
+            _ensure_column(connection, "pipeline_run_chunks", "segment_title", "segment_title text")
+            _ensure_column(connection, "pipeline_run_chunks", "segment_type", "segment_type text")
             _ensure_column(connection, "pipeline_runs", "embedding_provider", "embedding_provider text")
             _ensure_column(connection, "pipeline_runs", "run_metadata_json", "run_metadata_json text not null default '{}'")
             _ensure_column(connection, "pipeline_eval_runs", "run_metadata_json", "run_metadata_json text not null default '{}'")
@@ -2157,6 +2552,14 @@ class ReviewStore:
             _ensure_column(connection, "pipeline_eval_runs", "acceptance_gate_status", "acceptance_gate_status text")
             _ensure_column(connection, "pipeline_eval_runs", "production_readiness_status", "production_readiness_status text")
             _ensure_column(connection, "golden_labels", "content_class", "content_class text")
+            _ensure_column(connection, "golden_labels", "run_id", "run_id integer")
+            _ensure_column(connection, "golden_labels", "run_key", "run_key text")
+            _ensure_column(connection, "golden_labels", "run_preset_key", "run_preset_key text")
+            _ensure_column(connection, "golden_labels", "segment_id", "segment_id text")
+            _ensure_column(connection, "golden_labels", "segment_title", "segment_title text")
+            _ensure_column(connection, "golden_labels", "segment_type", "segment_type text")
+            _ensure_column(connection, "golden_labels", "page_start", "page_start integer")
+            _ensure_column(connection, "golden_labels", "page_end", "page_end integer")
             _ensure_column(connection, "golden_labels", "ocr_quality_label", "ocr_quality_label text")
             _ensure_column(connection, "golden_labels", "expected_review_required", "expected_review_required integer")
             _ensure_column(connection, "golden_labels", "sensitive_record", "sensitive_record integer not null default 0")
@@ -2342,12 +2745,43 @@ def _extraction_text_snippet(extraction_row: dict[str, Any] | None, *, max_chars
     if not extraction_row:
         return None
     text = str(extraction_row.get("text") or "")
+    return _compact_text(text, max_chars=max_chars)
+
+
+def _compact_text(text: str, *, max_chars: int) -> str | None:
     compact = " ".join(text.split())
     if not compact:
         return None
     if len(compact) <= max_chars:
         return compact
     return compact[: max_chars - 3] + "..."
+
+
+def _review_item_storage_source_path(review_row: dict[str, Any]) -> str:
+    source_path = str(review_row.get("source_path") or "")
+    segment_id = str(review_row.get("segment_id") or "").strip()
+    if segment_id:
+        return f"{source_path}#segment={segment_id}"
+    return source_path
+
+
+def _source_path_without_segment_suffix(source_path: str | None) -> str:
+    value = str(source_path or "")
+    if "#segment=" in value:
+        return value.split("#segment=", 1)[0]
+    return value
+
+
+def _segment_review_status(decision: str) -> str:
+    return {
+        "accept": "accepted",
+        "reject": "rejected",
+        "split": "needs_split",
+        "merge": "needs_merge",
+        "rename": "changed",
+        "change": "changed",
+        "defer": "deferred",
+    }.get(decision, "pending")
 
 
 def _ensure_column(connection: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
@@ -2494,9 +2928,17 @@ def _sample_routed_sources(results: list[dict[str, Any]], *, per_bucket: int, se
 
 def _review_item_from_row(row: sqlite3.Row, *, model_usage_summary: dict[str, Any] | None = None) -> dict[str, Any]:
     result = json.loads(row["result_json"])
+    display_source_path = result.get("_review_original_source_path") or row["source_path"]
+    segment_id = result.get("segment_id")
+    page_start = result.get("page_start")
+    page_end = result.get("page_end")
+    segment_boundary_evidence = result.get("segment_boundary_evidence") or result.get("boundary_evidence") or []
+    if not isinstance(segment_boundary_evidence, list):
+        segment_boundary_evidence = [str(segment_boundary_evidence)]
     return {
         "id": row["id"],
-        "source_path": row["source_path"],
+        "source_path": display_source_path,
+        "review_storage_source_path": row["source_path"],
         "relative_path": row["relative_path"],
         "route_status": row["route_status"],
         "review_reason": row["review_reason"],
@@ -2528,6 +2970,13 @@ def _review_item_from_row(row: sqlite3.Row, *, model_usage_summary: dict[str, An
         "priority": row["priority"],
         "assigned_reviewer": row["assigned_reviewer"],
         "notes": row["notes"],
+        "segment_id": segment_id,
+        "segment_title": result.get("segment_title"),
+        "segment_type": result.get("segment_type"),
+        "page_start": _optional_int(page_start),
+        "page_end": _optional_int(page_end),
+        "segment_confidence": _optional_float(result.get("segment_confidence")),
+        "segment_boundary_evidence": segment_boundary_evidence,
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
         "model_usage_summary": model_usage_summary or _empty_review_item_model_usage_summary(),
@@ -3102,9 +3551,18 @@ def _golden_label_from_row(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "id": row["id"],
         "review_item_id": row["review_item_id"],
-        "source_path": row["source_path"],
+        "source_path": _source_path_without_segment_suffix(row["source_path"]),
+        "golden_storage_source_path": row["source_path"],
         "relative_path": row["relative_path"],
         "sample_path": row["sample_path"],
+        "run_id": _row_value(row, "run_id"),
+        "run_key": _row_value(row, "run_key"),
+        "run_preset_key": _row_value(row, "run_preset_key"),
+        "segment_id": _row_value(row, "segment_id"),
+        "segment_title": _row_value(row, "segment_title"),
+        "segment_type": _row_value(row, "segment_type"),
+        "page_start": _row_value(row, "page_start"),
+        "page_end": _row_value(row, "page_end"),
         "extracted_text_snippet": row["extracted_text_snippet"],
         "content_class": row["content_class"],
         "correct_primary_tag": row["correct_primary_tag"],
@@ -3265,6 +3723,35 @@ def _document_segment_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "segment_confidence": row["segment_confidence"],
         "requires_segment_review": bool(row["requires_segment_review"]),
         "boundary_evidence": _json_list(row["boundary_evidence_json"]),
+        "metadata": _json_object(row["metadata_json"]),
+        "review_status": _row_value(row, "review_status"),
+        "review_decision": _row_value(row, "review_decision"),
+        "reviewer": _row_value(row, "reviewer"),
+        "review_notes": _row_value(row, "review_notes"),
+        "accepted_at": _row_value(row, "accepted_at"),
+        "created_at": row["created_at"],
+        "updated_at": _row_value(row, "updated_at"),
+    }
+
+
+def _chunk_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "run_id": row["run_id"],
+        "source_path": row["source_path"],
+        "relative_path": row["relative_path"],
+        "sample_path": row["sample_path"],
+        "chunk_id": row["chunk_id"],
+        "chunk_index": row["chunk_index"],
+        "chunk_kind": row["chunk_kind"],
+        "content_snippet": row["text_snippet"],
+        "content_length": row["text_length"],
+        "segment_id": row["segment_id"],
+        "parent_segment_id": row["parent_segment_id"],
+        "page_start": row["page_start"],
+        "page_end": row["page_end"],
+        "segment_title": row["segment_title"],
+        "segment_type": row["segment_type"],
         "metadata": _json_object(row["metadata_json"]),
         "created_at": row["created_at"],
     }

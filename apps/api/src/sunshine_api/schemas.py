@@ -59,7 +59,8 @@ class ReviewDecisionRequest(BaseModel):
 
 
 class SegmentReviewDecisionRequest(BaseModel):
-    decision: Literal["accept", "reject", "split", "merge", "defer", "change"]
+    decision: Literal["accept", "reject", "split", "merge", "defer", "change", "rename"]
+    segment_title: str | None = None
     notes: str | None = None
     reviewer: str | None = None
 
@@ -73,9 +74,9 @@ class FileRunRequest(BaseModel):
     embedding_provider: Literal["cortex", "placeholder"] | None = None
     enable_llm_tags: bool = False
     llm_tag_provider: Literal["cortex"] | None = None
-    ocr_fallback_provider: Literal["cortex", "disabled"] | None = None
+    ocr_fallback_provider: Literal["openai", "cortex", "disabled"] | None = None
     semantic_index_path: str | None = None
-    import_on_success: bool = False
+    import_on_success: bool = True
     start: bool = True
 
 
@@ -114,9 +115,9 @@ class RunStartRequest(BaseModel):
     embedding_provider: Literal["cortex", "placeholder"] | None = None
     enable_llm_tags: bool | None = None
     llm_tag_provider: Literal["cortex"] | None = None
-    ocr_fallback_provider: Literal["cortex", "disabled"] | None = None
+    ocr_fallback_provider: Literal["openai", "cortex", "disabled"] | None = None
     semantic_index_path: str | None = None
-    import_on_success: bool = False
+    import_on_success: bool = True
     start: bool = True
 
 
@@ -160,7 +161,7 @@ class PipelineEvalRequest(BaseModel):
     limit: int | None = Field(default=None, ge=1)
     semantic_index_path: str | None = None
     embedding_provider: Literal["placeholder", "cortex"] | None = None
-    ocr_fallback_provider: Literal["disabled", "cortex"] | None = None
+    ocr_fallback_provider: Literal["disabled", "cortex", "openai"] | None = None
     disable_semantic_index: bool = False
     enable_llm_tags: bool = False
     enable_ocr: bool = False

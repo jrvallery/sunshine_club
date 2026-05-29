@@ -17,14 +17,85 @@ from typing import Any
 
 from sunshine_api.dependencies import review_store
 from sunshine_api.review_store import ReviewStore
-from sunshine_api.services.imports import import_langgraph_output_to_postgres_if_configured, record_postgres_pipeline_run_state_if_configured
+from sunshine_api.services.imports import (
+    get_postgres_pipeline_run,
+    import_langgraph_output_to_postgres_if_configured,
+    record_postgres_pipeline_run_event_if_configured,
+    record_postgres_pipeline_run_state_if_configured,
+)
 
 
 from sunshine_api.services.run_reports import _read_live_run_summary, _read_run_summary
 
 _RUN_PROCESSES: dict[int, subprocess.Popen[str]] = {}
+_POSTGRES_RUN_PROCESSES: dict[str, subprocess.Popen[str]] = {}
 _RUN_PROCESS_LOCK = threading.Lock()
 _RUN_PROGRESS_PATTERN = re.compile(r"\[(?P<current>\d+)/(?P<total>\d+)\]")
+
+
+def _execute_postgres_run(run: dict[str, Any], command: list[str], output_dir: str, import_on_success: bool) -> None:
+    run_key = str(run["run_key"])
+    try:
+        _record_postgres_run_state(run, status="running", summary=_summary_with_backend(run, run.get("summary") or {}))
+        _record_postgres_run_event(run_key, status="running", message="Run started.", node="dashboard_run_lifecycle")
+        process = subprocess.Popen(
+            command,
+            cwd=Path.cwd(),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            bufsize=1,
+            start_new_session=True,
+        )
+        with _RUN_PROCESS_LOCK:
+            _POSTGRES_RUN_PROCESSES[run_key] = process
+        _stream_postgres_run_output(run, process, output_dir)
+        summary = _read_run_summary(output_dir) or run.get("summary") or {}
+        if _postgres_run_status(run_key) == "cancelled":
+            _record_postgres_run_event(run_key, status="cancelled", message="Run cancelled.", node="dashboard_run_lifecycle", payload=summary)
+            return
+        if process.returncode == 0:
+            if import_on_success:
+                _import_live_outputs_postgres(run, output_dir)
+            _record_postgres_run_state(run, status="succeeded", summary=_summary_with_backend(run, summary))
+            _record_postgres_run_event(run_key, status="succeeded", message="Run succeeded.", node="dashboard_run_lifecycle", payload=summary)
+        else:
+            error = f"Command exited {process.returncode}"
+            _record_postgres_run_state(run, status="failed", summary=_summary_with_backend(run, summary), error=error)
+            _record_postgres_run_event(run_key, status="failed", message=error, node="dashboard_run_lifecycle", payload=summary)
+    except Exception as error:  # noqa: BLE001 - background run errors must be visible in the dashboard.
+        _record_postgres_run_state(run, status="failed", summary=_summary_with_backend(run, run.get("summary") or {}), error=f"{type(error).__name__}: {error}")
+        _record_postgres_run_event(run_key, status="failed", message=f"{type(error).__name__}: {error}", node="dashboard_run_lifecycle")
+    finally:
+        with _RUN_PROCESS_LOCK:
+            _POSTGRES_RUN_PROCESSES.pop(run_key, None)
+
+
+def cancel_postgres_run_process(run_key: str) -> bool:
+    with _RUN_PROCESS_LOCK:
+        process = _POSTGRES_RUN_PROCESSES.get(run_key)
+    if process is None or process.poll() is not None:
+        return False
+    try:
+        os.killpg(process.pid, 15)
+    except ProcessLookupError:
+        pass
+    except Exception:
+        process.terminate()
+    return True
+
+
+def postgres_run_process_is_active(run_key: str) -> bool:
+    with _RUN_PROCESS_LOCK:
+        process = _POSTGRES_RUN_PROCESSES.get(run_key)
+    return process is not None and process.poll() is None
+
+
+def _postgres_run_status(run_key: str) -> str | None:
+    try:
+        return str(get_postgres_pipeline_run(run_key=run_key).get("status") or "")
+    except Exception:  # noqa: BLE001 - status check should not hide actual process failures.
+        return None
 
 
 def _execute_run(run_id: int, command: list[str], output_dir: str, import_on_success: bool) -> None:
@@ -126,10 +197,146 @@ def _record_postgres_run_state(run: dict[str, Any], *, status: str, summary: dic
         return
 
 
+def _record_postgres_run_event(run_key: str, *, status: str, message: str, node: str | None = None, payload: dict[str, Any] | None = None) -> None:
+    try:
+        record_postgres_pipeline_run_event_if_configured(
+            run_key=run_key,
+            status=status,
+            message=message,
+            node=node,
+            payload=payload,
+        )
+    except Exception:  # noqa: BLE001 - event capture must not break the run.
+        return
+
+
 def _summary_with_backend(run: dict[str, Any], summary: dict[str, Any]) -> dict[str, Any]:
     metadata = run.get("run_metadata") if isinstance(run.get("run_metadata"), dict) else {}
     execution_backend = run.get("execution_backend") or metadata.get("execution_backend") or "subprocess"
     return {**summary, "execution_backend": execution_backend}
+
+
+def _import_success_outputs_postgres(run: dict[str, Any], output_dir: str) -> None:
+    run_key = str(run["run_key"])
+    try:
+        postgres_result = import_langgraph_output_to_postgres_if_configured(
+            output_dir,
+            run_key=run_key,
+            preset_key=run.get("preset_key"),
+        )
+        status = "imported" if postgres_result.get("import_status") == "imported" else "warning"
+        message = "Imported run artifacts into Postgres." if status == "imported" else "Postgres import skipped or incomplete."
+        _record_postgres_run_event(run_key, status=status, message=message, node="dashboard_import", payload=postgres_result)
+    except Exception as error:  # noqa: BLE001 - final status should expose import failure.
+        _record_postgres_run_event(
+            run_key,
+            status="failed",
+            message=f"Postgres import failed: {type(error).__name__}: {error}",
+            node="dashboard_import",
+        )
+
+
+def _import_live_outputs_postgres(run: dict[str, Any], output_dir: str) -> None:
+    aggregate_dir = _build_live_import_dir(Path(output_dir))
+    if aggregate_dir is None:
+        return
+    _import_success_outputs_postgres(run, str(aggregate_dir))
+
+
+def _build_live_import_dir(output_dir: Path) -> Path | None:
+    graph_runs_dir = output_dir / "graph-runs"
+    if not graph_runs_dir.exists():
+        return output_dir if (output_dir / "sample-pipeline-results.jsonl").exists() else None
+    run_dirs = sorted(path for path in graph_runs_dir.iterdir() if path.is_dir() and (path / "sample-pipeline-results.jsonl").exists())
+    if not run_dirs:
+        return None
+    aggregate_dir = output_dir / ".postgres-live-import"
+    aggregate_dir.mkdir(parents=True, exist_ok=True)
+    jsonl_names = sorted({path.name for run_dir in run_dirs for path in run_dir.glob("*.jsonl")})
+    for name in jsonl_names:
+        with (aggregate_dir / name).open("w", encoding="utf-8") as output_file:
+            for run_dir in run_dirs:
+                input_path = run_dir / name
+                if input_path.exists():
+                    with input_path.open("r", encoding="utf-8") as input_file:
+                        for line in input_file:
+                            if line.strip():
+                                output_file.write(line if line.endswith("\n") else f"{line}\n")
+    artifacts: list[dict[str, Any]] = []
+    first_metadata: dict[str, Any] = {}
+    for run_dir in run_dirs:
+        manifest_path = run_dir / "artifact-manifest.json"
+        if manifest_path.exists():
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                manifest = {}
+            if isinstance(manifest.get("artifacts"), list):
+                artifacts.extend(row for row in manifest["artifacts"] if isinstance(row, dict))
+        metadata_path = run_dir / "graph-run-metadata.json"
+        if not first_metadata and metadata_path.exists():
+            try:
+                first_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                first_metadata = {}
+    (aggregate_dir / "artifact-manifest.json").write_text(json.dumps({"artifacts": artifacts}, sort_keys=True), encoding="utf-8")
+    (aggregate_dir / "graph-run-metadata.json").write_text(json.dumps(first_metadata, sort_keys=True), encoding="utf-8")
+    return aggregate_dir
+
+
+def _stream_postgres_run_output(run: dict[str, Any], process: subprocess.Popen[str], output_dir: str) -> None:
+    run_key = str(run["run_key"])
+    selector = selectors.DefaultSelector()
+    if process.stdout is not None:
+        selector.register(process.stdout, selectors.EVENT_READ, "stdout")
+    if process.stderr is not None:
+        selector.register(process.stderr, selectors.EVENT_READ, "stderr")
+    last_heartbeat = time.monotonic()
+    try:
+        while selector.get_map():
+            for key, _mask in selector.select(timeout=1.0):
+                stream = key.fileobj
+                line = stream.readline()
+                if line == "":
+                    selector.unregister(stream)
+                    continue
+                message = line.rstrip()
+                if not message:
+                    continue
+                level = "failed" if key.data == "stderr" and _is_error_log(message) else "running"
+                payload = _progress_payload_from_message(message)
+                _record_postgres_run_event(run_key, status=level, message=message[-4000:], node="pipeline_stdout", payload=payload)
+                if payload:
+                    summary = {
+                        **(run.get("summary") or {}),
+                        "processed_count": payload["current"],
+                        "selected_sample_count": payload["total"],
+                        "progress_ratio": payload["current"] / payload["total"] if payload["total"] else None,
+                    }
+                    run["summary"] = summary
+                    _record_postgres_run_state(run, status="running", summary=summary)
+            if process.poll() is not None:
+                for key in list(selector.get_map().values()):
+                    line = key.fileobj.readline()
+                    while line:
+                        message = line.rstrip()
+                        if message:
+                            level = "failed" if key.data == "stderr" and _is_error_log(message) else "running"
+                            payload = _progress_payload_from_message(message)
+                            _record_postgres_run_event(run_key, status=level, message=message[-4000:], node="pipeline_stdout", payload=payload)
+                        line = key.fileobj.readline()
+                    selector.unregister(key.fileobj)
+                break
+            if time.monotonic() - last_heartbeat >= 15:
+                summary = _read_live_run_summary(output_dir, run.get("summary") or {})
+                if summary:
+                    run["summary"] = summary
+                    _record_postgres_run_state(run, status="running", summary=summary)
+                    _import_live_outputs_postgres(run, output_dir)
+                _record_postgres_run_event(run_key, status="running", message="Run still active.", node="dashboard_heartbeat", payload=summary)
+                last_heartbeat = time.monotonic()
+    finally:
+        selector.close()
 
 
 def _record_postgres_run_progress(store: ReviewStore, run_id: int, summary: dict[str, Any]) -> None:

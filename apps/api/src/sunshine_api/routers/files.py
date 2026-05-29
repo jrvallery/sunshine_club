@@ -55,10 +55,23 @@ def files(
     route_status: str | None = None,
     review_status: str | None = None,
     placement_status: str | None = None,
-    source: str = "sqlite",
+    source: str | None = None,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
-    if source == "postgres":
+    if source is None and not _postgres_runtime_configured():
+            return review_store().list_files(
+                q=q,
+                source_collection=source_collection,
+                extension=extension,
+                content_class=content_class,
+                primary_tag=primary_tag,
+                secondary_tag=secondary_tag,
+                route_status=route_status,
+                review_status=review_status,
+                placement_status=placement_status,
+                limit=limit,
+            )
+    if source in (None, "postgres"):
         return search_postgres_files(
             q=q,
             source_collection=source_collection,
@@ -71,20 +84,7 @@ def files(
             placement_status=placement_status,
             limit=limit,
         )["items"]
-    if source != "sqlite":
-        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
-    return review_store().list_files(
-        q=q,
-        source_collection=source_collection,
-        extension=extension,
-        content_class=content_class,
-        primary_tag=primary_tag,
-        secondary_tag=secondary_tag,
-        route_status=route_status,
-        review_status=review_status,
-        placement_status=placement_status,
-        limit=limit,
-    )
+    raise HTTPException(status_code=410, detail="SQLite file browsing has been retired; use source=postgres")
 
 
 @router.get("/admin/files/search")
@@ -100,13 +100,31 @@ def file_search(
     ocr_quality: str | None = None,
     warning_type: str | None = None,
     placement_status: str | None = None,
-    run_id: int | None = None,
+    run_id: str | None = None,
     sort: str = "updated_desc",
     cursor: int | None = None,
     limit: int = 100,
-    source: str = "sqlite",
+    source: str | None = None,
 ) -> dict[str, Any]:
-    if source == "postgres":
+    if source is None and not _postgres_runtime_configured():
+            return review_store().search_files(
+                q=q,
+                source_collection=source_collection,
+                extension=extension,
+                content_class=content_class,
+                primary_tag=primary_tag,
+                secondary_tag=secondary_tag,
+                route_status=route_status,
+                review_status=review_status,
+                ocr_quality=ocr_quality,
+                warning_type=warning_type,
+                placement_status=placement_status,
+                run_id=_sqlite_file_id(run_id) if run_id else None,
+                sort=sort,
+                cursor=cursor,
+                limit=limit,
+            )
+    if source in (None, "postgres"):
         try:
             return search_postgres_files(
                 q=q,
@@ -127,25 +145,7 @@ def file_search(
             )
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
-    if source != "sqlite":
-        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
-    return review_store().search_files(
-        q=q,
-        source_collection=source_collection,
-        extension=extension,
-        content_class=content_class,
-        primary_tag=primary_tag,
-        secondary_tag=secondary_tag,
-        route_status=route_status,
-        review_status=review_status,
-        ocr_quality=ocr_quality,
-        warning_type=warning_type,
-        placement_status=placement_status,
-        run_id=run_id,
-        sort=sort,
-        cursor=cursor,
-        limit=limit,
-    )
+    raise HTTPException(status_code=410, detail="SQLite file browsing has been retired; use source=postgres")
 
 
 @router.get("/admin/files/facets")
@@ -161,10 +161,25 @@ def file_facets(
     ocr_quality: str | None = None,
     warning_type: str | None = None,
     placement_status: str | None = None,
-    run_id: int | None = None,
-    source: str = "sqlite",
+    run_id: str | None = None,
+    source: str | None = None,
 ) -> dict[str, dict[str, int]]:
-    if source == "postgres":
+    if source is None and not _postgres_runtime_configured():
+            return review_store().file_facets(
+                q=q,
+                source_collection=source_collection,
+                extension=extension,
+                content_class=content_class,
+                primary_tag=primary_tag,
+                secondary_tag=secondary_tag,
+                route_status=route_status,
+                review_status=review_status,
+                ocr_quality=ocr_quality,
+                warning_type=warning_type,
+                placement_status=placement_status,
+                run_id=_sqlite_file_id(run_id) if run_id else None,
+            )
+    if source in (None, "postgres"):
         try:
             return postgres_file_facets(
                 q=q,
@@ -182,27 +197,17 @@ def file_facets(
             )
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
-    if source != "sqlite":
-        raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
-    return review_store().file_facets(
-        q=q,
-        source_collection=source_collection,
-        extension=extension,
-        content_class=content_class,
-        primary_tag=primary_tag,
-        secondary_tag=secondary_tag,
-        route_status=route_status,
-        review_status=review_status,
-        ocr_quality=ocr_quality,
-        warning_type=warning_type,
-        placement_status=placement_status,
-        run_id=run_id,
-    )
+    raise HTTPException(status_code=410, detail="SQLite file facets have been retired; use source=postgres")
 
 
 @router.get("/admin/files/{file_id}")
-def file_detail(file_id: str, source: str = "sqlite") -> dict[str, Any]:
-    if source == "postgres":
+def file_detail(file_id: str, source: str | None = None) -> dict[str, Any]:
+    if source is None and not _postgres_runtime_configured():
+            try:
+                return review_store().get_file(_sqlite_file_id(file_id))
+            except KeyError as error:
+                raise HTTPException(status_code=404, detail=str(error)) from error
+    if source in (None, "postgres"):
         try:
             return get_postgres_file_result(file_id)
         except KeyError as error:
@@ -218,8 +223,13 @@ def file_detail(file_id: str, source: str = "sqlite") -> dict[str, Any]:
 
 
 @router.get("/admin/files/{file_id}/inspection")
-def file_inspection(file_id: str, source: str = "sqlite") -> dict[str, Any]:
-    if source == "postgres":
+def file_inspection(file_id: str, source: str | None = None) -> dict[str, Any]:
+    if source is None and not _postgres_runtime_configured():
+            try:
+                return review_store().file_inspection(_sqlite_file_id(file_id))
+            except KeyError as error:
+                raise HTTPException(status_code=404, detail=str(error)) from error
+    if source in (None, "postgres"):
         try:
             return postgres_file_result_inspection(file_id)
         except KeyError as error:
@@ -235,8 +245,16 @@ def file_inspection(file_id: str, source: str = "sqlite") -> dict[str, Any]:
 
 
 @router.get("/admin/files/{file_id}/preview")
-def file_preview(file_id: str, source: str = "sqlite") -> FileResponse:
-    if source == "postgres":
+def file_preview(file_id: str, source: str | None = None) -> FileResponse:
+    if source is None and not _postgres_runtime_configured():
+            try:
+                path = review_store().file_path_for_file(_sqlite_file_id(file_id))
+            except KeyError as error:
+                raise HTTPException(status_code=404, detail=str(error)) from error
+            except FileNotFoundError as error:
+                raise HTTPException(status_code=404, detail=str(error)) from error
+            return FileResponse(path, filename=path.name, content_disposition_type="inline")
+    if source in (None, "postgres"):
         return _postgres_file_response(file_id, content_disposition_type="inline")
     if source != "sqlite":
         raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
@@ -250,8 +268,16 @@ def file_preview(file_id: str, source: str = "sqlite") -> FileResponse:
 
 
 @router.get("/admin/files/{file_id}/download")
-def file_download(file_id: str, source: str = "sqlite") -> FileResponse:
-    if source == "postgres":
+def file_download(file_id: str, source: str | None = None) -> FileResponse:
+    if source is None and not _postgres_runtime_configured():
+            try:
+                path = review_store().file_path_for_file(_sqlite_file_id(file_id))
+            except KeyError as error:
+                raise HTTPException(status_code=404, detail=str(error)) from error
+            except FileNotFoundError as error:
+                raise HTTPException(status_code=404, detail=str(error)) from error
+            return FileResponse(path, filename=path.name, content_disposition_type="attachment")
+    if source in (None, "postgres"):
         return _postgres_file_response(file_id, content_disposition_type="attachment")
     if source != "sqlite":
         raise HTTPException(status_code=400, detail="source must be sqlite or postgres")
@@ -265,8 +291,13 @@ def file_download(file_id: str, source: str = "sqlite") -> FileResponse:
 
 
 @router.get("/admin/files/{file_id}/text")
-def file_text(file_id: str, source: str = "sqlite") -> dict[str, Any]:
-    if source == "postgres":
+def file_text(file_id: str, source: str | None = None) -> dict[str, Any]:
+    if source is None and not _postgres_runtime_configured():
+            try:
+                return review_store().file_text(_sqlite_file_id(file_id))
+            except KeyError as error:
+                raise HTTPException(status_code=404, detail=str(error)) from error
+    if source in (None, "postgres"):
         try:
             return postgres_file_result_text(file_id)
         except KeyError as error:
@@ -282,8 +313,13 @@ def file_text(file_id: str, source: str = "sqlite") -> dict[str, Any]:
 
 
 @router.post("/admin/files/{file_id}/review")
-def add_file_to_review(file_id: str, request: FileReviewRequest, source: str = "sqlite") -> dict[str, Any]:
-    if source == "postgres":
+def add_file_to_review(file_id: str, request: FileReviewRequest, source: str | None = None) -> dict[str, Any]:
+    if source is None and not _postgres_runtime_configured():
+            try:
+                return review_store().add_file_to_review(_sqlite_file_id(file_id), review_reason=request.review_reason)
+            except KeyError as error:
+                raise HTTPException(status_code=404, detail=str(error)) from error
+    if source in (None, "postgres"):
         try:
             return add_postgres_file_result_to_review(file_id, review_reason=request.review_reason)
         except KeyError as error:
@@ -299,17 +335,28 @@ def add_file_to_review(file_id: str, request: FileReviewRequest, source: str = "
 
 
 @router.post("/admin/files/{file_id}/run")
-def run_file_from_browser(file_id: str, request: FileRunRequest, source: str = "sqlite") -> dict[str, Any]:
+def run_file_from_browser(file_id: str, request: FileRunRequest, source: str | None = None) -> dict[str, Any]:
     store = review_store()
-    if source == "postgres":
-        try:
-            file_record = get_postgres_file_result(file_id)
-            input_file = file_path_for_postgres_file_result(file_id)
-        except KeyError as error:
-            raise HTTPException(status_code=404, detail=str(error)) from error
-        except FileNotFoundError as error:
-            raise HTTPException(status_code=404, detail=str(error)) from error
-        default_output_name = f"single_file_postgres_{_safe_path_slug(file_id)}"
+    if source in (None, "postgres"):
+        if source is None and not _postgres_runtime_configured():
+            try:
+                sqlite_file_id = _sqlite_file_id(file_id)
+                file_record = store.get_file(sqlite_file_id)
+                input_file = store.file_path_for_file(sqlite_file_id)
+            except KeyError as error:
+                raise HTTPException(status_code=404, detail=str(error)) from error
+            except FileNotFoundError as error:
+                raise HTTPException(status_code=404, detail=str(error)) from error
+            default_output_name = f"single_file_{file_id}"
+        else:
+            try:
+                file_record = get_postgres_file_result(file_id)
+                input_file = file_path_for_postgres_file_result(file_id)
+            except KeyError as error:
+                raise HTTPException(status_code=404, detail=str(error)) from error
+            except FileNotFoundError as error:
+                raise HTTPException(status_code=404, detail=str(error)) from error
+            default_output_name = f"single_file_postgres_{_safe_path_slug(file_id)}"
     elif source == "sqlite":
         try:
             sqlite_file_id = _sqlite_file_id(file_id)
@@ -371,3 +418,7 @@ def _postgres_file_response(result_id: str, *, content_disposition_type: str) ->
 
 def _safe_path_slug(value: str) -> str:
     return "".join(character if character.isalnum() else "_" for character in value).strip("_")[:80] or "file"
+
+
+def _postgres_runtime_configured() -> bool:
+    return bool(os.environ.get("DATABASE_URL") or os.environ.get("SUNSHINE_DATABASE_URL"))

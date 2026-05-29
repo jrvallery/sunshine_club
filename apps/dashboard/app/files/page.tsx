@@ -17,7 +17,7 @@ import { useDebouncedValue } from "../../lib/hooks";
 import type { FileFacets, FileSearchItem, FileSearchResponse } from "../../lib/types";
 
 type FileFilters = {
-  source: "sqlite" | "postgres";
+  source: "postgres";
   q: string;
   extension: string;
   source_collection: string;
@@ -60,7 +60,7 @@ const savedSearches: Array<{ label: string; filters: Partial<FileFilters> }> = [
 ];
 
 const defaultFilters: FileFilters = {
-  source: "sqlite",
+  source: "postgres",
   q: "",
   extension: "",
   source_collection: "",
@@ -228,10 +228,7 @@ function FilesPageContent() {
           <option value="primary_tag">Primary tag</option>
           <option value="quality">Quality</option>
         </select>
-        <select aria-label="File data source" value={filters.source} onChange={(event) => updateFilters({ source: event.target.value as FileFilters["source"] })}>
-          <option value="sqlite">Legacy SQLite</option>
-          <option value="postgres">V2 Postgres</option>
-        </select>
+        <span className="pill">Postgres</span>
         <span className="muted">{search.data?.total_estimate ?? 0} results</span>
       </DashboardSearchToolbar>
 
@@ -333,18 +330,18 @@ function formatValue(value?: string | null) {
 }
 
 function filtersFromParams(params: URLSearchParams): FileFilters {
-  const source = params.get("source") === "postgres" ? "postgres" : "sqlite";
   return {
     ...defaultFilters,
     ...Object.fromEntries(filterKeys.map((key) => [key, params.get(key) ?? defaultFilters[key]])),
-    source
+    source: "postgres"
   };
 }
 
 function apiParams(filters: FileFilters, extra: Record<string, string | number> = {}) {
   return {
     ...filters,
-    run_id: filters.run_id && filters.source === "sqlite" ? Number(filters.run_id) : filters.run_id || undefined,
+    source: "postgres",
+    run_id: filters.run_id || undefined,
     ...extra
   };
 }

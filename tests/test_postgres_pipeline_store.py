@@ -1734,8 +1734,10 @@ def test_postgres_pipeline_store_records_segment_review_decision() -> None:
         "decision": "accept",
         "notes": "range is correct",
         "reviewer": "james",
+        "segment_title": "Scrapbook pages 1-4",
         "status": "accepted",
     }
+    assert update_segment_params[1] == "Scrapbook pages 1-4"
     review_update_params = next(params for query, params in connection.executed if "update review_items_v2" in query)
     assert review_update_params[:3] == ("accepted", "segment_boundary_accept", "existing\nrange is correct")
     assert connection.committed is True

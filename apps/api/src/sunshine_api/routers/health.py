@@ -310,6 +310,7 @@ def postgres_runtime_segment_review_decision(run_key: str, segment_id: str, requ
             run_key=run_key,
             segment_id=segment_id,
             decision=request.decision,
+            segment_title=request.segment_title,
             notes=request.notes,
             reviewer=request.reviewer,
         )

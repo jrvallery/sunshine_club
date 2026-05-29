@@ -39,7 +39,7 @@ function FileViewerPageContent() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const fileId = params.fileId;
-  const source = searchParams.get("source") === "postgres" ? "postgres" : "sqlite";
+  const source = "postgres";
   const backHref = useMemo(() => {
     const filters = new URLSearchParams(searchParams);
     return `/files${filters.toString() ? `?${filters.toString()}` : ""}`;

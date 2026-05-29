@@ -917,7 +917,7 @@ def test_cortex_native_ocr_uploads_file_and_maps_pages(tmp_path: Path, monkeypat
     assert "ocr_model_used:cortex:paddleocr-ppocr-cpu" in pages[0].warnings
 
 
-def test_load_pipeline_env_does_not_normalize_openai_api_alias(tmp_path: Path, monkeypatch) -> None:
+def test_load_pipeline_env_normalizes_openai_api_alias(tmp_path: Path, monkeypatch) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text("OPENAI_API=test-secret\n", encoding="utf-8")
     monkeypatch.delenv("OPENAI_API", raising=False)
@@ -925,7 +925,7 @@ def test_load_pipeline_env_does_not_normalize_openai_api_alias(tmp_path: Path, m
 
     load_pipeline_env(env_file)
 
-    assert "OPENAI_API_KEY" not in __import__("os").environ
+    assert __import__("os").environ["OPENAI_API_KEY"] == "test-secret"
 
 
 def test_embedding_rows_are_joined_to_chunks() -> None:

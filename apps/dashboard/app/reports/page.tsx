@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
+import Link from "next/link";
 import { useState } from "react";
 
 import { PathCell } from "../../components/dashboard/PathCell";
@@ -90,15 +91,31 @@ export default function ReportsPage() {
               </thead>
               <tbody>
                 {data.matches.map((match, index) => (
-                  <tr key={`${match.chunk_id ?? index}`}>
-                    <td>{match.score == null ? "-" : Number(match.score).toFixed(4)}</td>
-                    <td><PathCell title={String(match.relative_path ?? match.source_path ?? "-")} /></td>
-                    <td>{String(match.chunk_id ?? match.chunk_index ?? "-")}</td>
-                    <td>{formatPages(match.page_start, match.page_end)}</td>
-                    <td className="snippetCell">{String(match.text_snippet ?? "-")}</td>
-                    <td className="snippetCell">{String(match.retrieval_explanation ?? "-")}</td>
-                  </tr>
-                ))}
+                <tr key={`${match.chunk_id ?? index}`}>
+                  <td>{match.score == null ? "-" : Number(match.score).toFixed(4)}</td>
+                  <td>
+                    <PathCell
+                      title={String(match.relative_path ?? match.source_path ?? "-")}
+                      subtitle={String(match.source_path ?? "") || null}
+                      href={fileHref(match)}
+                    />
+                  </td>
+                  <td>
+                    <div className="cellStack">
+                      <strong>{String(match.chunk_kind ?? "chunk")}</strong>
+                      <span>{String(match.chunk_id ?? match.chunk_index ?? "-")}</span>
+                    </div>
+                  </td>
+                  <td>{formatPages(match.page_start, match.page_end)}</td>
+                  <td className="snippetCell">{String(match.text_snippet ?? "-")}</td>
+                  <td>
+                    <div className="cellStack">
+                      <span>{String(match.retrieval_explanation ?? "-")}</span>
+                      <SearchActions match={match} />
+                    </div>
+                  </td>
+                </tr>
+              ))}
               </tbody>
             </table>
           </div>
@@ -106,6 +123,54 @@ export default function ReportsPage() {
       ) : null}
     </main>
   );
+}
+
+type SemanticMatch = SemanticSearchResponse["matches"][number];
+
+function SearchActions({ match }: { match: SemanticMatch }) {
+  const runKey = field(match, ["run_key", "runKey", "latest_run_key"]);
+  const reviewId = field(match, ["review_id", "reviewItemId", "review_item_id"]);
+  const links = [
+    fileHref(match) ? { href: fileHref(match) as string, label: "Open file" } : null,
+    runKey ? { href: `/runs/${encodeURIComponent(runKey)}/report?source=postgres`, label: "Open run" } : null,
+    reviewId ? { href: `/review/${encodeURIComponent(reviewId)}`, label: "Open review" } : null
+  ].filter(Boolean) as Array<{ href: string; label: string }>;
+  if (!links.length) {
+    return null;
+  }
+  return (
+    <div className="buttonRow compactButtons">
+      {links.map((link) => (
+        <Link className="secondaryButton" href={link.href} key={link.label}>
+          {link.label}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+function fileHref(match: SemanticMatch) {
+  const fileId = field(match, ["file_id", "postgres_file_id", "source_file_id", "id"]);
+  return fileId ? `/files/${encodeURIComponent(fileId)}` : null;
+}
+
+function field(match: SemanticMatch, names: string[]) {
+  for (const source of [match, match.citation, match.raw]) {
+    if (!source || typeof source !== "object") {
+      continue;
+    }
+    const record = source as Record<string, unknown>;
+    for (const name of names) {
+      const value = record[name];
+      if (typeof value === "string" && value.trim()) {
+        return value;
+      }
+      if (typeof value === "number") {
+        return String(value);
+      }
+    }
+  }
+  return null;
 }
 
 function formatPages(start?: number | null, end?: number | null) {

@@ -100,6 +100,40 @@ def record_postgres_pipeline_run_state_if_configured(
     }
 
 
+def record_postgres_pipeline_run_event_if_configured(
+    *,
+    run_key: str,
+    status: str,
+    message: str,
+    node: str | None = None,
+    source_path: str | None = None,
+    relative_path: str | None = None,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    database_url = os.environ.get("DATABASE_URL") or os.environ.get("SUNSHINE_DATABASE_URL")
+    if not database_url:
+        return {
+            "record_status": "skipped",
+            "store": "postgres_runtime",
+            "run_key": run_key,
+            "reason": "postgres_database_url_not_configured",
+        }
+    store = PostgresPipelineStore(database_url)
+    return {
+        "record_status": "recorded",
+        "store": "postgres_runtime",
+        "result": store.record_pipeline_run_event(
+            run_key=run_key,
+            status=status,
+            message=message,
+            node=node,
+            source_path=source_path,
+            relative_path=relative_path,
+            payload=payload,
+        ),
+    }
+
+
 def import_provider_benchmark_output_to_postgres(
     output_dir: str | Path,
     *,
@@ -658,6 +692,7 @@ def record_postgres_segment_review_decision(
     run_key: str,
     segment_id: str,
     decision: str,
+    segment_title: str | None = None,
     notes: str | None = None,
     reviewer: str | None = None,
     database_url: str | None = None,
@@ -668,6 +703,7 @@ def record_postgres_segment_review_decision(
         run_key=run_key,
         segment_id=segment_id,
         decision=decision,
+        segment_title=segment_title,
         notes=notes,
         reviewer=reviewer,
     )

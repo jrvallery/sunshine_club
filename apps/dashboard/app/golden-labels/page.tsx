@@ -17,7 +17,7 @@ export default function GoldenLabelsPage() {
   const [onlyMismatches, setOnlyMismatches] = useState(false);
   const [primaryFilter, setPrimaryFilter] = useState("");
   const [secondaryFilter, setSecondaryFilter] = useState("");
-  const [source, setSource] = useState<"sqlite" | "postgres">("sqlite");
+  const source = "postgres";
   const labels = useQuery({
     queryKey: ["golden-labels", source],
     queryFn: () => fetchJson<GoldenLabel[]>(`/api/admin/review/golden-labels${queryString({ limit: 500, source })}`)
@@ -70,7 +70,7 @@ export default function GoldenLabelsPage() {
         <div>
           <p className="eyebrow">Training</p>
           <h1>Golden Labels</h1>
-          <p className="muted">{source === "postgres" ? "V2 Postgres runtime labels" : "Legacy SQLite review labels"}</p>
+          <p className="muted">V2 Postgres runtime labels tied back to source review evidence.</p>
         </div>
         <div className="metricStrip">
           <Metric label="Total labels" value={summary.data?.total_golden_labels ?? 0} />
@@ -78,12 +78,7 @@ export default function GoldenLabelsPage() {
           <Metric label="Indexed" value={indexStatus.data?.indexed ?? 0} />
           <Metric label="Mismatches" value={mismatchCount} />
         </div>
-        <div className="buttonRow">
-          <select aria-label="Golden label source" value={source} onChange={(event) => setSource(event.target.value === "postgres" ? "postgres" : "sqlite")}>
-            <option value="sqlite">SQLite golden labels</option>
-            <option value="postgres">V2 Postgres labels</option>
-          </select>
-        </div>
+        <div className="buttonRow"><span className="pill">Postgres</span></div>
       </header>
 
       <section className="panel actionPanel">
@@ -96,7 +91,7 @@ export default function GoldenLabelsPage() {
             Provider: {indexStatus.data?.embedding_provider ?? "-"} / {indexStatus.data?.embedding_model ?? "-"} /{" "}
             {indexStatus.data?.embedding_dimensions ?? "-"} dims
           </p>
-          {source === "postgres" ? <p className="muted">Build exports V2 labels into a compatible local SQLite labels DB before indexing.</p> : null}
+          <p className="muted">Builds the local semantic index from the Postgres golden-label set.</p>
         </div>
         <Button variant="primary" disabled={buildIndex.isPending} onClick={() => buildIndex.mutate()}>
           {buildIndex.isPending ? "Building..." : "Build Semantic Index"}
@@ -218,7 +213,7 @@ function GoldenLabelDrawer({
   onClose: () => void;
   onSave: (body: Record<string, unknown>) => void;
   onDelete: () => void;
-  source: "sqlite" | "postgres";
+  source: "postgres";
 }) {
   const [primary, setPrimary] = useState(label.correct_primary_tag);
   const [secondary, setSecondary] = useState(label.correct_secondary_tags);

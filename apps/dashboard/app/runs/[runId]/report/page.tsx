@@ -84,6 +84,26 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
       router.push("/runs");
     }
   });
+  const importPostgresResults = useMutation({
+    mutationFn: () => postJson<Record<string, unknown>>(`/api/admin/runs/by-key/${encodeURIComponent(String(postgresRunKey))}/import-results`, {}),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["postgres-run-report", postgresRunKey] });
+    }
+  });
+  const cancelPostgresRun = useMutation({
+    mutationFn: () => postJson<PipelineRun>(`/api/admin/runs/by-key/${encodeURIComponent(String(postgresRunKey))}/cancel`, {}),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["postgres-run-report", postgresRunKey] });
+      await queryClient.invalidateQueries({ queryKey: ["runs"] });
+    }
+  });
+  const deletePostgresRun = useMutation({
+    mutationFn: () => deleteJson<Record<string, unknown>>(`/api/admin/runs/by-key/${encodeURIComponent(String(postgresRunKey))}`),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["runs"] });
+      router.push("/runs");
+    }
+  });
   const run = data?.run;
   const running = isActive(run?.status);
   const modelSummary = data?.model_usage?.summary;
@@ -115,6 +135,16 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
         report={postgresData}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
+        importing={importPostgresResults.isPending}
+        cancelling={cancelPostgresRun.isPending}
+        deleting={deletePostgresRun.isPending}
+        onImport={() => importPostgresResults.mutate()}
+        onCancel={() => cancelPostgresRun.mutate()}
+        onDelete={() => {
+          if (window.confirm(`Delete run ${postgresRunKey}? This removes Postgres rows and generated run artifacts, but not source corpus files.`)) {
+            deletePostgresRun.mutate();
+          }
+        }}
       />
     );
   }
@@ -177,7 +207,7 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
             {running ? <span className="spinner" aria-hidden="true" /> : null}
             <StatusBadge value={run.status} tone={run.status === "failed" ? "danger" : "default"} />
           </div>
-          {running ? <RunProgressBar report={data} /> : null}
+          <RunProgressBar report={data} />
         </div>
         <div className="runMetaGrid">
           <KeyValue label="Run" value={<RunContextBadge runId={run.id} runKey={run.run_key} preset={run.preset_key} />} />
@@ -258,15 +288,32 @@ function RunReportLoading() {
 function PostgresRunReportView({
   report,
   activeTab,
-  setActiveTab
+  setActiveTab,
+  importing,
+  cancelling,
+  deleting,
+  onImport,
+  onCancel,
+  onDelete
 }: {
   report: PostgresRunReport;
   activeTab: ReportTab;
   setActiveTab: (tab: ReportTab) => void;
+  importing: boolean;
+  cancelling: boolean;
+  deleting: boolean;
+  onImport: () => void;
+  onCancel: () => void;
+  onDelete: () => void;
 }) {
   const runKey = String(report.run.run_key ?? "");
   const status = String(report.run.status ?? "-");
   const modelCalls = Number(report.summary.model_call_count ?? 0);
+  const liveSummary = livePostgresSummary(report);
+  const processed = liveSummary.processed;
+  const total = liveSummary.total;
+  const reviewRequired = liveSummary.reviewRequired;
+  const failed = liveSummary.failed;
   const postgresTabs = tabs.filter((tab) => ["overview", "files", "metadata", "review", "segments", "ocr", "extraction", "indexing", "tags", "models", "providers", "logs", "artifacts"].includes(tab.key));
   const activePostgresTab = postgresTabs.some((tab) => tab.key === activeTab) ? activeTab : "overview";
   return (
@@ -279,6 +326,16 @@ function PostgresRunReportView({
         </div>
         <div className="buttonRow">
           <Link className="secondaryButton" href="/runs">Back to Runs</Link>
+          <Link className="secondaryButton" href={`/review?source=postgres&run_key=${encodeURIComponent(runKey)}&status=all`}>Review This Run</Link>
+          <button className="secondaryButton" disabled={isActive(status) || importing} onClick={onImport}>
+            {importing ? "Importing..." : "Import Results"}
+          </button>
+          <button className="secondaryButton" disabled={!isActive(status) || cancelling} onClick={onCancel}>
+            {cancelling ? "Cancelling..." : "Cancel"}
+          </button>
+          <button className="secondaryButton dangerText" disabled={isActive(status) || deleting} onClick={onDelete}>
+            {deleting ? "Deleting..." : "Delete"}
+          </button>
           <a className="secondaryButton" href={`/api/admin/system/postgres-runtime/runs/${encodeURIComponent(runKey)}/report`} target="_blank">
             Open JSON
           </a>
@@ -286,9 +343,12 @@ function PostgresRunReportView({
       </header>
 
       <section className="panel runReportHeader">
-        <div className="runStatusLine">
-          {isActive(status) ? <span className="spinner" aria-hidden="true" /> : null}
-          <StatusBadge value={status} tone={status === "failed" ? "danger" : "default"} />
+        <div>
+          <div className="runStatusLine">
+            {isActive(status) ? <span className="spinner" aria-hidden="true" /> : null}
+            <StatusBadge value={status} tone={status === "failed" ? "danger" : "default"} />
+          </div>
+          <PostgresRunProgressBar report={report} />
         </div>
         <div className="runMetaGrid">
           <KeyValue label="Run" value={<RunContextBadge runId={runKey} runKey={runKey} preset={String(report.run.preset_key ?? "-")} />} />
@@ -302,9 +362,11 @@ function PostgresRunReportView({
       </section>
 
       <section className="metrics">
-        <Metric label="Results" value={String(report.summary.result_count ?? 0)} />
-        <Metric label="Review items" value={String(report.summary.review_item_count ?? 0)} />
-        <Metric label="Open review" value={String(report.summary.open_review_item_count ?? 0)} />
+        <Metric label="Processed" value={total == null ? String(processed) : `${processed} / ${total}`} />
+        <Metric label="Imported results" value={String(report.summary.result_count ?? 0)} />
+        <Metric label="Review items" value={String(Math.max(Number(report.summary.review_item_count ?? 0), reviewRequired))} />
+        <Metric label="Open review" value={String(Math.max(Number(report.summary.open_review_item_count ?? 0), reviewRequired))} />
+        <Metric label="Failed" value={String(failed)} />
         <Metric label="Segments" value={String(report.summary.document_segment_count ?? 0)} />
         <Metric label="Segment reviews" value={String(report.summary.segment_review_count ?? 0)} />
         <Metric label="Chunks" value={String(report.summary.chunk_count ?? report.chunks?.length ?? 0)} />
@@ -606,6 +668,7 @@ function IndexingTab({ report, postgresReport }: { report: RunReport; postgresRe
   if (postgresReport) {
     return <PostgresIndexingTab report={postgresReport} />;
   }
+  const chunks = report.chunks?.items ?? [];
   return (
     <section className="panel">
       <div className="sectionHeader">
@@ -619,12 +682,16 @@ function IndexingTab({ report, postgresReport }: { report: RunReport; postgresRe
         <Metric label="Skipped chunks" value={String(report.indexing.skipped_count ?? 0)} />
         <Metric label="Semantic embeddings" value={String(report.indexing.semantic_embedding_count ?? 0)} />
         <Metric label="Placeholder embeddings" value={String(report.indexing.placeholder_embedding_count ?? 0)} />
+        <Metric label="Segment chunks" value={String(report.chunks?.segment_chunk_count ?? 0)} />
       </div>
       <div className="reportGrid">
         <Breakdown title="Provider" values={report.indexing.by_provider ?? {}} />
         <Breakdown title="Status" values={report.indexing.by_status ?? {}} />
+        <Breakdown title="Chunk Kind" values={report.chunks?.by_kind ?? {}} />
+        <Breakdown title="Segment Type" values={report.chunks?.by_segment_type ?? {}} />
       </div>
       <JsonTable title="Indexing Rows" rows={report.indexing.items ?? []} />
+      <JsonTable title="Segment-Aware Chunks" rows={chunks} />
     </section>
   );
 }
@@ -942,7 +1009,7 @@ function ReviewItemRows({ runId, rows }: { runId: number | string; rows: Array<R
               {rows.map((row, index) => {
                 const relativePath = String(row.relative_path ?? row.source_path ?? "-");
                 return (
-                  <tr key={String(row.id ?? row.source_path ?? index)}>
+                  <tr key={reviewItemRowKey(row, runId, index)}>
                     <td><PathCell title={relativePath} /></td>
                     <td>{String(row.status ?? row.route_status ?? "-")}</td>
                     <td>{String(row.review_reason ?? "-")}</td>
@@ -963,6 +1030,25 @@ function ReviewItemRows({ runId, rows }: { runId: number | string; rows: Array<R
       ) : null}
     </div>
   );
+}
+
+function reviewItemRowKey(row: Record<string, unknown>, runId: number | string, index: number) {
+  const id = row.id;
+  if (id !== undefined && id !== null && String(id).trim()) {
+    return `review-item:${runId}:${String(id)}`;
+  }
+  return [
+    "review-artifact",
+    runId,
+    row.segment_id,
+    row.page_start,
+    row.page_end,
+    row.source_path,
+    row.relative_path,
+    row.review_reason,
+    row.route_status,
+    index
+  ].map((part) => String(part ?? "")).join(":");
 }
 
 function reviewItemHref(row: Record<string, unknown>, runId: number | string, relativePath: string) {
@@ -1271,14 +1357,54 @@ function Metric({ label, value }: { label: string; value: string }) {
 function RunProgressBar({ report }: { report: RunReport }) {
   const ratio = report.progress.progress_ratio ?? null;
   const percent = ratio == null ? null : Math.round(Math.max(0, Math.min(ratio, 1)) * 100);
+  const label = report.run.status === "failed" || report.run.status === "cancelled" ? "Stopped" : percent == null ? "Working..." : `${percent}%`;
   return (
     <div className="runProgress">
       <div className="progressTrack">
         <div className={percent == null ? "progressFill indeterminate" : "progressFill"} style={percent == null ? undefined : { width: `${percent}%` }} />
       </div>
-      <span>{percent == null ? "Working..." : `${percent}%`} {formatProcessed(report)}</span>
+      <span>{label} {formatProcessed(report)}</span>
     </div>
   );
+}
+
+function PostgresRunProgressBar({ report }: { report: PostgresRunReport }) {
+  const status = String(report.run.status ?? "");
+  const summary = livePostgresSummary(report);
+  const percent = summary.ratio == null ? null : Math.round(Math.max(0, Math.min(summary.ratio, 1)) * 100);
+  const label = status === "failed" || status === "cancelled" ? "Stopped" : percent == null ? "Working..." : `${percent}%`;
+  const processed = summary.total == null ? String(summary.processed) : `${summary.processed} / ${summary.total}`;
+  return (
+    <div className="runProgress">
+      <div className="progressTrack">
+        <div className={percent == null ? "progressFill indeterminate" : "progressFill"} style={percent == null ? undefined : { width: `${percent}%` }} />
+      </div>
+      <span>{label} {processed}</span>
+    </div>
+  );
+}
+
+function livePostgresSummary(report: PostgresRunReport) {
+  const summary = (report.run.summary && typeof report.run.summary === "object" && !Array.isArray(report.run.summary))
+    ? report.run.summary as Record<string, unknown>
+    : {};
+  const processed = numberValue(summary.processed_count ?? summary.total_results ?? summary.graph_run_count ?? report.summary.result_count);
+  const totalRaw = summary.selected_sample_count ?? summary.total_count ?? summary.graph_run_count;
+  const total = totalRaw == null ? null : numberValue(totalRaw);
+  const ratioRaw = summary.progress_ratio;
+  const ratio = ratioRaw == null ? (total && total > 0 ? processed / total : null) : Number(ratioRaw);
+  return {
+    processed,
+    total,
+    ratio: Number.isFinite(ratio as number) ? ratio as number : null,
+    reviewRequired: numberValue(summary.review_required_count ?? report.summary.open_review_item_count),
+    failed: numberValue(summary.failed_count ?? summary.error_count ?? report.summary.failed_run_event_count)
+  };
+}
+
+function numberValue(value: unknown) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function formatProcessed(report: RunReport) {
@@ -1347,6 +1473,11 @@ function formatEvidence(value: unknown) {
 }
 
 function segmentReview(row: Record<string, unknown>) {
+  const status = String(row.review_status ?? "");
+  const decision = String(row.review_decision ?? "");
+  if (status || decision) {
+    return [status, decision].filter(Boolean).join(" / ");
+  }
   const metadata = row.metadata;
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
     return "-";

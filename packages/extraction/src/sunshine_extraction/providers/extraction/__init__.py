@@ -16,6 +16,10 @@ def __getattr__(name: str):
         from sunshine_extraction.providers.extraction.openai_ocr import HostedOpenAIOcrExecutor
 
         return HostedOpenAIOcrExecutor
+    if name == "OpenAIVisionOcrExecutor":
+        from sunshine_extraction.providers.extraction.openai_ocr import OpenAIVisionOcrExecutor
+
+        return OpenAIVisionOcrExecutor
     if name == "MinerUExtractionProvider":
         from sunshine_extraction.providers.extraction.mineru_provider import MinerUExtractionProvider
 
@@ -63,6 +67,7 @@ __all__ = [
     "HostedOpenAIOcrExecutor",
     "LocalTesseractOcrExecutor",
     "MinerUExtractionProvider",
+    "OpenAIVisionOcrExecutor",
     "RAGFlowDeepDocExtractionProvider",
     "UnstructuredExtractionProvider",
     "extract_photo_metadata",

@@ -20,10 +20,11 @@ from sunshine_extraction.services.quality.ocr_quality import (
 )
 
 
-def ocr_pil_image(sample: SampleFile, image: Image.Image, page_number: int, page_count: int, page_start: float) -> OcrPageResult:
+def ocr_pil_image(sample: SampleFile, image: Image.Image, page_number: int, page_count: int, page_start: float, *, timeout_seconds: int | None = None) -> OcrPageResult:
     import pytesseract  # type: ignore
 
-    data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
+    kwargs = {"timeout": timeout_seconds} if timeout_seconds else {}
+    data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT, **kwargs)
     words: list[str] = []
     confidences: list[float] = []
     for text, confidence in zip(data.get("text", []), data.get("conf", []), strict=False):

@@ -28,7 +28,7 @@ import { primaryTagOptions, secondaryTagOptions } from "../../lib/taxonomy";
 import type { ReviewFacets, ReviewItem, ReviewSummary } from "../../lib/types";
 
 type Filters = {
-  source: string;
+  source: "postgres";
   status: string;
   q: string;
   route_status: string;
@@ -51,7 +51,7 @@ type Filters = {
 };
 
 const initialFilters: Filters = {
-  source: "sqlite",
+  source: "postgres",
   status: "open",
   q: "",
   route_status: "",
@@ -84,6 +84,7 @@ const savedReviewQueues: Array<{ label: string; filters: Partial<Filters> }> = [
   { label: "LLM tag disagreements", filters: { status: "all", review_reason: "llm_tag_disagreement" } },
   { label: "Low confidence tags", filters: { status: "all", review_reason: "tag_confidence_below_threshold" } },
   { label: "Low confidence bucket", filters: { status: "all", confidence_bucket: "low" } },
+  { label: "Segment boundary review", filters: { status: "all", route_status: "review_segment_boundary" } },
   { label: "Placement / date review", filters: { status: "all", placement_status: "needs_review" } },
   { label: "Privacy-sensitive", filters: { status: "all", warning_type: "privacy" } },
   { label: "Route candidate audit sample", filters: { status: "all", review_reason: "qa_random_route_candidate_sample" } },
@@ -120,6 +121,9 @@ export default function ReviewPage() {
     const params = new URLSearchParams(window.location.search);
     const next = { ...initialFilters };
     for (const key of Object.keys(initialFilters) as Array<keyof Filters>) {
+      if (key === "source") {
+        continue;
+      }
       const value = params.get(key);
       if (value !== null) {
         next[key] = value;
@@ -192,6 +196,11 @@ export default function ReviewPage() {
         id: "run_config",
         header: "Run Config",
         cell: ({ row }) => <RunConfig item={row.original} />
+      },
+      {
+        id: "segment",
+        header: "Segment",
+        cell: ({ row }) => <SegmentCell item={row.original} />
       },
       {
         id: "model_usage",
@@ -267,17 +276,14 @@ export default function ReviewPage() {
       </header>
 
       <DashboardSearchToolbar searchPlaceholder="Search path or OCR snippet" searchValue={filters.q} onSearchChange={(value) => updateFilters({ q: value })}>
-        <select aria-label="Review source" value={filters.source} onChange={(event) => updateFilters({ source: event.target.value })}>
-          <option value="sqlite">SQLite review store</option>
-          <option value="postgres">V2 Postgres runtime</option>
-        </select>
+        <span className="pill">Postgres</span>
         <select
           aria-label="Saved review queues"
           value=""
           onChange={(event) => {
             const queue = savedReviewQueues.find((item) => item.label === event.target.value);
             if (queue) {
-              updateFilters({ ...initialFilters, source: filters.source, ...queue.filters, run_id: filters.run_id });
+                updateFilters({ ...initialFilters, ...queue.filters, run_id: filters.run_id });
             }
           }}
         >
@@ -355,4 +361,31 @@ function ModelUsageCell({ item }: { item: ReviewItem }) {
       <span>{usage.scope === "file" ? "file scoped" : "run scoped"}</span>
     </div>
   );
+}
+
+function SegmentCell({ item }: { item: ReviewItem }) {
+  const segmentId = item.segment_id ?? item.result.segment_id;
+  if (!segmentId) {
+    return <span className="muted">-</span>;
+  }
+  const pageRange = formatPages(item.page_start ?? item.result.page_start, item.page_end ?? item.result.page_end);
+  const evidence = item.segment_boundary_evidence ?? item.result.segment_boundary_evidence ?? [];
+  return (
+    <div className="cellStack">
+      <strong>{pageRange}</strong>
+      <span>{item.segment_type ?? item.result.segment_type ?? "segment"}</span>
+      <span>{item.segment_title ?? item.result.segment_title ?? segmentId}</span>
+      {evidence.length ? <span>{evidence.slice(0, 2).join(" | ")}</span> : null}
+    </div>
+  );
+}
+
+function formatPages(start?: number | null, end?: number | null) {
+  if (start == null && end == null) {
+    return "pages -";
+  }
+  if (start != null && end != null && start !== end) {
+    return `pp. ${start}-${end}`;
+  }
+  return `p. ${start ?? end}`;
 }

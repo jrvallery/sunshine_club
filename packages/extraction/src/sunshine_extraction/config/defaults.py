@@ -15,7 +15,7 @@ DEFAULT_CORTEX_BASE_URL = "https://cortex.vallery.net"
 DEFAULT_CORTEX_MODEL = "gemma4-26b"
 DEFAULT_CORTEX_OCR_MODEL = "paddleocr-ppocr-cpu"
 DEFAULT_OPENAI_TAG_MODEL = "disabled-hosted-openai"
-DEFAULT_OPENAI_OCR_MODEL = "disabled-hosted-openai"
+DEFAULT_OPENAI_OCR_MODEL = "gpt-4.1-mini"
 
 EXPECTED_STRATEGIES = {
     "ocr_page_level",

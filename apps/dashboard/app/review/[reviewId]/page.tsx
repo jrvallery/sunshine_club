@@ -44,7 +44,7 @@ function ReviewItemPageContent() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const reviewId = params.reviewId;
-  const source = searchParams.get("source") === "postgres" ? "postgres" : "sqlite";
+  const source = "postgres";
   const sourceQuery = queryString({ source });
   const backHref = useMemo(() => {
     const filters = new URLSearchParams(searchParams);
@@ -86,6 +86,29 @@ function ReviewItemPageContent() {
   });
   const ocrQualityMutation = useMutation({
     mutationFn: (body: Record<string, unknown>) => postJson<ReviewItem>(`/api/admin/review/items/${reviewId}/ocr-quality`, body),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["review-item", source, reviewId] }),
+        queryClient.invalidateQueries({ queryKey: ["review-items"] }),
+        queryClient.invalidateQueries({ queryKey: ["review-facets"] })
+      ]);
+    }
+  });
+  const segmentDecisionMutation = useMutation({
+    mutationFn: (body: Record<string, unknown>) => {
+      if (source === "postgres") {
+        const segmentId = String(itemQuery.data?.segment_id ?? itemQuery.data?.result.segment_id ?? "");
+        const runKey = String(itemQuery.data?.run_key ?? "");
+        if (!segmentId || !runKey) {
+          throw new Error("Postgres segment decisions require a run key and segment id.");
+        }
+        return postJson<Record<string, unknown>>(
+          `/api/admin/system/postgres-runtime/runs/${encodeURIComponent(runKey)}/segments/${encodeURIComponent(segmentId)}/decision`,
+          body
+        );
+      }
+      return postJson<ReviewItem>(`/api/admin/review/items/${reviewId}/segment-decision`, body);
+    },
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["review-item", source, reviewId] }),
@@ -138,7 +161,7 @@ function ReviewItemPageContent() {
           <div className="textMetaRow">
             <span>Status {item.status}</span>
             <span>Reason {item.review_reason ?? "-"}</span>
-            <span>Confidence {item.confidence == null ? "-" : item.confidence.toFixed(2)}</span>
+            <span>Confidence {formatConfidence(item.confidence)}</span>
           </div>
         </div>
         <div className="textPreview fileViewerReadableText">{extractedText}</div>
@@ -178,12 +201,19 @@ function ReviewItemPageContent() {
           <KeyValue label="Privacy" value={item.result.default_privacy ?? "-"} />
         </section>
 
+        <SegmentReviewPanel
+          item={item}
+          saving={segmentDecisionMutation.isPending}
+          error={segmentDecisionMutation.error}
+          onSubmit={(body) => segmentDecisionMutation.mutate(body)}
+        />
+
         <ReviewDecisionPanel
           item={item}
           saving={decisionMutation.isPending}
           assigning={assignmentMutation.isPending || ocrQualityMutation.isPending}
-          supportsAssignment={source === "sqlite"}
-          supportsOcrQuality={source === "sqlite"}
+          supportsAssignment={false}
+          supportsOcrQuality={false}
           onSubmit={(body) => decisionMutation.mutate(body)}
           onAssign={(body) => assignmentMutation.mutate(body)}
           onMarkOcrPoor={(body) => ocrQualityMutation.mutate(body)}
@@ -218,7 +248,82 @@ function ReviewItemPageContent() {
   );
 }
 
-function reviewRunReportHref(item: ReviewItem, source: "sqlite" | "postgres") {
+function SegmentReviewPanel({
+  item,
+  saving,
+  error,
+  onSubmit
+}: {
+  item: ReviewItem;
+  saving: boolean;
+  error: Error | null;
+  onSubmit: (body: Record<string, unknown>) => void;
+}) {
+  const segmentId = item.segment_id ?? item.result.segment_id;
+  const [title, setTitle] = useState(item.segment_title ?? item.result.segment_title ?? "");
+  const [reviewer, setReviewer] = useState("james");
+  const [notes, setNotes] = useState("");
+  if (!segmentId) {
+    return (
+      <section className="drawerSection">
+        <h2>Segment</h2>
+        <p className="muted">No logical segment proposal is attached to this review item.</p>
+      </section>
+    );
+  }
+  const evidence = item.segment_boundary_evidence ?? item.result.segment_boundary_evidence ?? [];
+  return (
+    <section className="drawerSection">
+      <h2>Segment</h2>
+      <KeyValue label="Segment ID" value={segmentId} />
+      <KeyValue label="Title" value={item.segment_title ?? item.result.segment_title ?? "-"} />
+      <KeyValue label="Pages" value={formatPages(item.page_start ?? item.result.page_start, item.page_end ?? item.result.page_end)} />
+      <KeyValue label="Type" value={item.segment_type ?? item.result.segment_type ?? "-"} />
+      <KeyValue label="Confidence" value={formatSegmentConfidence(item.segment_confidence ?? item.result.segment_confidence)} />
+      <KeyValue label="Evidence" value={evidence.length ? evidence.join(" | ") : "-"} />
+      <KeyValue label="Decision" value={String(item.result.segment_review_status ?? item.result.segment_review?.status ?? "-")} />
+      <TextInput label="Reviewed title" value={title} onChange={(event) => setTitle(event.target.value)} />
+      <TextInput label="Reviewer" value={reviewer} onChange={(event) => setReviewer(event.target.value)} />
+      <TextArea label="Segment notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} />
+      <div className="buttonRow compactButtons">
+        <Button disabled={saving} onClick={() => onSubmit({ decision: "accept", segment_title: title || null, reviewer: reviewer || null, notes: notes || null })}>Accept</Button>
+        <Button disabled={saving} onClick={() => onSubmit({ decision: "split", segment_title: title || null, reviewer: reviewer || null, notes: notes || "Needs manual split." })}>Needs Split</Button>
+        <Button disabled={saving} onClick={() => onSubmit({ decision: "merge", segment_title: title || null, reviewer: reviewer || null, notes: notes || "Needs merge with neighboring segment." })}>Needs Merge</Button>
+        <Button disabled={saving} onClick={() => onSubmit({ decision: "rename", segment_title: title || null, reviewer: reviewer || null, notes: notes || "Segment title corrected." })}>Rename</Button>
+        <Button disabled={saving} onClick={() => onSubmit({ decision: "defer", segment_title: title || null, reviewer: reviewer || null, notes: notes || "Deferred segment review." })}>Defer</Button>
+        <Button variant="danger" disabled={saving} onClick={() => onSubmit({ decision: "reject", segment_title: title || null, reviewer: reviewer || null, notes: notes || "Rejected segment proposal." })}>Reject</Button>
+      </div>
+      {error ? <p className="errorText">{error.message}</p> : null}
+    </section>
+  );
+}
+
+function formatPages(start?: number | null, end?: number | null) {
+  if (start == null && end == null) {
+    return "-";
+  }
+  if (start != null && end != null && start !== end) {
+    return `pp. ${start}-${end}`;
+  }
+  return `p. ${start ?? end}`;
+}
+
+function formatSegmentConfidence(value?: number | null) {
+  if (value == null) {
+    return "-";
+  }
+  return Number(value).toFixed(2);
+}
+
+function formatConfidence(value?: number | string | null) {
+  if (value == null || value === "") {
+    return "-";
+  }
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue.toFixed(2) : String(value);
+}
+
+function reviewRunReportHref(item: ReviewItem, source: "postgres") {
   if (source === "postgres" && item.run_key) {
     return `/runs/${encodeURIComponent(item.run_key)}/report?source=postgres`;
   }

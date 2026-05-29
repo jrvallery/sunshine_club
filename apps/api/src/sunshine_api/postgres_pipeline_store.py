@@ -204,6 +204,50 @@ class PostgresPipelineStore:
         finally:
             connection.close()
 
+    def record_pipeline_run_event(
+        self,
+        *,
+        run_key: str,
+        status: str,
+        message: str,
+        node: str | None = None,
+        source_path: str | None = None,
+        relative_path: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        connection = self._connect_factory(self.database_url)
+        try:
+            row = connection.execute("select id from pipeline_runs where run_key = %s", (run_key,)).fetchone()
+            if row is None:
+                raise KeyError(f"Postgres pipeline run not found: {run_key}")
+            run_id = str(row[0] if isinstance(row, tuple) else row["id"])
+            event = connection.execute(
+                """
+                insert into pipeline_run_events (
+                    run_id, source_path, relative_path, node, status, message, payload
+                ) values (%s, %s, %s, %s, %s, %s, %s::jsonb)
+                returning id
+                """,
+                (
+                    run_id,
+                    source_path,
+                    relative_path,
+                    node,
+                    status,
+                    message,
+                    json.dumps(payload or {}, sort_keys=True),
+                ),
+            ).fetchone()
+            connection.commit()
+            return {
+                "id": str(event[0] if isinstance(event, tuple) else event["id"]),
+                "run_id": run_id,
+                "run_key": run_key,
+                "status": status,
+            }
+        finally:
+            connection.close()
+
     def get_pipeline_run(self, *, run_key: str) -> dict[str, Any]:
         connection = self._connect_factory(self.database_url)
         try:
@@ -1499,12 +1543,13 @@ class PostgresPipelineStore:
         run_key: str,
         segment_id: str,
         decision: str,
+        segment_title: str | None = None,
         notes: str | None = None,
         reviewer: str | None = None,
     ) -> dict[str, Any]:
         normalized_decision = decision.strip().lower()
-        if normalized_decision not in {"accept", "reject", "split", "merge", "defer", "change"}:
-            raise ValueError("segment decision must be accept, reject, split, merge, defer, or change")
+        if normalized_decision not in {"accept", "reject", "split", "merge", "defer", "change", "rename"}:
+            raise ValueError("segment decision must be accept, reject, split, merge, defer, change, or rename")
         review_status = _segment_review_status(normalized_decision)
         connection = self._connect_factory(self.database_url)
         try:
@@ -1533,6 +1578,7 @@ class PostgresPipelineStore:
                 raise KeyError(f"Postgres document segment not found: {run_key}/{segment_id}")
             segment = _json_safe_row(_row_to_dict(row))
             metadata = segment.get("metadata") if isinstance(segment.get("metadata"), dict) else {}
+            resolved_title = (segment_title or segment.get("segment_title") or "").strip() or None
             metadata = {
                 **metadata,
                 "segment_review": {
@@ -1540,16 +1586,18 @@ class PostgresPipelineStore:
                     "status": review_status,
                     "reviewer": reviewer,
                     "notes": notes,
+                    "segment_title": resolved_title,
                 },
             }
             connection.execute(
                 """
                 update document_segments
                 set metadata = %s::jsonb,
+                    segment_title = coalesce(%s, segment_title),
                     requires_segment_review = case when %s in ('accepted', 'rejected') then false else requires_segment_review end
                 where id = %s
                 """,
-                (json.dumps(metadata, sort_keys=True), review_status, segment["id"]),
+                (json.dumps(metadata, sort_keys=True), resolved_title, review_status, segment["id"]),
             )
             review_item_id = self._upsert_segment_review_item(
                 connection,
@@ -2487,7 +2535,19 @@ class PostgresPipelineStore:
 
     def _import_run_events(self, connection: PostgresConnection, run_id: str, output_path: Path) -> int:
         rows = _read_jsonl(output_path / "graph-audit-events.jsonl")
-        connection.execute("delete from pipeline_run_events where run_id = %s", (run_id,))
+        connection.execute(
+            """
+            delete from pipeline_run_events
+            where run_id = %s
+              and coalesce(node, '') not in (
+                'dashboard_run_lifecycle',
+                'dashboard_heartbeat',
+                'dashboard_import',
+                'pipeline_stdout'
+              )
+            """,
+            (run_id,),
+        )
         for row in rows:
             payload = {
                 key: value
@@ -3805,7 +3865,7 @@ def _segment_review_status(decision: str) -> str:
         return "rejected"
     if normalized == "defer":
         return "deferred"
-    if normalized in {"split", "merge", "change"}:
+    if normalized in {"split", "merge", "change", "rename"}:
         return "changed"
     return "open"
 

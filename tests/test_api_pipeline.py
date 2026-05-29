@@ -9,6 +9,8 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from sunshine_api.main import app
+from sunshine_api.review_store import ReviewStore
+from sunshine_api.schemas import RunStartRequest
 from sunshine_api.services.imports import import_langgraph_output_to_postgres_if_configured
 from sunshine_api.services.model_usage import _model_usage_report, _read_model_usage_artifact
 from sunshine_api.services.semantic_search import search_semantic_content
@@ -106,6 +108,231 @@ def test_delete_run_includes_postgres_cleanup_status(tmp_path: Path, monkeypatch
     assert deleted.status_code == 200
     assert deleted.json()["postgres_delete"] == {"delete_status": "deleted", "store": "postgres_runtime"}
     assert captured == {"run_key": run_key}
+
+
+def test_run_progress_reconciles_completed_orphaned_subprocess_run(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SUNSHINE_REVIEW_DB_PATH", str(tmp_path / "review.sqlite"))
+    output_dir = tmp_path / "dashboard-runs" / "orphaned"
+    output_dir.mkdir(parents=True)
+    summary = {
+        "selected_sample_count": 2,
+        "processed_count": 2,
+        "graph_run_count": 2,
+        "route_candidate_count": 1,
+        "review_required_count": 1,
+        "error_count": 0,
+    }
+    (output_dir / "sample-pipeline-summary.json").write_text(json.dumps(summary), encoding="utf-8")
+    (output_dir / "sample-pipeline-results.jsonl").write_text(
+        json.dumps({"source_path": "/source/a.pdf", "route_status": "route_candidate"}) + "\n"
+        + json.dumps({"source_path": "/source/b.pdf", "route_status": "review_ocr_quality"}) + "\n",
+        encoding="utf-8",
+    )
+    client = TestClient(app)
+    run = client.post(
+        "/admin/runs",
+        json={"preset_key": "qa_samples_fast", "input_root": str(tmp_path / "input"), "output_dir": str(output_dir), "start": False},
+    )
+    run_id = run.json()["id"]
+    ReviewStore().mark_pipeline_run_started(run_id)
+
+    progress = client.get(f"/admin/runs/{run_id}/progress")
+    detail = client.get(f"/admin/runs/{run_id}")
+
+    assert progress.status_code == 200
+    assert progress.json()["status"] == "succeeded"
+    assert progress.json()["progress_ratio"] == 1.0
+    assert detail.json()["status"] == "succeeded"
+    assert detail.json()["completed_at"]
+
+
+def test_import_results_persists_segment_review_rows_separately(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SUNSHINE_REVIEW_DB_PATH", str(tmp_path / "review.sqlite"))
+    output_dir = tmp_path / "dashboard-runs" / "segments"
+    output_dir.mkdir(parents=True)
+    source_path = "/source/scrapbook.pdf"
+    result = {
+        "source_path": source_path,
+        "relative_path": "archive/scrapbook.pdf",
+        "sample_path": str(tmp_path / "scrapbook.pdf"),
+        "route_status": "review_segment_boundary",
+        "review_reason": "segment_boundary_requires_review",
+        "final_class": "document",
+        "top_tag_candidate": "scrapbooks",
+        "quality": "ok",
+        "secondary_tags": [],
+        "warnings": ["document_segmentation_review_recommended"],
+    }
+    (output_dir / "sample-pipeline-results.jsonl").write_text(json.dumps(result) + "\n", encoding="utf-8")
+    (output_dir / "sample-review-queue.jsonl").write_text(
+        json.dumps(
+            {
+                **result,
+                "segment_id": "segment-001",
+                "segment_title": "scrapbook.pdf pp1-10",
+                "segment_type": "scrapbook_pages",
+                "page_start": 1,
+                "page_end": 10,
+                "segment_confidence": 0.72,
+                "segment_boundary_evidence": ["ten_page_window", "layout_shift"],
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                **result,
+                "segment_id": "segment-002",
+                "segment_title": "scrapbook.pdf pp11-20",
+                "segment_type": "scrapbook_pages",
+                "page_start": 11,
+                "page_end": 20,
+                "segment_confidence": 0.68,
+                "segment_boundary_evidence": ["ten_page_window"],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (output_dir / "sample-document-segments.jsonl").write_text(
+        json.dumps(
+            {
+                **result,
+                "segment_id": "segment-001",
+                "segment_title": "scrapbook.pdf pp1-10",
+                "segment_type": "scrapbook_pages",
+                "page_start": 1,
+                "page_end": 10,
+                "segment_index": 0,
+                "requires_segment_review": True,
+                "segment_boundary_evidence": ["ten_page_window", "layout_shift"],
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                **result,
+                "segment_id": "segment-002",
+                "segment_title": "scrapbook.pdf pp11-20",
+                "segment_type": "scrapbook_pages",
+                "page_start": 11,
+                "page_end": 20,
+                "segment_index": 1,
+                "requires_segment_review": True,
+                "segment_boundary_evidence": ["ten_page_window"],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (output_dir / "sample-chunks.jsonl").write_text(
+        json.dumps(
+            {
+                "source_path": source_path,
+                "relative_path": "archive/scrapbook.pdf",
+                "sample_path": str(tmp_path / "scrapbook.pdf"),
+                "chunk_id": "segment-001:chunk-001",
+                "chunk_index": 1,
+                "chunk_kind": "segment_text",
+                "text": "Pages 1 through 10 contain scrapbook material.",
+                "segment_id": "segment-001",
+                "parent_segment_id": "segment-001",
+                "metadata": {
+                    "segment_id": "segment-001",
+                    "segment_title": "scrapbook.pdf pp1-10",
+                    "segment_type": "scrapbook_pages",
+                    "page_start": 1,
+                    "page_end": 10,
+                },
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "source_path": source_path,
+                "relative_path": "archive/scrapbook.pdf",
+                "sample_path": str(tmp_path / "scrapbook.pdf"),
+                "chunk_id": "segment-002:chunk-001",
+                "chunk_index": 2,
+                "chunk_kind": "segment_text",
+                "text": "Pages 11 through 20 contain a separate reviewed scrapbook section.",
+                "segment_id": "segment-002",
+                "parent_segment_id": "segment-002",
+                "metadata": {
+                    "segment_id": "segment-002",
+                    "segment_title": "scrapbook.pdf pp11-20",
+                    "segment_type": "scrapbook_pages",
+                    "page_start": 11,
+                    "page_end": 20,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    client = TestClient(app)
+    run = client.post(
+        "/admin/runs",
+        json={"preset_key": "qa_samples_fast", "input_root": str(tmp_path / "input"), "output_dir": str(output_dir), "start": False},
+    )
+
+    imported = client.post(f"/admin/runs/{run.json()['id']}/import-results", json={})
+    items = client.get(f"/admin/review/items?run_id={run.json()['id']}&status=all&limit=10")
+
+    assert imported.status_code == 200
+    assert imported.json()["imported_review_items"] == 2
+    assert imported.json()["imported_chunks"] == 2
+    assert items.status_code == 200
+    assert len(items.json()) == 2
+    assert {item["result"]["segment_id"] for item in items.json()} == {"segment-001", "segment-002"}
+    assert {item["segment_id"] for item in items.json()} == {"segment-001", "segment-002"}
+    assert {item["segment_title"] for item in items.json()} == {"scrapbook.pdf pp1-10", "scrapbook.pdf pp11-20"}
+    assert {item["segment_type"] for item in items.json()} == {"scrapbook_pages"}
+    assert {item["page_start"] for item in items.json()} == {1, 11}
+    assert all(item["segment_boundary_evidence"] for item in items.json())
+    assert {item["source_path"] for item in items.json()} == {source_path}
+    assert all("#segment=" in item["review_storage_source_path"] for item in items.json())
+    chunk_rows = ReviewStore().list_run_chunks(run.json()["id"])
+    assert len(chunk_rows) == 2
+    assert {row["segment_id"] for row in chunk_rows} == {"segment-001", "segment-002"}
+    assert {row["page_start"] for row in chunk_rows} == {1, 11}
+    assert {row["segment_type"] for row in chunk_rows} == {"scrapbook_pages"}
+
+    searched = client.get(f"/admin/review/items?run_id={run.json()['id']}&status=all&q=pp11-20&limit=10")
+    assert searched.status_code == 200
+    assert len(searched.json()) == 1
+    assert searched.json()[0]["segment_id"] == "segment-002"
+
+    decision = client.post(
+        f"/admin/review/items/{searched.json()[0]['id']}/segment-decision",
+        json={
+            "decision": "rename",
+            "segment_title": "Reviewed Scrapbook Pages 11-20",
+            "reviewer": "james",
+            "notes": "Title corrected during segment review.",
+        },
+    )
+    segment_rows = ReviewStore().list_document_segments(run.json()["id"])
+    golden_labels = ReviewStore().list_golden_labels()
+
+    assert decision.status_code == 200
+    assert decision.json()["result"]["segment_review_status"] == "changed"
+    assert decision.json()["result"]["segment_title"] == "Reviewed Scrapbook Pages 11-20"
+    assert [row for row in segment_rows if row["segment_id"] == "segment-002"][0]["review_status"] == "changed"
+    assert [row for row in segment_rows if row["segment_id"] == "segment-002"][0]["segment_title"] == "Reviewed Scrapbook Pages 11-20"
+    assert len(golden_labels) == 1
+    assert golden_labels[0]["source_path"] == source_path
+    assert golden_labels[0]["golden_storage_source_path"].endswith("#segment=segment-002")
+    assert golden_labels[0]["segment_id"] == "segment-002"
+    assert golden_labels[0]["segment_title"] == "Reviewed Scrapbook Pages 11-20"
+    assert golden_labels[0]["page_start"] == 11
+    assert golden_labels[0]["page_end"] == 20
+    assert golden_labels[0]["correct_primary_tag"] == "scrapbooks"
+
+
+def test_run_start_defaults_to_import_on_success() -> None:
+    request = RunStartRequest(preset_key="qa_samples_fast")
+
+    assert request.import_on_success is True
 
 
 def test_postgres_review_items_endpoint_wraps_service(monkeypatch) -> None:
@@ -576,12 +803,21 @@ def test_semantic_search_service_returns_run_and_segment_metadata() -> None:
 def test_postgres_segment_review_decision_endpoint_wraps_service(monkeypatch) -> None:
     captured = {}
 
-    def fake_record_segment_decision(*, run_key: str, segment_id: str, decision: str, notes: str | None = None, reviewer: str | None = None) -> dict:
+    def fake_record_segment_decision(
+        *,
+        run_key: str,
+        segment_id: str,
+        decision: str,
+        segment_title: str | None = None,
+        notes: str | None = None,
+        reviewer: str | None = None,
+    ) -> dict:
         captured.update(
             {
                 "run_key": run_key,
                 "segment_id": segment_id,
                 "decision": decision,
+                "segment_title": segment_title,
                 "notes": notes,
                 "reviewer": reviewer,
             }
@@ -598,7 +834,7 @@ def test_postgres_segment_review_decision_endpoint_wraps_service(monkeypatch) ->
 
     response = TestClient(app).post(
         "/admin/system/postgres-runtime/runs/run-1/segments/segment-001/decision",
-        json={"decision": "split", "notes": "article boundary is too broad", "reviewer": "james"},
+        json={"decision": "split", "segment_title": "Article Pages 1-2", "notes": "article boundary is too broad", "reviewer": "james"},
     )
 
     assert response.status_code == 200
@@ -607,6 +843,7 @@ def test_postgres_segment_review_decision_endpoint_wraps_service(monkeypatch) ->
         "run_key": "run-1",
         "segment_id": "segment-001",
         "decision": "split",
+        "segment_title": "Article Pages 1-2",
         "notes": "article boundary is too broad",
         "reviewer": "james",
     }
