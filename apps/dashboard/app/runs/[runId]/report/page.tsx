@@ -264,7 +264,14 @@ export default function RunReportPage({ params }: { params: Promise<{ runId: str
       {activeTab === "placement" ? <BreakdownGrid values={data.placement} /> : null}
       {activeTab === "models" ? <ModelUsageTab usage={data.model_usage} /> : null}
       {activeTab === "providers" ? <ProviderAttemptsTab rows={data.provider_attempts.items} summary={data.provider_attempts} /> : null}
-      {activeTab === "logs" ? <LogsTab events={logRows} postgresBacked={Boolean(postgresData?.run_events?.length)} /> : null}
+      {activeTab === "logs" ? (
+        <LogsTab
+          events={logRows}
+          postgresBacked={Boolean(postgresData?.run_events?.length)}
+          shownEvents={postgresData?.summary.run_event_shown_count}
+          totalEvents={postgresData?.summary.run_event_count}
+        />
+      ) : null}
       {activeTab === "artifacts" ? <ArtifactsTab report={data} /> : null}
       {activeTab === "diff" ? <DiffTab report={data} /> : null}
     </main>
@@ -404,7 +411,14 @@ function PostgresRunReportView({
       {activePostgresTab === "tags" ? <PostgresTagsTab report={report} /> : null}
       {activePostgresTab === "models" ? <JsonTable title="Model Calls" rows={report.model_usage ?? []} /> : null}
       {activePostgresTab === "providers" ? <PostgresProvidersTab report={report} /> : null}
-      {activePostgresTab === "logs" ? <LogsTab events={report.run_events ?? []} postgresBacked /> : null}
+      {activePostgresTab === "logs" ? (
+        <LogsTab
+          events={report.run_events ?? []}
+          postgresBacked
+          shownEvents={report.summary.run_event_shown_count}
+          totalEvents={report.summary.run_event_count}
+        />
+      ) : null}
       {activePostgresTab === "artifacts" ? <PostgresArtifactsTab report={report} /> : null}
     </main>
   );
@@ -1113,13 +1127,28 @@ function formatRatio(value: unknown) {
   return `${Math.round(value * 1000) / 10}%`;
 }
 
-function LogsTab({ events, postgresBacked }: { events: Array<PipelineRunEvent | Record<string, unknown>>; postgresBacked: boolean }) {
+function LogsTab({
+  events,
+  postgresBacked,
+  shownEvents,
+  totalEvents,
+}: {
+  events: Array<PipelineRunEvent | Record<string, unknown>>;
+  postgresBacked: boolean;
+  shownEvents?: number;
+  totalEvents?: number;
+}) {
+  const visibleEvents = shownEvents ?? events.length;
+  const eventLabel =
+    totalEvents !== undefined && totalEvents > visibleEvents
+      ? `${visibleEvents} shown / ${totalEvents} total graph events`
+      : `${visibleEvents} events`;
   return (
     <section className="panel">
       <div className="sectionHeader">
         <div>
           <h2>Run Logs</h2>
-          <span>{events.length} events{postgresBacked ? " from Postgres V2 graph audit rows" : ""}</span>
+          <span>{eventLabel}{postgresBacked ? " from Postgres V2 graph audit rows" : ""}</span>
         </div>
       </div>
       {postgresBacked ? <PostgresEventTable events={events} /> : <LegacyEventList events={events as PipelineRunEvent[]} />}
@@ -1219,16 +1248,20 @@ function ArtifactsTab({ report }: { report: RunReport }) {
 
 function PostgresArtifactsTab({ report }: { report: PostgresRunReport }) {
   const rows = report.artifacts ?? [];
+  const shownRows = report.summary.artifact_shown_count ?? rows.length;
+  const totalRows = report.summary.artifact_count ?? rows.length;
+  const artifactLabel = totalRows > shownRows ? `${shownRows} shown / ${totalRows} total Postgres artifact rows` : `${totalRows} Postgres artifact rows`;
   return (
     <section className="panel">
       <div className="sectionHeader">
         <div>
           <h2>Artifacts</h2>
-          <span>{rows.length} manifest rows imported from Postgres</span>
+          <span>{artifactLabel}</span>
         </div>
       </div>
       <div className="metrics compactMetrics">
-        <Metric label="Rows" value={String(report.summary.artifact_count ?? rows.length)} />
+        <Metric label="Rows" value={String(totalRows)} />
+        <Metric label="Shown" value={String(shownRows)} />
         <Metric label="Existing" value={String(report.summary.existing_artifact_count ?? 0)} />
         <Metric label="Missing" value={String(report.summary.missing_artifact_count ?? 0)} />
         <Metric label="Total bytes" value={String(report.summary.artifact_total_size_bytes ?? 0)} />

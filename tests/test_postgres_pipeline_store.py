@@ -1236,6 +1236,45 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
                         }
                     ]
                 )
+            if "as result_count" in normalized and "as placeholder_embedding_count" in normalized:
+                return _Cursor(
+                    {
+                        "result_count": 1001,
+                        "review_item_count": 1002,
+                        "open_review_item_count": 1003,
+                        "model_usage_count": 1004,
+                        "model_call_count": 1005,
+                        "local_model_call_count": 1006,
+                        "nonlocal_model_call_count": 1007,
+                        "provider_attempt_count": 1008,
+                        "provider_selection_count": 1009,
+                        "quality_check_count": 1010,
+                        "quality_review_required_count": 1011,
+                        "tagging_evidence_count": 1012,
+                        "file_metadata_count": 1013,
+                        "artifact_count": 1014,
+                        "existing_artifact_count": 1015,
+                        "missing_artifact_count": 1016,
+                        "artifact_total_size_bytes": 1017,
+                        "processing_artifact_count": 1018,
+                        "extraction_result_count": 1019,
+                        "ocr_document_count": 1020,
+                        "ocr_page_count": 1021,
+                        "embedding_result_count": 1022,
+                        "embedding_cache_hits": 1023,
+                        "embedding_cache_misses": 1024,
+                        "parser_result_count": 1025,
+                        "parser_review_required_count": 1026,
+                        "run_event_count": 1027,
+                        "failed_run_event_count": 1028,
+                        "document_segment_count": 1029,
+                        "segment_review_count": 1030,
+                        "chunk_count": 1031,
+                        "chunk_embedding_count": 1032,
+                        "semantic_embedding_count": 1033,
+                        "placeholder_embedding_count": 1034,
+                    }
+                )
             return _Cursor()
 
         def close(self) -> None:
@@ -1247,34 +1286,40 @@ def test_postgres_pipeline_store_builds_run_report_from_normalized_tables() -> N
     report = store.get_run_report(run_key="run-report", limit=10)
 
     assert report["run"]["run_key"] == "run-report"
-    assert report["summary"]["result_count"] == 1
-    assert report["summary"]["open_review_item_count"] == 1
-    assert report["summary"]["model_call_count"] == 1
-    assert report["summary"]["local_model_call_count"] == 1
-    assert report["summary"]["provider_selection_count"] == 1
-    assert report["summary"]["quality_check_count"] == 1
-    assert report["summary"]["quality_review_required_count"] == 0
-    assert report["summary"]["tagging_evidence_count"] == 1
-    assert report["summary"]["file_metadata_count"] == 1
-    assert report["summary"]["artifact_count"] == 1
-    assert report["summary"]["existing_artifact_count"] == 1
-    assert report["summary"]["processing_artifact_count"] == 4
-    assert report["summary"]["extraction_result_count"] == 1
-    assert report["summary"]["ocr_document_count"] == 1
-    assert report["summary"]["ocr_page_count"] == 1
-    assert report["summary"]["embedding_result_count"] == 1
-    assert report["summary"]["embedding_cache_misses"] == 1
-    assert report["summary"]["parser_result_count"] == 1
+    assert report["summary"]["result_count"] == 1001
+    assert report["summary"]["result_shown_count"] == 1
+    assert report["summary"]["open_review_item_count"] == 1003
+    assert report["summary"]["review_item_shown_count"] == 1
+    assert report["summary"]["model_call_count"] == 1005
+    assert report["summary"]["local_model_call_count"] == 1006
+    assert report["summary"]["provider_selection_count"] == 1009
+    assert report["summary"]["quality_check_count"] == 1010
+    assert report["summary"]["quality_review_required_count"] == 1011
+    assert report["summary"]["tagging_evidence_count"] == 1012
+    assert report["summary"]["file_metadata_count"] == 1013
+    assert report["summary"]["artifact_count"] == 1014
+    assert report["summary"]["artifact_shown_count"] == 1
+    assert report["summary"]["existing_artifact_count"] == 1015
+    assert report["summary"]["processing_artifact_count"] == 1018
+    assert report["summary"]["processing_artifact_shown_count"] == 4
+    assert report["summary"]["extraction_result_count"] == 1019
+    assert report["summary"]["ocr_document_count"] == 1020
+    assert report["summary"]["ocr_page_count"] == 1021
+    assert report["summary"]["embedding_result_count"] == 1022
+    assert report["summary"]["embedding_cache_misses"] == 1024
+    assert report["summary"]["parser_result_count"] == 1025
     assert report["summary"]["parser_status"] == {"extracted": 1}
     assert report["summary"]["parser_quality"] == {"ok": 1}
-    assert report["summary"]["run_event_count"] == 1
+    assert report["summary"]["run_event_count"] == 1027
+    assert report["summary"]["run_event_shown_count"] == 1
     assert report["summary"]["run_event_status"] == {"ok": 1}
-    assert report["summary"]["segment_review_count"] == 1
+    assert report["summary"]["segment_review_count"] == 1030
     assert report["summary"]["segment_type"] == {"scrapbook_page_group": 1}
-    assert report["summary"]["chunk_count"] == 1
-    assert report["summary"]["chunk_embedding_count"] == 1
-    assert report["summary"]["semantic_embedding_count"] == 1
-    assert report["summary"]["placeholder_embedding_count"] == 0
+    assert report["summary"]["chunk_count"] == 1031
+    assert report["summary"]["chunk_shown_count"] == 1
+    assert report["summary"]["chunk_embedding_count"] == 1032
+    assert report["summary"]["semantic_embedding_count"] == 1033
+    assert report["summary"]["placeholder_embedding_count"] == 1034
     assert report["summary"]["chunk_kind"] == {"segment_text": 1}
     assert report["summary"]["embedding_provider"] == {"cortex": 1}
     assert report["summary"]["embedding_status"] == {"embedded": 1}

@@ -356,25 +356,44 @@ class PostgresPipelineStore:
             chunks = self._list_chunks(connection, run_key=run_key, limit=capped_limit)
             chunk_embeddings = self._list_chunk_embeddings(connection, run_key=run_key, limit=capped_limit)
             run_events = self._list_run_events(connection, run_key=run_key, limit=capped_limit)
+            summary = _run_report_summary(
+                results=results,
+                review_items=review_items,
+                model_usage=model_usage,
+                provider_attempts=provider_attempts,
+                provider_selections=provider_selections,
+                quality_checks=quality_checks,
+                tagging_evidence=tagging_evidence,
+                file_metadata=file_metadata,
+                artifacts=artifacts,
+                processing_artifacts=processing_artifacts,
+                parser_results=parser_results,
+                document_segments=document_segments,
+                chunks=chunks,
+                chunk_embeddings=chunk_embeddings,
+                run_events=run_events,
+            )
+            summary.update(_run_report_shown_counts(
+                results=results,
+                review_items=review_items,
+                model_usage=model_usage,
+                provider_attempts=provider_attempts,
+                provider_selections=provider_selections,
+                quality_checks=quality_checks,
+                tagging_evidence=tagging_evidence,
+                file_metadata=file_metadata,
+                artifacts=artifacts,
+                processing_artifacts=processing_artifacts,
+                parser_results=parser_results,
+                document_segments=document_segments,
+                chunks=chunks,
+                chunk_embeddings=chunk_embeddings,
+                run_events=run_events,
+            ))
+            summary.update(self._run_report_total_summary(connection, run_id=str(run["id"])))
             return {
                 "run": run,
-                "summary": _run_report_summary(
-                    results=results,
-                    review_items=review_items,
-                    model_usage=model_usage,
-                    provider_attempts=provider_attempts,
-                    provider_selections=provider_selections,
-                    quality_checks=quality_checks,
-                    tagging_evidence=tagging_evidence,
-                    file_metadata=file_metadata,
-                    artifacts=artifacts,
-                    processing_artifacts=processing_artifacts,
-                    parser_results=parser_results,
-                    document_segments=document_segments,
-                    chunks=chunks,
-                    chunk_embeddings=chunk_embeddings,
-                    run_events=run_events,
-                ),
+                "summary": summary,
                 "results": results,
                 "review_items": review_items,
                 "model_usage": model_usage,
@@ -393,6 +412,57 @@ class PostgresPipelineStore:
             }
         finally:
             connection.close()
+
+    def _run_report_total_summary(self, connection: PostgresConnection, *, run_id: str) -> dict[str, Any]:
+        """Return uncapped run-report counters.
+
+        The report returns row samples capped by ``limit`` so the dashboard does
+        not download thousands of event/evidence rows every polling interval.
+        Metric cards, however, must reflect the database totals, not the capped
+        sample size.
+        """
+
+        row = connection.execute(
+            """
+            select
+                (select count(*) from pipeline_results where run_id = %s) as result_count,
+                (select count(*) from review_items_v2 where run_id = %s) as review_item_count,
+                (select count(*) from review_items_v2 where run_id = %s and status = 'open') as open_review_item_count,
+                (select count(*) from model_usage where run_id = %s) as model_usage_count,
+                (select coalesce(sum(coalesce(call_count, 1)), 0) from model_usage where run_id = %s) as model_call_count,
+                (select coalesce(sum(coalesce(call_count, 1)), 0) from model_usage where run_id = %s and local_only is true) as local_model_call_count,
+                (select coalesce(sum(coalesce(call_count, 1)), 0) from model_usage where run_id = %s and local_only is false) as nonlocal_model_call_count,
+                (select count(*) from provider_attempts where run_id = %s) as provider_attempt_count,
+                (select count(*) from pipeline_provider_selections where run_id = %s) as provider_selection_count,
+                (select count(*) from pipeline_quality_checks where run_id = %s) as quality_check_count,
+                (select count(*) from pipeline_quality_checks where run_id = %s and requires_review is true) as quality_review_required_count,
+                (select count(*) from pipeline_tagging_evidence where run_id = %s) as tagging_evidence_count,
+                (select count(*) from pipeline_file_metadata where run_id = %s) as file_metadata_count,
+                (select count(*) from pipeline_artifacts where run_id = %s) as artifact_count,
+                (select count(*) from pipeline_artifacts where run_id = %s and exists is true) as existing_artifact_count,
+                (select count(*) from pipeline_artifacts where run_id = %s and exists is false) as missing_artifact_count,
+                (select coalesce(sum(coalesce(size_bytes, 0)), 0) from pipeline_artifacts where run_id = %s) as artifact_total_size_bytes,
+                (select count(*) from pipeline_processing_artifacts where run_id = %s) as processing_artifact_count,
+                (select count(*) from pipeline_processing_artifacts where run_id = %s and artifact_type = 'extraction_result') as extraction_result_count,
+                (select count(*) from pipeline_processing_artifacts where run_id = %s and artifact_type = 'ocr_document') as ocr_document_count,
+                (select count(*) from pipeline_processing_artifacts where run_id = %s and artifact_type = 'ocr_page') as ocr_page_count,
+                (select count(*) from pipeline_processing_artifacts where run_id = %s and artifact_type = 'embedding_result') as embedding_result_count,
+                (select coalesce(sum(coalesce(cache_hits, 0)), 0) from pipeline_processing_artifacts where run_id = %s) as embedding_cache_hits,
+                (select coalesce(sum(coalesce(cache_misses, 0)), 0) from pipeline_processing_artifacts where run_id = %s) as embedding_cache_misses,
+                (select count(*) from pipeline_parser_results where run_id = %s) as parser_result_count,
+                (select count(*) from pipeline_parser_results where run_id = %s and requires_review is true) as parser_review_required_count,
+                (select count(*) from pipeline_run_events where run_id = %s) as run_event_count,
+                (select count(*) from pipeline_run_events where run_id = %s and status = 'failed') as failed_run_event_count,
+                (select count(*) from document_segments where run_id = %s) as document_segment_count,
+                (select count(*) from document_segments where run_id = %s and requires_segment_review is true) as segment_review_count,
+                (select count(*) from pipeline_chunks where run_id = %s) as chunk_count,
+                (select count(*) from pipeline_chunk_embeddings where run_id = %s) as chunk_embedding_count,
+                (select count(*) from pipeline_chunk_embeddings where run_id = %s and semantic_quality is true) as semantic_embedding_count,
+                (select count(*) from pipeline_chunk_embeddings where run_id = %s and semantic_quality is not true) as placeholder_embedding_count
+            """,
+            (run_id,) * 34,
+        ).fetchone()
+        return _json_safe_row(_row_to_dict(row))
 
     def list_run_artifacts(self, *, run_key: str, limit: int = 500) -> list[dict[str, Any]]:
         connection = self._connect_factory(self.database_url)
@@ -3672,6 +3742,43 @@ def _run_report_summary(
         "parser_provider": _count_values(parser_results, "provider"),
         "run_event_status": _count_values(run_events, "status"),
         "model_provider": _count_values(model_usage, "provider"),
+    }
+
+
+def _run_report_shown_counts(
+    *,
+    results: list[dict[str, Any]],
+    review_items: list[dict[str, Any]],
+    model_usage: list[dict[str, Any]],
+    provider_attempts: list[dict[str, Any]],
+    provider_selections: list[dict[str, Any]],
+    quality_checks: list[dict[str, Any]],
+    tagging_evidence: list[dict[str, Any]],
+    file_metadata: list[dict[str, Any]],
+    artifacts: list[dict[str, Any]],
+    processing_artifacts: list[dict[str, Any]],
+    parser_results: list[dict[str, Any]],
+    document_segments: list[dict[str, Any]],
+    chunks: list[dict[str, Any]],
+    chunk_embeddings: list[dict[str, Any]],
+    run_events: list[dict[str, Any]],
+) -> dict[str, int]:
+    return {
+        "result_shown_count": len(results),
+        "review_item_shown_count": len(review_items),
+        "model_usage_shown_count": len(model_usage),
+        "provider_attempt_shown_count": len(provider_attempts),
+        "provider_selection_shown_count": len(provider_selections),
+        "quality_check_shown_count": len(quality_checks),
+        "tagging_evidence_shown_count": len(tagging_evidence),
+        "file_metadata_shown_count": len(file_metadata),
+        "artifact_shown_count": len(artifacts),
+        "processing_artifact_shown_count": len(processing_artifacts),
+        "parser_result_shown_count": len(parser_results),
+        "document_segment_shown_count": len(document_segments),
+        "chunk_shown_count": len(chunks),
+        "chunk_embedding_shown_count": len(chunk_embeddings),
+        "run_event_shown_count": len(run_events),
     }
 
 

@@ -439,10 +439,12 @@ export type PostgresRunReport = {
     tagging_evidence_count?: number;
     file_metadata_count?: number;
     artifact_count?: number;
+    artifact_shown_count?: number;
     existing_artifact_count?: number;
     missing_artifact_count?: number;
     artifact_total_size_bytes?: number;
     processing_artifact_count?: number;
+    processing_artifact_shown_count?: number;
     extraction_result_count?: number;
     ocr_document_count?: number;
     ocr_page_count?: number;
@@ -452,6 +454,7 @@ export type PostgresRunReport = {
     parser_result_count?: number;
     parser_review_required_count?: number;
     run_event_count: number;
+    run_event_shown_count?: number;
     failed_run_event_count: number;
     document_segment_count: number;
     segment_review_count: number;
